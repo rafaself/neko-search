@@ -1,4 +1,8 @@
-# nestjs-docs-mcp
+<p align="center">
+  <img src="assets/nekosearch.png" alt="NekoSearch cat reading a book" width="240" />
+</p>
+
+<h1 align="center">NekoSearch</h1>
 
 ---
 
