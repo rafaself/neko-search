@@ -25,6 +25,7 @@
     "dist/infrastructure/sqlite/indexing/index-writer.js",
     "dist/infrastructure/filesystem/documentation-discovery.js",
     "dist/infrastructure/markdown/document-normalizer.js",
+    "dist/infrastructure/markdown/documentation-link-resolver.js",
     "dist/infrastructure/markdown/markdown-parser.js",
     "dist/retrieval/document-page.js",
     "dist/retrieval/search-input.js",

@@ -21,7 +21,7 @@ const entryPoint = fileURLToPath(
 describe('MCP HTTP server', () => {
   it('serves the documentation MCP over HTTP and shuts down cleanly', async () => {
     const port = await reservePort();
-    const directory = mkdtempSync(join(tmpdir(), 'nestjs-docs-mcp-http-'));
+    const directory = mkdtempSync(join(tmpdir(), 'nekosearch-http-'));
     const databasePath = join(directory, 'index.sqlite');
     createMcpServerTestIndex(databasePath);
     const child = spawn(process.execPath, [entryPoint], {

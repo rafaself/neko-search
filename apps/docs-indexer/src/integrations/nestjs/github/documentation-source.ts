@@ -99,7 +99,10 @@ async function downloadText(
   const response = await fetcher(url, {
     signal: AbortSignal.timeout(30000),
     redirect: 'error',
-    headers: { 'user-agent': 'nestjs-docs-mcp-ingestion', accept: '*/*' },
+    headers: {
+      'user-agent': 'NekoSearch documentation ingestion',
+      accept: '*/*',
+    },
   });
   if (!response.ok || !response.body) {
     await response.body?.cancel();

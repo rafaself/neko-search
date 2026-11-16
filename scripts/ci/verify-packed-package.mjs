@@ -241,7 +241,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     'the catalog should show the protocol reference and the two installed snapshots',
   );
 
-  const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
+  const installedPackage = join(project, 'node_modules', 'nekosearch');
   const catalogRegistry = JSON.parse(
     await readFile(join(xdgDataHome, 'nekosearch', 'catalog.json'), 'utf8'),
   );
@@ -800,6 +800,7 @@ async function main() {
       'node_modules/@nestjs-docs/documentation-engine/dist/application/services/documentation-ingestion.service.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/filesystem/documentation-discovery.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/documentation-link-resolver.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/markdown-parser.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-integrity.js',
@@ -827,6 +828,7 @@ async function main() {
     ]);
     const buildEngineFiles = new Set([
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/documentation-link-resolver.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/markdown-parser.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/filesystem/documentation-discovery.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
@@ -868,11 +870,11 @@ async function main() {
     await writeFile(
       join(project, 'package.json'),
       JSON.stringify({
-        name: 'nestjs-docs-mcp-package-smoke',
+        name: 'nekosearch-package-smoke',
         version: '1.0.0',
         private: true,
         dependencies: {
-          'nestjs-docs-mcp': `file:${tarballPath}`,
+          nekosearch: `file:${tarballPath}`,
         },
       }),
     );
@@ -933,7 +935,7 @@ process.once('exit', () => {
       { cwd: project, env: npmEnvironment },
     );
 
-    const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
+    const installedPackage = join(project, 'node_modules', 'nekosearch');
     const [
       cliSource,
       codexConfigSource,

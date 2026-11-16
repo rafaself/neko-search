@@ -16,7 +16,7 @@ NekoSearch is a generic documentation server. NestJS is an optional curated exam
 Requirements: Node.js 24.15 or newer and npm.
 
 ```sh
-npm install --global nestjs-docs-mcp
+npm install --global nekosearch
 nekosearch --help
 ```
 

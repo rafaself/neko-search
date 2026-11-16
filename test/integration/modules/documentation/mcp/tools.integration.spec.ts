@@ -19,7 +19,7 @@ describe('documentation MCP tools', () => {
   const documentationId = 'https://github.com/nestjs/docs.nestjs.com';
 
   beforeAll(async () => {
-    directory = await mkdtemp(join(tmpdir(), 'nestjs-docs-mcp-tools-'));
+    directory = await mkdtemp(join(tmpdir(), 'nekosearch-tools-'));
     const databasePath = join(directory, 'search.sqlite');
     const corpus = await loadSearchCorpus();
     documentId = corpus.documents[0]!.id;

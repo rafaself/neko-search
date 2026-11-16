@@ -1,5 +1,5 @@
 {
-  "name": "nestjs-docs-mcp",
+  "name": "nekosearch",
   "version": "0.0.1",
   "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
   "type": "module",
@@ -46,10 +46,11 @@
   ],
   "dependencies": {
     "@mdx-js/mdx": "^3.1.1",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@nestjs-docs/documentation-engine": "0.1.0",
     "@nestjs/common": "^12.5.0",
-    "@modelcontextprotocol/server": "^2.4.0",
     "json5": "^2.2.3",
+    "nekosearch": "^0.0.0-stage",
     "reflect-metadata": "^0.2.2",
     "remark-gfm": "^4.0.1",
     "rxjs": "^7.8.2",
@@ -90,10 +91,10 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/client": "^2.4.0",
+    "@nestjs/cli": "^12.0.12",
     "@nestjs/core": "^12.5.0",
     "@nestjs/mcp": "^0.0.4",
     "@nestjs/platform-express": "^12.5.0",
-    "@nestjs/cli": "^12.0.12",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.19.2",
     "eslint": "^10.14.0",

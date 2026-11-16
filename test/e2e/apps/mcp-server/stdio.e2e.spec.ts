@@ -19,7 +19,7 @@ describe('MCP stdio server', () => {
   it.each(['EOF', 'SIGINT', 'SIGTERM'] as const)(
     'shuts down on %s with only protocol messages on stdout',
     async (shutdown) => {
-      const directory = mkdtempSync(join(tmpdir(), 'nestjs-docs-mcp-stdio-'));
+      const directory = mkdtempSync(join(tmpdir(), 'nekosearch-stdio-'));
       const databasePath = join(directory, 'index.sqlite');
       createMcpServerTestIndex(databasePath);
       const transport = createTransport(databasePath, directory);
@@ -88,7 +88,7 @@ describe('MCP stdio server', () => {
   );
 
   it('writes debug timing to stderr while keeping stdout protocol-only', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'nestjs-docs-mcp-stdio-'));
+    const directory = mkdtempSync(join(tmpdir(), 'nekosearch-stdio-'));
     const databasePath = join(directory, 'index.sqlite');
     createMcpServerTestIndex(databasePath);
     const transport = createTransport(databasePath, directory, { DEBUG: '1' });
