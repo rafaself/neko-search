@@ -15,6 +15,12 @@ export async function verifyPackage(root = rootDirectory) {
   const packageMetadata = packageMetadataSchema.parse(
     JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')),
   );
+  const engineMetadata = JSON.parse(
+    await readFile(
+      resolve(root, 'packages/documentation-engine/package.json'),
+      'utf8',
+    ),
+  );
   if (
     packageMetadata.name !== PACKAGE_NAME ||
     packageMetadata.version !== PACKAGE_VERSION ||
@@ -52,6 +58,7 @@ export async function verifyPackage(root = rootDirectory) {
     Object.keys(packageMetadata.bin ?? {}).length !== 1 ||
     packageMetadata.dependencies?.['@nestjs-docs/documentation-engine'] !==
       '0.1.0' ||
+    !packageMetadata.bundleDependencies?.includes('reflect-metadata') ||
     packageMetadata.dependencies?.['@modelcontextprotocol/server'] !==
       '^2.4.0' ||
     packageMetadata.dependencies?.json5 !== '^2.2.3' ||
@@ -62,6 +69,15 @@ export async function verifyPackage(root = rootDirectory) {
     files.includes('data/manifest.json')
   ) {
     throw new Error('npm package metadata or file allowlist is invalid');
+  }
+  if (
+    !engineMetadata.files?.includes(
+      'dist/infrastructure/markdown/documentation-link-resolver.js',
+    )
+  ) {
+    throw new Error(
+      'The documentation engine package must include its internal link resolver',
+    );
   }
 
   const protocolSnapshot = await validateSnapshotDirectory(

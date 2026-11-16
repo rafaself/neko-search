@@ -1,6 +1,6 @@
 {
   "name": "nekosearch",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
   "type": "module",
   "workspaces": [
@@ -57,7 +57,8 @@
     "zod": "^4.6.7"
   },
   "bundleDependencies": [
-    "@nestjs-docs/documentation-engine"
+    "@nestjs-docs/documentation-engine",
+    "reflect-metadata"
   ],
   "engines": {
     "node": "^24.15.0 || >=26.0.0"

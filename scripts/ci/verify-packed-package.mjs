@@ -83,7 +83,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   await mkdir(fixtureDirectory);
   await writeFile(
     join(fixtureDirectory, 'index.md'),
-    '# FastAPI\n\nFastAPI uses sharedtopic, dependency injection, and the mandacaru fixture token.\n',
+    '# FastAPI\n\nFastAPI uses sharedtopic, dependency injection, and the mandacaru fixture token. The offline-link-origin-probe identifies this page.\n\n[Offline target](./guide.mdx#offline-link-target)\n',
   );
   await writeFile(
     join(fixtureDirectory, 'guide.mdx'),
@@ -95,6 +95,10 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       '# Guia de MDX',
       '',
       '<Callout type="note">Jabuticaba and mandacaru appear in this static FastAPI guide.</Callout>',
+      '',
+      '## Offline Link Target',
+      '',
+      'offline-link-target-fetch-probe proves the packaged builder resolved this heading.',
       '',
       '{globalThis.__nekosearchMdxExecuted = true}',
       '',
@@ -522,6 +526,64 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       ),
     );
 
+    const linkOriginSearch = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          sources: ['fastapi@1'],
+          query: 'offline-link-origin-probe',
+          limit: 1,
+        },
+      }),
+      'installed snapshot link-origin search_docs',
+    );
+    assert.ok(!linkOriginSearch.isError);
+    const linkOriginHit =
+      linkOriginSearch.structuredContent.groups[0]?.results[0];
+    assert.ok(linkOriginHit, 'the link-origin document should be searchable');
+    const linkOriginPage = await withTimeout(
+      client.callTool({
+        name: 'fetch_docs',
+        arguments: {
+          selector: 'fastapi@1',
+          documentId: linkOriginHit.documentId,
+        },
+      }),
+      'installed snapshot link-origin fetch_docs',
+    );
+    assert.ok(!linkOriginPage.isError);
+    const resolvedReference = linkOriginPage.structuredContent.references.find(
+      (reference) => reference.href === './guide.mdx#offline-link-target',
+    );
+    assert.ok(
+      resolvedReference,
+      'the installed snapshot should expose its resolved internal link',
+    );
+    assert.match(resolvedReference.documentId, /^documentation:v1:/u);
+    assert.ok(
+      typeof resolvedReference.sectionId === 'string',
+      'the resolved heading should include a fetchable section ID',
+    );
+    const linkedTarget = await withTimeout(
+      client.callTool({
+        name: 'fetch_docs',
+        arguments: {
+          selector: 'fastapi@1',
+          documentId: resolvedReference.documentId,
+          sectionId: resolvedReference.sectionId,
+        },
+      }),
+      'installed snapshot internal-link target fetch_docs',
+    );
+    assert.ok(!linkedTarget.isError);
+    assert.equal(linkedTarget.structuredContent.found, true);
+    assert.ok(
+      linkedTarget.structuredContent.sections.some((section) =>
+        section.markdown.includes('offline-link-target-fetch-probe'),
+      ),
+      'the internal link target should be fetchable from the same offline source',
+    );
+
     for (const [sourceGroup, hit] of [
       [protocolGroup, protocolHit],
       [localNestGroup, localNestHit],
@@ -805,6 +867,8 @@ async function main() {
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-integrity.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-writer.js',
+      'node_modules/reflect-metadata/Reflect.js',
+      'node_modules/reflect-metadata/package.json',
     ]) {
       assert.ok(files.has(path), `the npm tarball must include ${path}`);
     }
