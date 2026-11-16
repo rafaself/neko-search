@@ -2,7 +2,8 @@
   <img src="assets/nekosearch.png" alt="NekoSearch cat reading a book" width="240" />
 </p>
 
-<h1 align="center">NekoSearch</h1>
+<h3 align="center">NekoSearch</h3>
+<p align="center">A local, read-only MCP server for searching and fetching NestJS documentation.</p>
 
 ---
 
