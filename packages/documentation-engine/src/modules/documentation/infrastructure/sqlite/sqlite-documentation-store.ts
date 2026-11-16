@@ -1,6 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import type { DocumentationIndexRuntimeManifest } from '../../domain/documentation-index-manifest.schemas.js';
 import type {
   DocumentationRow,
@@ -9,24 +8,16 @@ import type {
 } from '../../application/contracts/documentation-search-store.contract.js';
 import type { DocumentationSearchResult } from '../../application/contracts/documentation-reader.contract.js';
 import type { DocumentationLinkReference } from '../../domain/documentation.types.js';
-import {
-  DOCUMENTATION_INDEX_MANIFEST,
-  SEARCH_DATABASE_PATH,
-} from '../../application/contracts/documentation.tokens.js';
 import { MAX_SEARCH_RESULT_LIMIT } from '../../retrieval/search.constants.js';
 import { validateRuntimeIndex } from './runtime-index.js';
 
-@Injectable()
-export class SQLiteDocumentationStore
-  implements DocumentationSearchStore, OnModuleDestroy
-{
+export class SQLiteDocumentationStore implements DocumentationSearchStore {
   private readonly database: DatabaseSync;
   private readonly indexFormatVersion: number;
   private closed = false;
 
   constructor(
-    @Inject(SEARCH_DATABASE_PATH) databasePath: string,
-    @Inject(DOCUMENTATION_INDEX_MANIFEST)
+    databasePath: string,
     readonly indexManifest: DocumentationIndexRuntimeManifest,
   ) {
     if (!databasePath) throw new Error('A SQLite database path is required');
@@ -165,7 +156,7 @@ export class SQLiteDocumentationStore
     };
   }
 
-  onModuleDestroy(): void {
+  close(): void {
     if (this.closed) return;
     this.database.close();
     this.closed = true;

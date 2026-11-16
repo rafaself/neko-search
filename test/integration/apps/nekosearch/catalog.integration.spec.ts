@@ -14,7 +14,7 @@ import {
   addSnapshot,
   listCatalogIndexes,
 } from '../../../../src/apps/nekosearch/catalog.js';
-import { createMcpServerTestIndex } from '../../../fixtures/mcp-server-index.js';
+import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
 describe('NekoSearch snapshot catalog', () => {
   let root: string;
@@ -26,7 +26,7 @@ describe('NekoSearch snapshot catalog', () => {
     snapshotDirectory = join(root, 'snapshot');
     catalogRoot = join(root, 'catalog');
     mkdirSync(snapshotDirectory);
-    createMcpServerTestIndex(join(snapshotDirectory, 'index.sqlite'), '12');
+    createDocumentationTestIndex(join(snapshotDirectory, 'index.sqlite'), '12');
     const manifestPath = join(snapshotDirectory, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       documentation: { id: string };

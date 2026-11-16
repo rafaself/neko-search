@@ -14,9 +14,6 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json', useESM: true }],
   },
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/apps/mcp-server/bootstrap/http.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.ts'],
   coverageDirectory: 'coverage',
 };

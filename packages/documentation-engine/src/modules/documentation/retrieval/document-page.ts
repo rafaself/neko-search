@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BadRequestException } from '@nestjs/common';
+import { DocumentationInputError } from './documentation-input.error.js';
 import {
   MAX_FETCH_DOCUMENT_CHARS,
   MAX_FETCH_DOCUMENT_REFERENCES,
@@ -51,7 +51,9 @@ export function paginateDocumentation(
     const available = remaining - framing.length;
     if (available <= 1) {
       if (remaining === MAX_FETCH_DOCUMENT_CHARS) {
-        throw new BadRequestException('Section heading exceeds fetch limit');
+        throw new DocumentationInputError(
+          'Section heading exceeds fetch limit',
+        );
       }
       nextCursor = `${scopeHash}:${index}:${offset}`;
       break;
@@ -131,7 +133,7 @@ function resolveCursor(
   if (cursor) {
     const match = /^([0-9a-f]{64}):(0|[1-9]\d*):(0|[1-9]\d*)$/u.exec(cursor);
     if (!match || match[1] !== scopeHash)
-      throw new BadRequestException('Invalid or stale continuation cursor');
+      throw new DocumentationInputError('Invalid or stale continuation cursor');
     sectionIndex = Number(match[2]);
     offset = Number(match[3]);
     if (
@@ -141,7 +143,7 @@ function resolveCursor(
       offset > grouped[sectionIndex]!.markdown.length ||
       (offset > 0 && offset === grouped[sectionIndex]!.markdown.length)
     ) {
-      throw new BadRequestException('Invalid continuation cursor');
+      throw new DocumentationInputError('Invalid continuation cursor');
     }
   }
   return { sectionIndex, offset };

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { DocumentationInputError } from '@nestjs-docs/documentation-engine/retrieval/documentation-input.error.js';
 import {
   buildSearchExpression,
   validateDocumentId,
@@ -11,7 +11,7 @@ describe('DocumentationSearchService', () => {
   beforeEach(() => {
     service = new DocumentationSearchService(':memory:', '12');
   });
-  afterEach(() => service.onModuleDestroy());
+  afterEach(() => service.close());
 
   it('ranks the section matching a natural-language query first', async () => {
     const corpus = await loadSearchCorpus();
@@ -74,9 +74,11 @@ describe('DocumentationSearchService', () => {
   });
 
   it('validates query input and bounds the result limit', () => {
-    expect(() => service.search(42)).toThrow(BadRequestException);
-    expect(() => service.search('x'.repeat(257))).toThrow(BadRequestException);
-    expect(() => service.search('guard', 0)).toThrow(BadRequestException);
+    expect(() => service.search(42)).toThrow(DocumentationInputError);
+    expect(() => service.search('x'.repeat(257))).toThrow(
+      DocumentationInputError,
+    );
+    expect(() => service.search('guard', 0)).toThrow(DocumentationInputError);
   });
 
   it('accepts opaque generic document IDs and rejects invalid identifiers', () => {

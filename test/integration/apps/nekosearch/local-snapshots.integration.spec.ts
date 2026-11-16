@@ -148,7 +148,7 @@ describe('NekoSearch local directory installs', () => {
         ],
       });
     } finally {
-      documentation.onModuleDestroy();
+      documentation.close();
     }
     expect(fetchRequests).toEqual([]);
   });

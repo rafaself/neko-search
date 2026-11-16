@@ -34,7 +34,7 @@ export class TestSearchIndex {
 
   indexCorpus(corpus: unknown): number {
     const result = this.writer.indexCorpus(corpus);
-    this.reader.onModuleDestroy();
+    this.reader.close();
     this.reader = new DocumentationSearchService(this.path, this.version);
     return result;
   }
@@ -47,8 +47,8 @@ export class TestSearchIndex {
     return this.reader.fetchDocument(...args);
   }
 
-  onModuleDestroy(): void {
-    this.reader.onModuleDestroy();
+  close(): void {
+    this.reader.close();
     this.writer.close();
     rmSync(this.directory, { recursive: true, force: true });
   }

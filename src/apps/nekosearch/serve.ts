@@ -60,7 +60,7 @@ export async function serve(): Promise<void> {
     }
     runtimesBySelector = indexRuntimesBySelector(runtimes);
   } catch (error) {
-    for (const runtime of runtimes) runtime.store.onModuleDestroy();
+    for (const runtime of runtimes) runtime.store.close();
     throw error;
   }
 
@@ -347,7 +347,7 @@ function shutdown(
 }
 
 function closeStores(stores: SQLiteDocumentationStore[]): void {
-  for (const store of stores) store.onModuleDestroy();
+  for (const store of stores) store.close();
 }
 
 function formatError(error: unknown): string {

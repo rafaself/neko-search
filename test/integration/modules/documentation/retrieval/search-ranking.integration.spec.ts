@@ -69,7 +69,7 @@ describe('documentation search ranking', () => {
     try {
       return service.search(query, limit);
     } finally {
-      service.onModuleDestroy();
+      service.close();
     }
   }
 

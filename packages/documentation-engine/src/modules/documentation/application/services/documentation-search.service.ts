@@ -1,4 +1,3 @@
-import { Inject, Injectable } from '@nestjs/common';
 import type { DocumentationIdentity } from '../../domain/documentation.types.js';
 import type { DocumentationIndexRuntimeManifest } from '../../domain/documentation-index-manifest.schemas.js';
 import type {
@@ -7,10 +6,6 @@ import type {
   FetchedDocumentation,
 } from '../contracts/documentation-reader.contract.js';
 import type { DocumentationSearchStore } from '../contracts/documentation-search-store.contract.js';
-import {
-  DOCUMENTATION_SEARCH_STORE,
-  DOCUMENTATION_INDEX_MANIFEST,
-} from '../contracts/documentation.tokens.js';
 import {
   DEFAULT_SEARCH_RESULT_LIMIT,
   MAX_SEARCH_RESULT_LIMIT,
@@ -21,12 +16,9 @@ import {
 } from '../../retrieval/search-input.js';
 import { paginateDocumentation } from '../../retrieval/document-page.js';
 
-@Injectable()
 export class DocumentationSearchService implements DocumentationReader {
   constructor(
-    @Inject(DOCUMENTATION_SEARCH_STORE)
     private readonly store: DocumentationSearchStore,
-    @Inject(DOCUMENTATION_INDEX_MANIFEST)
     private readonly indexManifest: DocumentationIndexRuntimeManifest,
   ) {}
 

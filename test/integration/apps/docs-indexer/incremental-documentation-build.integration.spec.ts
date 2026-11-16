@@ -318,7 +318,7 @@ describe('incremental documentation build', () => {
     try {
       return queries.map((query) => service.search(query, 10));
     } finally {
-      service.onModuleDestroy();
+      service.close();
     }
   }
 

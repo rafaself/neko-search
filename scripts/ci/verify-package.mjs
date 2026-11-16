@@ -58,7 +58,9 @@ export async function verifyPackage(root = rootDirectory) {
     Object.keys(packageMetadata.bin ?? {}).length !== 1 ||
     packageMetadata.dependencies?.['@nestjs-docs/documentation-engine'] !==
       '0.1.0' ||
-    !packageMetadata.bundleDependencies?.includes('reflect-metadata') ||
+    !packageMetadata.bundleDependencies?.includes(
+      '@nestjs-docs/documentation-engine',
+    ) ||
     packageMetadata.dependencies?.['@modelcontextprotocol/server'] !==
       '^2.4.0' ||
     packageMetadata.dependencies?.json5 !== '^2.2.3' ||
@@ -71,12 +73,38 @@ export async function verifyPackage(root = rootDirectory) {
     throw new Error('npm package metadata or file allowlist is invalid');
   }
   if (
+    Object.keys(packageMetadata.dependencies ?? {}).some((name) =>
+      name.startsWith('@nestjs/'),
+    ) ||
+    Object.keys(engineMetadata.dependencies ?? {}).some((name) =>
+      name.startsWith('@nestjs/'),
+    ) ||
+    ['reflect-metadata', 'rxjs'].some(
+      (name) =>
+        Object.hasOwn(packageMetadata.dependencies ?? {}, name) ||
+        Object.hasOwn(engineMetadata.dependencies ?? {}, name),
+    )
+  ) {
+    throw new Error(
+      'The runtime package must not depend on NestJS framework packages',
+    );
+  }
+  if (
     !engineMetadata.files?.includes(
       'dist/infrastructure/markdown/documentation-link-resolver.js',
     )
   ) {
     throw new Error(
       'The documentation engine package must include its internal link resolver',
+    );
+  }
+  if (
+    !engineMetadata.files?.includes(
+      'dist/retrieval/documentation-input.error.js',
+    )
+  ) {
+    throw new Error(
+      'The documentation engine package must include its input error type',
     );
   }
 

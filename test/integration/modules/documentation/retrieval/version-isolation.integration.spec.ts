@@ -1,18 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NestFactory } from '@nestjs/core';
-import type { INestApplicationContext } from '@nestjs/common';
 import { ingestNestJsDocuments } from '../../../../fixtures/ingestion.fixtures.js';
-import { DocumentationModule } from '../../../../../src/modules/documentation/documentation.module.js';
 import { DocumentationSearchService } from '@nestjs-docs/documentation-engine/application/services/documentation-search.service.js';
 import { DocumentationIndexWriter } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-writer.js';
-import { createTestIndexManifest } from '../../../../fixtures/mcp-server-index.js';
+import { createTestIndexManifest } from '../../../../fixtures/documentation-index.js';
+import { SQLiteDocumentationStore } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/sqlite-documentation-store.js';
 
 describe('documentation version isolation', () => {
   let directory: string;
-  let app11: INestApplicationContext;
-  let app12: INestApplicationContext;
+  let store11: SQLiteDocumentationStore;
+  let store12: SQLiteDocumentationStore;
   let service11: DocumentationSearchService;
   let service12: DocumentationSearchService;
   let corpus11: ReturnType<typeof createVersionCorpus>;
@@ -32,27 +30,17 @@ describe('documentation version isolation', () => {
     writer11.close();
     writer12.close();
 
-    app11 = await NestFactory.createApplicationContext(
-      DocumentationModule.register(
-        databasePath11,
-        createTestIndexManifest(databasePath11, corpus11),
-      ),
-      { logger: false },
-    );
-    app12 = await NestFactory.createApplicationContext(
-      DocumentationModule.register(
-        databasePath12,
-        createTestIndexManifest(databasePath12, corpus12),
-      ),
-      { logger: false },
-    );
-    service11 = app11.get(DocumentationSearchService);
-    service12 = app12.get(DocumentationSearchService);
+    const manifest11 = createTestIndexManifest(databasePath11, corpus11);
+    const manifest12 = createTestIndexManifest(databasePath12, corpus12);
+    store11 = new SQLiteDocumentationStore(databasePath11, manifest11);
+    store12 = new SQLiteDocumentationStore(databasePath12, manifest12);
+    service11 = new DocumentationSearchService(store11, manifest11);
+    service12 = new DocumentationSearchService(store12, manifest12);
   });
 
   afterAll(async () => {
-    await app12?.close();
-    await app11?.close();
+    store12?.close();
+    store11?.close();
     if (directory) await rm(directory, { recursive: true, force: true });
   });
 

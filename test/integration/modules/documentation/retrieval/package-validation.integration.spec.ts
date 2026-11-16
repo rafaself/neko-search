@@ -41,6 +41,15 @@ describe('npm package verification', () => {
       join(repositoryRoot, 'package.json'),
       join(root, 'package.json'),
     );
+    const engineMetadataPath = join(
+      root,
+      'packages/documentation-engine/package.json',
+    );
+    mkdirSync(dirname(engineMetadataPath), { recursive: true });
+    copyFileSync(
+      join(repositoryRoot, 'packages/documentation-engine/package.json'),
+      engineMetadataPath,
+    );
 
     const requiredFiles = [
       'dist/apps/nekosearch/cli.js',
@@ -100,6 +109,19 @@ describe('npm package verification', () => {
 
     await expect(verifyPackage(root)).rejects.toThrow(
       'npm package metadata does not match its runtime metadata',
+    );
+  });
+
+  it('rejects NestJS framework dependencies in the runtime manifests', async () => {
+    const packagePath = join(root, 'package.json');
+    const packageMetadata = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    packageMetadata.dependencies['@nestjs/common'] = '^12.0.0';
+    writeFileSync(packagePath, JSON.stringify(packageMetadata));
+
+    await expect(verifyPackage(root)).rejects.toThrow(
+      'The runtime package must not depend on NestJS framework packages',
     );
   });
 

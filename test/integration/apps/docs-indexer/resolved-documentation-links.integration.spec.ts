@@ -79,7 +79,7 @@ describe('resolved internal documentation links', () => {
         ).not.toBeNull();
       }
     } finally {
-      service.onModuleDestroy();
+      service.close();
     }
   });
 
@@ -97,7 +97,7 @@ describe('resolved internal documentation links', () => {
       (reference) => reference.href === './target.md#target-details',
     );
     expect(typeof initialHeadingReference?.sectionId).toBe('string');
-    initialService.onModuleDestroy();
+    initialService.close();
 
     await build(
       buildSnapshot('revision-two', 'Renamed details'),
@@ -134,7 +134,7 @@ describe('resolved internal documentation links', () => {
         ),
       ).toBe(true);
     } finally {
-      updatedService.onModuleDestroy();
+      updatedService.close();
     }
   });
 

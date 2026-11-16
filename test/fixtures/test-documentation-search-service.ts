@@ -12,7 +12,7 @@ import {
 import { validateRuntimeIndex } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/runtime-index.js';
 import { basename } from 'node:path';
 
-/** Test-only convenience for direct calls without a Nest application context. */
+/** Test-only convenience for direct calls against a validated SQLite index. */
 export class TestDocumentationSearchService extends DocumentationSearchService {
   private readonly sqliteStore: SQLiteDocumentationStore;
   readonly database: DatabaseSync;
@@ -50,7 +50,7 @@ export class TestDocumentationSearchService extends DocumentationSearchService {
     this.database = (store as unknown as { database: DatabaseSync }).database;
   }
 
-  onModuleDestroy(): void {
-    this.sqliteStore.onModuleDestroy();
+  close(): void {
+    this.sqliteStore.close();
   }
 }

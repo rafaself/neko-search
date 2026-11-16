@@ -11,7 +11,7 @@ describe('DocumentationSearchService', () => {
   beforeEach(() => {
     service = new DocumentationSearchService(':memory:', '12');
   });
-  afterEach(() => service.onModuleDestroy());
+  afterEach(() => service.close());
 
   it('caps requested results at the maximum and replaces the previous index', () => {
     const revision = 'd'.repeat(40);
@@ -127,7 +127,7 @@ describe('DocumentationSearchService', () => {
       );
     } finally {
       database.close();
-      syncService.onModuleDestroy();
+      syncService.close();
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -223,7 +223,7 @@ describe('DocumentationSearchService', () => {
         'd'.repeat(40),
       );
     } finally {
-      syncService.onModuleDestroy();
+      syncService.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

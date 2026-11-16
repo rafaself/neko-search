@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
 import { ingestNestJsDocuments } from '../../../../fixtures/ingestion.fixtures.js';
 import { MAX_FETCH_DOCUMENT_CHARS } from '@nestjs-docs/documentation-engine/retrieval/search.constants.js';
+import { DocumentationInputError } from '@nestjs-docs/documentation-engine/retrieval/documentation-input.error.js';
 import { TestSearchIndex as DocumentationSearchService } from '../../../../fixtures/test-search-index.js';
 
 describe('DocumentationSearchService', () => {
@@ -8,7 +8,7 @@ describe('DocumentationSearchService', () => {
   beforeEach(() => {
     service = new DocumentationSearchService(':memory:', '12');
   });
-  afterEach(() => service.onModuleDestroy());
+  afterEach(() => service.close());
 
   it('bounds fetched documentation content and marks truncation', () => {
     const corpus = ingestNestJsDocuments(
@@ -71,7 +71,7 @@ describe('DocumentationSearchService', () => {
     expect(complete).toContain(text.trim());
     expect(complete).toContain('unique-later-marker');
     expect(() => service.fetchDocument(docId, undefined, '999:0')).toThrow(
-      BadRequestException,
+      DocumentationInputError,
     );
     expect(service.fetchDocument(docId, 'missing')).toBeNull();
     const firstPage = service.fetchDocument(docId)!;

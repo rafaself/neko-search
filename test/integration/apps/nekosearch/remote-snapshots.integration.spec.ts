@@ -150,7 +150,7 @@ describe('NekoSearch curated source installs', () => {
         fetched.sections.map((section) => section.markdown).join('\n'),
       ).toContain('An introductory paragraph');
     } finally {
-      documentation.onModuleDestroy();
+      documentation.close();
     }
   }, 20_000);
 

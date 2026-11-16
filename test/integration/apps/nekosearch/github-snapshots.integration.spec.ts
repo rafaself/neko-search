@@ -148,7 +148,7 @@ describe('NekoSearch public GitHub snapshots', () => {
           .filter((url) => url.includes('raw.githubusercontent.com')),
       ).toHaveLength(2);
     } finally {
-      documentation.onModuleDestroy();
+      documentation.close();
     }
   });
 

@@ -24,7 +24,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-export function createMcpServerTestIndex(
+export function createDocumentationTestIndex(
   databasePath: string,
   version = '12',
   options: { documentationId?: string; revision?: string } = {},

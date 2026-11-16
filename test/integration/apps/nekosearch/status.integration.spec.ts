@@ -19,7 +19,7 @@ import {
   renderStatus,
 } from '../../../../src/apps/nekosearch/status.js';
 import type { NestJsSnapshotBuilder } from '../../../../src/apps/nekosearch/remote-snapshots.js';
-import { createMcpServerTestIndex } from '../../../fixtures/mcp-server-index.js';
+import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
 const dataDirectory = resolve(process.cwd(), 'data');
 const officialRepository = 'https://github.com/nestjs/docs.nestjs.com';
@@ -213,7 +213,7 @@ describe('nekosearch status', () => {
   ): Promise<string> {
     const directory = join(root, `snapshot-${source}-${version}`);
     mkdirSync(directory, { recursive: true });
-    createMcpServerTestIndex(join(directory, 'index.sqlite'), version, {
+    createDocumentationTestIndex(join(directory, 'index.sqlite'), version, {
       documentationId: source,
       revision,
     });

@@ -1,28 +1,25 @@
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { createMcpServerTestIndex } from '../../../fixtures/mcp-server-index.js';
+import { addSnapshot } from '../../../../src/apps/nekosearch/catalog.js';
+import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
 const entryPoint = fileURLToPath(
-  new URL(
-    '../../../../dist/apps/mcp-server/bootstrap/stdio.js',
-    import.meta.url,
-  ),
+  new URL('../../../../dist/apps/nekosearch/cli.js', import.meta.url),
 );
 
-describe('MCP stdio server', () => {
+describe('nekosearch serve stdio server', () => {
   it.each(['EOF', 'SIGINT', 'SIGTERM'] as const)(
     'shuts down on %s with only protocol messages on stdout',
     async (shutdown) => {
       const directory = mkdtempSync(join(tmpdir(), 'nekosearch-stdio-'));
-      const databasePath = join(directory, 'index.sqlite');
-      createMcpServerTestIndex(databasePath);
-      const transport = createTransport(databasePath, directory);
+      const dataHome = await createSyntheticCatalog(directory);
+      const transport = createTransport(dataHome, directory);
       const client = new Client({ name: 'lifecycle-test', version: '0.0.1' });
       const transportErrors: Error[] = [];
       let stdout = '';
@@ -58,8 +55,20 @@ describe('MCP stdio server', () => {
         const { tools } = await client.listTools();
         expect(tools.map((tool) => tool.name).sort()).toEqual([
           'fetch_docs',
+          'list_docs',
           'search_docs',
         ]);
+        const listed = await client.callTool({
+          name: 'list_docs',
+          arguments: {},
+        });
+        expect(listed.isError).not.toBe(true);
+        expect(listed.structuredContent).toMatchObject({
+          sources: [
+            { selector: 'mcp@2025-11-25' },
+            { selector: 'synthetic-mcp-documentation@12' },
+          ],
+        });
         if (shutdown === 'EOF') {
           await client.close();
         } else {
@@ -69,9 +78,12 @@ describe('MCP stdio server', () => {
           number | null,
           NodeJS.Signals | null,
         ];
-        expect(exit).toEqual(shutdown === 'EOF' ? [0, null] : [null, shutdown]);
+        expect(exit).toEqual([
+          shutdown === 'EOF' ? 0 : shutdown === 'SIGINT' ? 130 : 143,
+          null,
+        ]);
         expect(transportErrors).toEqual([]);
-        expect(stderr).toContain('NestFactory');
+        expect(stderr).toContain('NekoSearch MCP server ready on stdio');
         expectProtocolStdout(stdout);
       } finally {
         clearTimeout(timeout);
@@ -89,9 +101,8 @@ describe('MCP stdio server', () => {
 
   it('writes debug timing to stderr while keeping stdout protocol-only', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'nekosearch-stdio-'));
-    const databasePath = join(directory, 'index.sqlite');
-    createMcpServerTestIndex(databasePath);
-    const transport = createTransport(databasePath, directory, { DEBUG: '1' });
+    const dataHome = await createSyntheticCatalog(directory);
+    const transport = createTransport(dataHome, directory, { DEBUG: '1' });
     const client = new Client({ name: 'timing-test', version: '0.0.1' });
     const transportErrors: Error[] = [];
     let stdout = '';
@@ -126,24 +137,53 @@ describe('MCP stdio server', () => {
       const result = await withTimeout(
         client.callTool({
           name: 'search_docs',
-          arguments: { query: 'ExecutionContext', limit: 1 },
+          arguments: {
+            query: 'ExecutionContext',
+            sources: ['synthetic-mcp-documentation@12'],
+            limit: 1,
+          },
         }),
         'stdio MCP tool call',
       );
       expect(result.isError).not.toBe(true);
-      expect(result.structuredContent).toMatchObject({
-        documentationId: 'synthetic-mcp-documentation',
-        documentationVersion: '12',
-        results: [
-          {
-            sourceRevision: 'mcp-synthetic-revision',
-            canonicalUrl: 'https://docs.example.test/execution-context#api',
-          },
-        ],
+      const searchResponse = result.structuredContent as {
+        groups: Array<{
+          selector: string;
+          results: Array<{
+            documentId: string;
+            chunkId: string;
+            sourceRevision: string;
+            canonicalUrl: string;
+          }>;
+        }>;
+      };
+      const hit = searchResponse.groups[0]?.results[0];
+      if (!hit) throw new Error('search_docs returned no result');
+      expect(hit).toMatchObject({
+        sourceRevision: 'mcp-synthetic-revision',
+        canonicalUrl: 'https://docs.example.test/execution-context#api',
       });
+      expect(searchResponse.groups[0]?.selector).toBe(
+        'synthetic-mcp-documentation@12',
+      );
       expect(JSON.stringify(result)).toContain(
         'provides execution-context details',
       );
+      const fetched = await client.callTool({
+        name: 'fetch_docs',
+        arguments: {
+          selector: 'synthetic-mcp-documentation@12',
+          documentId: hit.documentId,
+          sectionId: hit.chunkId,
+        },
+      });
+      expect(fetched.isError).not.toBe(true);
+      expect(fetched.structuredContent).toMatchObject({
+        selector: 'synthetic-mcp-documentation@12',
+        version: '12',
+        found: true,
+        sourceRevision: 'mcp-synthetic-revision',
+      });
       await client.close();
       await withTimeout(closed, 'stdio server shutdown');
       expect(transportErrors).toEqual([]);
@@ -163,22 +203,32 @@ describe('MCP stdio server', () => {
 });
 
 function createTransport(
-  databasePath: string,
+  dataHome: string,
   cwd: string,
   environment: NodeJS.ProcessEnv = {},
 ): StdioClientTransport {
   return new StdioClientTransport({
     command: process.execPath,
-    args: [entryPoint],
+    args: [entryPoint, 'serve'],
     cwd,
     env: {
       ...process.env,
-      DOCUMENTATION_INDEX_PATH: databasePath,
-      DOCUMENTATION_INDEX_MANIFEST_PATH: join(cwd, 'manifest.json'),
+      XDG_DATA_HOME: dataHome,
       ...environment,
     },
     stderr: 'pipe',
   });
+}
+
+async function createSyntheticCatalog(directory: string): Promise<string> {
+  const dataHome = join(directory, 'data');
+  const snapshotDirectory = join(directory, 'snapshot');
+  mkdirSync(snapshotDirectory);
+  createDocumentationTestIndex(join(snapshotDirectory, 'index.sqlite'));
+  await addSnapshot(snapshotDirectory, {
+    catalogRoot: join(dataHome, 'nekosearch'),
+  });
+  return dataHome;
 }
 
 function getChildProcess(

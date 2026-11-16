@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
+import { DocumentationInputError } from './documentation-input.error.js';
 import {
   MAX_DOCUMENT_ID_LENGTH,
   MAX_SEARCH_QUERY_LENGTH,
@@ -27,9 +27,11 @@ const documentIdSchema = z
 export function buildSearchExpression(query: unknown, limit: number): string {
   const parsed = searchQuerySchema.safeParse(query);
   if (!parsed.success)
-    throw new BadRequestException(parsed.error.issues[0]?.message);
+    throw new DocumentationInputError(
+      parsed.error.issues[0]?.message ?? 'Invalid search query',
+    );
   if (!resultLimitSchema.safeParse(limit).success) {
-    throw new BadRequestException(
+    throw new DocumentationInputError(
       'Search result limit must be a positive integer',
     );
   }
@@ -37,7 +39,7 @@ export function buildSearchExpression(query: unknown, limit: number): string {
     ...new Set(parsed.data.trim().match(/[\p{L}\p{N}_]+/gu) ?? []),
   ];
   if (terms.length > MAX_SEARCH_QUERY_TERMS) {
-    throw new BadRequestException(
+    throw new DocumentationInputError(
       `Search query must contain at most ${MAX_SEARCH_QUERY_TERMS} terms`,
     );
   }
@@ -56,7 +58,7 @@ export function buildSearchExpression(query: unknown, limit: number): string {
 export function validateDocumentId(documentId: unknown): string {
   const parsed = documentIdSchema.safeParse(documentId);
   if (!parsed.success)
-    throw new BadRequestException('Document ID must be a non-empty string');
+    throw new DocumentationInputError('Document ID must be a non-empty string');
   return parsed.data;
 }
 

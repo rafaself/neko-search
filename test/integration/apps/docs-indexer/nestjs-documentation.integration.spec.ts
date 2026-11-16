@@ -161,7 +161,7 @@ describe('NestJS documentation source integration', () => {
         );
         expect(result?.sourceRevision).toBe(expectedRevision);
       } finally {
-        search.onModuleDestroy();
+        search.close();
       }
     }
 

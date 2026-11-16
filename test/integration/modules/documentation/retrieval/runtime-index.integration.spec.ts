@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { McpServerModule } from '../../../../../src/apps/mcp-server/mcp-server.module.js';
 import { ingestNestJsDocuments } from '../../../../fixtures/ingestion.fixtures.js';
 import {
   DOCUMENTATION_INDEX_FORMAT_VERSION,
@@ -49,10 +48,8 @@ describe('read-only documentation index startup', () => {
     }
   }
 
-  it('prevents MCP startup without creating a missing file or directory', () => {
-    expect(() => McpServerModule.register(path)).toThrow(
-      /missing or unreadable/u,
-    );
+  it('refuses to open a missing index without creating a file or directory', () => {
+    expect(() => new TestDocumentationSearchService(path, '12')).toThrow();
     expect(existsSync(path)).toBe(false);
     expect(existsSync(join(directory, 'nested'))).toBe(false);
   });
@@ -128,7 +125,7 @@ describe('read-only documentation index startup', () => {
     writer.close();
     const service = new TestDocumentationSearchService(path, '12');
     expect(service.search('content')).toHaveLength(1);
-    service.onModuleDestroy();
+    service.close();
     expect(() => new TestDocumentationSearchService(path, '11')).toThrow(
       /selected documentation version/u,
     );
@@ -190,7 +187,7 @@ describe('read-only documentation index startup', () => {
         );
         expect(service.search('searchable')).toHaveLength(1);
       } finally {
-        service.onModuleDestroy();
+        service.close();
       }
     },
   );
@@ -228,14 +225,14 @@ describe('read-only documentation index startup', () => {
       try {
         expect(service.search(word!)).toHaveLength(1);
       } finally {
-        service.onModuleDestroy();
+        service.close();
       }
     }
     const service = new TestDocumentationSearchService(path, '12');
     try {
       expect(service.search('firstmarker')).toEqual([]);
     } finally {
-      service.onModuleDestroy();
+      service.close();
     }
   });
 });

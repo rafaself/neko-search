@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';

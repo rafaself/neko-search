@@ -13,6 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -81,12 +82,13 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   const fixtureSnapshotDirectory = join(temporaryDirectory, 'fastapi-snapshot');
   await mkdir(xdgDataHome);
   await mkdir(fixtureDirectory);
+  await mkdir(join(fixtureDirectory, 'reference'));
   await writeFile(
     join(fixtureDirectory, 'index.md'),
-    '# FastAPI\n\nFastAPI uses sharedtopic, dependency injection, and the mandacaru fixture token. The offline-link-origin-probe identifies this page.\n\n[Offline target](./guide.mdx#offline-link-target)\n',
+    '# FastAPI\n\nFastAPI uses sharedtopic, dependency injection, and the mandacaru fixture token. The offline-link-origin-probe identifies this page.\n\n[Offline target](./reference/guide.mdx#offline-link-target)\n',
   );
   await writeFile(
-    join(fixtureDirectory, 'guide.mdx'),
+    join(fixtureDirectory, 'reference', 'guide.mdx'),
     [
       '---',
       'title: Guia de MDX',
@@ -131,6 +133,19 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     buildOutput,
     '',
     'build should keep stdout available to callers',
+  );
+  const firstBuiltCorpus = JSON.parse(
+    await readFile(join(fixtureSnapshotDirectory, 'corpus.json'), 'utf8'),
+  );
+  assert.ok(
+    firstBuiltCorpus.documents
+      .flatMap((document) => document.chunks)
+      .flatMap((chunk) => chunk.references ?? [])
+      .some(
+        (reference) =>
+          reference.href === './reference/guide.mdx#offline-link-target',
+      ),
+    'the installed binary build command should resolve the nested MDX link',
   );
   assert.deepEqual((await readdir(fixtureSnapshotDirectory)).sort(), [
     'corpus.json',
@@ -179,7 +194,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   );
   await writeFile(
     join(fixtureDirectory, 'index.md'),
-    '# FastAPI\n\nThe local snapshot now preserves the updated mandacaru token.\n',
+    '# FastAPI\n\nThe offline-link-origin-probe now identifies the updated page. The local snapshot preserves the updated mandacaru token.\n\n[Offline target](./reference/guide.mdx#offline-link-target)\n',
   );
   run(
     binary,
@@ -193,6 +208,19 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     ],
     { cwd: project, env: guardedEnvironment },
   );
+  const updatedBuiltCorpus = JSON.parse(
+    await readFile(join(updatedSnapshotDirectory, 'corpus.json'), 'utf8'),
+  );
+  assert.ok(
+    updatedBuiltCorpus.documents
+      .flatMap((document) => document.chunks)
+      .flatMap((chunk) => chunk.references ?? [])
+      .some(
+        (reference) =>
+          reference.href === './reference/guide.mdx#offline-link-target',
+      ),
+    'the updated installed binary build should preserve its nested MDX link',
+  );
   const { updateSnapshot } = await import(
     pathToFileURL(join(root, 'dist/apps/nekosearch/catalog.js')).href
   );
@@ -202,6 +230,23 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   assert.equal(update.changed, true);
   const updatedRevision = update.entry.revision;
   assert.match(updatedRevision, /^[a-f0-9]{64}$/u);
+  const updatedIndex = new DatabaseSync(update.entry.databasePath, {
+    readOnly: true,
+  });
+  let storedReferenceCount;
+  try {
+    storedReferenceCount = Number(
+      updatedIndex
+        .prepare('SELECT COUNT(*) AS count FROM documentation_references')
+        .get()?.count,
+    );
+  } finally {
+    updatedIndex.close();
+  }
+  assert.ok(
+    storedReferenceCount > 0,
+    'the activated local snapshot should retain its resolved link rows',
+  );
   const codexStateAfterSnapshotUpdate = JSON.parse(
     await readFile(codexStateAfterConfigure.stateFile, 'utf8'),
   );
@@ -553,11 +598,12 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     );
     assert.ok(!linkOriginPage.isError);
     const resolvedReference = linkOriginPage.structuredContent.references.find(
-      (reference) => reference.href === './guide.mdx#offline-link-target',
+      (reference) =>
+        reference.href === './reference/guide.mdx#offline-link-target',
     );
     assert.ok(
       resolvedReference,
-      'the installed snapshot should expose its resolved internal link',
+      `the installed snapshot should expose its resolved internal link; returned references: ${JSON.stringify(linkOriginPage.structuredContent.references)}; sections: ${JSON.stringify(linkOriginPage.structuredContent.sections)}`,
     );
     assert.match(resolvedReference.documentId, /^documentation:v1:/u);
     assert.ok(
@@ -864,11 +910,10 @@ async function main() {
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/documentation-link-resolver.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/markdown-parser.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/retrieval/documentation-input.error.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-integrity.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-writer.js',
-      'node_modules/reflect-metadata/Reflect.js',
-      'node_modules/reflect-metadata/package.json',
     ]) {
       assert.ok(files.has(path), `the npm tarball must include ${path}`);
     }
@@ -1068,17 +1113,21 @@ process.once('exit', () => {
       }),
     );
     const installedDependencyNames = collectDependencyNames(dependencyTree);
+    assert.ok(
+      [...installedDependencyNames].every(
+        (name) => !name.startsWith('@nestjs/'),
+      ),
+      'NestJS framework packages must be absent from the production dependency tree',
+    );
     for (const excludedPackage of [
-      '@nestjs/core',
-      '@nestjs/mcp',
-      '@nestjs/platform-express',
       '@modelcontextprotocol/client',
       'eventsource',
       'eventsource-parser',
       'express',
+      'reflect-metadata',
+      'rxjs',
       'jest',
       'typescript',
-      '@nestjs/cli',
       'eslint',
     ]) {
       assert.ok(
@@ -1099,7 +1148,6 @@ process.once('exit', () => {
     for (const developmentOnlyPackage of [
       'typescript',
       'jest',
-      '@nestjs/cli',
       '@modelcontextprotocol/client',
     ]) {
       try {

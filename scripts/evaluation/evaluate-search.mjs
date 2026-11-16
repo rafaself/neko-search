@@ -235,7 +235,7 @@ const report = {};
 for (const version of [11, 12]) {
   const databasePath = join(root, 'data', `documentation-v${version}.sqlite`);
   const store = new SQLiteDocumentationStore(databasePath, version);
-  const service = new DocumentationSearchService(store, version);
+  const service = new DocumentationSearchService(store, store.indexManifest);
   const database = new DatabaseSync(databasePath, { readOnly: true });
   const comparisons = {
     baseline: [],
@@ -359,7 +359,7 @@ for (const version of [11, 12]) {
     }
   } finally {
     database.close();
-    store.onModuleDestroy();
+    store.close();
   }
   report[version] = Object.fromEntries(
     Object.entries(comparisons).map(([name, rows]) => [name, metrics(rows)]),

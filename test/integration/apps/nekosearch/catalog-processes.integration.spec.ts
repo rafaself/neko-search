@@ -10,7 +10,7 @@ import { access, readFile, readdir, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createMcpServerTestIndex } from '../../../fixtures/mcp-server-index.js';
+import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 import {
   addSnapshot,
   listCatalogIndexes,
@@ -295,7 +295,7 @@ try {
   ): string {
     const directory = join(root, `${source}-${revision}`);
     mkdirSync(directory, { recursive: true });
-    createMcpServerTestIndex(join(directory, 'index.sqlite'), version, {
+    createDocumentationTestIndex(join(directory, 'index.sqlite'), version, {
       documentationId: source,
       revision,
     });

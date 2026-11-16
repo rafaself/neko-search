@@ -57,8 +57,8 @@ describe('generic documentation indexes', () => {
       expect(alphaService.fetchDocument(betaId)).toBeNull();
       expect(betaService.fetchDocument(alphaId)).toBeNull();
     } finally {
-      alphaService.onModuleDestroy();
-      betaService.onModuleDestroy();
+      alphaService.close();
+      betaService.close();
     }
   });
 

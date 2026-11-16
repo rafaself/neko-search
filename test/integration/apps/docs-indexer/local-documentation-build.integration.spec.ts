@@ -250,7 +250,7 @@ describe('local documentation build command', () => {
         },
       };
     } finally {
-      service.onModuleDestroy();
+      service.close();
     }
   }
 });
