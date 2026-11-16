@@ -9,7 +9,7 @@
 
 ### Description
 
-A local, read-only MCP server for searching and fetching NestJS documentation. It includes indexed documentation for NestJS 11 and 12 and runs offline after the index is prepared. The server supports stdio and loopback Streamable HTTP through the official [`@nestjs/mcp`](https://docs.nestjs.com/mcp/overview) package. This is a community project and is not affiliated with NestJS.
+NekoSearch gives AI assistants local access to versioned NestJS documentation. It ships validated indexes for NestJS 11 and 12 and returns relevant sections with canonical source URLs and upstream revisions. Connect over stdio or loopback Streamable HTTP; the selected index is read-only, and the server does not download documentation at runtime. NekoSearch is independently maintained and is not affiliated with NestJS.
 
 ---
 
