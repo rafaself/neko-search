@@ -9,7 +9,9 @@ import {
 
 const [command, ...arguments_] = process.argv.slice(2);
 
-if (command === 'serve' && arguments_.length === 0) {
+if (command === 'build') {
+  runBuildCommand(arguments_);
+} else if (command === 'serve' && arguments_.length === 0) {
   serve().catch((error: unknown) => {
     process.stderr.write(`nekosearch serve failed: ${formatError(error)}\n`);
     process.exitCode = 1;
@@ -85,9 +87,38 @@ function runRemoteSnapshotCommand(
     });
 }
 
+function runBuildCommand(arguments_: string[]): void {
+  void import('./build.js')
+    .then(({ buildLocalSnapshot }) => buildLocalSnapshot(arguments_))
+    .then((summary) => {
+      process.stderr.write(
+        [
+          `Built documentation ${summary.id}@${summary.version}`,
+          `  source revision: ${summary.sourceRevision}`,
+          `  documents: ${summary.documentCount}`,
+          `  chunks: ${summary.chunkCount}`,
+          `  output: ${summary.outputDirectory}`,
+        ].join('\n') + '\n',
+      );
+      for (const diagnostic of summary.diagnostics) {
+        process.stderr.write(
+          `Warning ${diagnostic.path}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.message}\n`,
+        );
+      }
+      if (summary.cleanupWarning) {
+        process.stderr.write(`Warning ${summary.cleanupWarning}\n`);
+      }
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(`nekosearch build failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
+}
+
 function usage(): string {
   return [
     'Usage:',
+    '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
     '  nekosearch serve',
     '  nekosearch list',
     '  nekosearch add --from <snapshot-dir>',

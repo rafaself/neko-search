@@ -110,12 +110,18 @@ describe('package index verification', () => {
     );
     for (const path of [
       'dist/apps/nekosearch/serve.js',
+      'dist/apps/nekosearch/build.js',
+      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
+      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
+      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
       'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
       'dist/modules/documentation/mcp/documentation-tool-handlers.js',
       'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
       'dist/shared/config/package-metadata.js',
-    ])
+    ]) {
+      mkdirSync(join(root, path, '..'), { recursive: true });
       writeFileSync(join(root, path), '');
+    }
     copyFileSync(
       join(repositoryRoot, 'packages/documentation-engine/package.json'),
       join(root, 'packages/documentation-engine/package.json'),

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -153,18 +160,80 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   const binary = join(project, 'node_modules', '.bin', 'nekosearch');
   const guardPath = join(project, 'network-guard.mjs');
   const networkMarker = join(project, 'network-blocked');
+  const mdxExecutionMarker = join(project, 'mdx-executed');
   const xdgDataHome = join(project, 'xdg-data');
+  const fixtureDirectory = join(temporaryDirectory, 'minha-api-docs');
+  const fixtureSnapshotDirectory = join(
+    temporaryDirectory,
+    'minha-api-snapshot',
+  );
   const snapshotDirectory = join(temporaryDirectory, 'local-nest-v12');
   await mkdir(xdgDataHome);
-  await createLocalNestSnapshot(snapshotDirectory);
+  await mkdir(fixtureDirectory);
+  await writeFile(
+    join(fixtureDirectory, 'index.md'),
+    '# Minha API\n\nA busca local preserva tokens de mandacaru no contexto.\n',
+  );
+  await writeFile(
+    join(fixtureDirectory, 'guide.mdx'),
+    [
+      '---',
+      'title: Guia de MDX',
+      '---',
+      '',
+      '# Guia de MDX',
+      '',
+      '<Callout type="note">Jabuticaba e mandacaru aparecem no guia estático.</Callout>',
+      '',
+      '{globalThis.__nekosearchMdxExecuted = true}',
+      '',
+    ].join('\n'),
+  );
+  const catalogDirectory = join(xdgDataHome, 'nekosearch');
+  const catalogFile = join(catalogDirectory, 'catalog.json');
   const guardedEnvironment = withoutIndexPathOverrides({
     ...process.env,
     PATH: process.env.PATH ?? '',
     NODE_OPTIONS: `--import=${pathToFileURL(guardPath).href}`,
     NEKOSEARCH_NETWORK_GUARD_MARKER: networkMarker,
+    NEKOSEARCH_MDX_EXECUTION_MARKER: mdxExecutionMarker,
     XDG_DATA_HOME: xdgDataHome,
   });
 
+  const buildOutput = run(
+    binary,
+    [
+      'build',
+      fixtureDirectory,
+      '--id',
+      'minha-api@1',
+      '--output',
+      fixtureSnapshotDirectory,
+    ],
+    { cwd: project, env: guardedEnvironment },
+  );
+  assert.equal(
+    buildOutput,
+    '',
+    'build should keep stdout available to callers',
+  );
+  assert.deepEqual((await readdir(fixtureSnapshotDirectory)).sort(), [
+    'corpus.json',
+    'index.sqlite',
+    'manifest.json',
+  ]);
+  await assert.rejects(readFile(catalogFile), { code: 'ENOENT' });
+  await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
+  await assert.rejects(readFile(mdxExecutionMarker), { code: 'ENOENT' });
+
+  const fixtureAdded = run(
+    binary,
+    ['add', '--from', fixtureSnapshotDirectory],
+    { cwd: project, env: guardedEnvironment },
+  );
+  assert.match(fixtureAdded, /Added minha-api@1 revision /u);
+
+  await createLocalNestSnapshot(snapshotDirectory);
   const added = run(binary, ['add', '--from', snapshotDirectory], {
     cwd: project,
     env: guardedEnvironment,
@@ -209,9 +278,11 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   assert.match(rows.get('nestjs@12')?.revision ?? '', /^[a-f0-9]{40}$/u);
   assert.equal(rows.get('nestjs@12')?.status, 'installed');
   assert.equal(rows.get('nestjs@12')?.revision, updatedRevision);
+  assert.match(rows.get('minha-api@1')?.revision ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal(rows.get('minha-api@1')?.status, 'installed');
   assert.equal(
     rows.size,
-    4,
+    5,
     'the catalog should show all bundled and installed indexes',
   );
 
@@ -223,6 +294,10 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     (snapshot) => snapshot.source === 'nestjs' && snapshot.version === '12',
   )?.directoryKey;
   assert.match(installedSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
+  const fixtureSnapshotKey = catalogRegistry.snapshots.find(
+    (snapshot) => snapshot.source === 'minha-api' && snapshot.version === '1',
+  )?.directoryKey;
+  assert.match(fixtureSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
   const indexPaths = [
     join(installedPackage, 'data', 'mcp-protocol', 'index.sqlite'),
     join(installedPackage, 'data', 'documentation-v11.sqlite'),
@@ -232,6 +307,13 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       'nekosearch',
       'snapshots',
       installedSnapshotKey,
+      'index.sqlite',
+    ),
+    join(
+      xdgDataHome,
+      'nekosearch',
+      'snapshots',
+      fixtureSnapshotKey,
       'index.sqlite',
     ),
   ];
@@ -347,9 +429,40 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     assert.equal(localNestHit.version, '12');
     assert.match(localNestHit.canonicalUrl, /^https:\/\/docs\.nestjs\.com\//u);
 
+    const localFixtureSearch = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          source: 'minha-api',
+          version: '1',
+          query: 'mandacaru',
+          limit: 3,
+        },
+      }),
+      'installed local fixture search_docs',
+    );
+    assert.ok(!localFixtureSearch.isError);
+    const localFixtureData = localFixtureSearch.structuredContent;
+    assert.equal(localFixtureData.source, 'minha-api');
+    assert.equal(localFixtureData.version, '1');
+    assert.equal(localFixtureData.documentationId, 'minha-api');
+    assert.equal(localFixtureData.documentationVersion, '1');
+    assert.match(localFixtureData.revision, /^[a-f0-9]{64}$/u);
+    assert.ok(localFixtureData.results.length > 0);
+    const localFixtureHit = localFixtureData.results[0];
+    assert.equal(localFixtureHit.source, 'minha-api');
+    assert.equal(localFixtureHit.version, '1');
+    assert.match(localFixtureHit.canonicalUrl, /^https:\/\/docs\.example\//u);
+    assert.ok(
+      localFixtureData.results.some((result) =>
+        result.excerpt.includes('mandacaru'),
+      ),
+    );
+
     for (const [sourceData, hit] of [
       [protocolData, protocolHit],
       [localNestData, localNestHit],
+      [localFixtureData, localFixtureHit],
     ]) {
       assert.ok(
         sourceData.results.every(
@@ -509,6 +622,10 @@ async function main() {
       'licenses/nestjs-docs-v12-LICENSE',
       'dist/apps/nekosearch/cli.js',
       'dist/apps/nekosearch/serve.js',
+      'dist/apps/nekosearch/build.js',
+      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
+      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
+      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
       'dist/apps/nekosearch/catalog.js',
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/catalog-contract.js',
@@ -519,6 +636,13 @@ async function main() {
       'node_modules/@nestjs-docs/documentation-engine/package.json',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/sqlite-documentation-store.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/runtime-index.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/application/services/documentation-ingestion.service.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/filesystem/documentation-discovery.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/markdown-parser.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-integrity.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-writer.js',
     ]) {
       assert.ok(files.has(path), `the npm tarball must include ${path}`);
     }
@@ -528,19 +652,37 @@ async function main() {
         'the npm tarball should omit NestJS corpus files after package validation',
       );
     }
+    const buildRuntimeFiles = new Set([
+      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
+      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
+      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
+    ]);
+    const buildEngineFiles = new Set([
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/markdown-parser.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/filesystem/documentation-discovery.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-corpus.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-integrity.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/index-writer.js',
+    ]);
     for (const path of files) {
       assert.ok(
         !path.startsWith('dist/apps/mcp-server/') &&
           !path.startsWith('dist/apps/docs-indexer/') &&
-          !path.startsWith(
+          (!path.startsWith('dist/apps/nekosearch/build-runtime/') ||
+            buildRuntimeFiles.has(path)) &&
+          (!path.startsWith(
             'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/',
-          ) &&
-          !path.startsWith(
+          ) ||
+            buildEngineFiles.has(path)) &&
+          (!path.startsWith(
             'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/filesystem/',
-          ) &&
-          !path.startsWith(
+          ) ||
+            buildEngineFiles.has(path)) &&
+          (!path.startsWith(
             'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/indexing/',
-          ) &&
+          ) ||
+            buildEngineFiles.has(path)) &&
           !path.endsWith('/documentation.tools.js') &&
           !path.endsWith('/documentation-mcp.module.js'),
         `the npm tarball should exclude HTTP and build-only code: ${path}`,
@@ -584,6 +726,12 @@ globalThis.fetch = function () {
   if (marker) writeFileSync(marker, 'fetch');
   return Promise.reject(new Error('NETWORK_BLOCKED: fetch'));
 };
+process.once('exit', () => {
+  const marker = process.env.NEKOSEARCH_MDX_EXECUTION_MARKER;
+  if (marker && globalThis.__nekosearchMdxExecuted) {
+    writeFileSync(marker, 'executed');
+  }
+});
 `;
     const guardPath = join(project, 'network-guard.mjs');
     await writeFile(guardPath, networkGuard);
@@ -600,24 +748,39 @@ globalThis.fetch = function () {
     );
 
     const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
-    const [cliSource, serveSource, remoteSnapshotSource] = await Promise.all([
-      readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
-      readFile(join(installedPackage, 'dist/apps/nekosearch/serve.js'), 'utf8'),
-      readFile(
-        join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
-        'utf8',
-      ),
-    ]);
+    const [cliSource, serveSource, remoteSnapshotSource, buildSource] =
+      await Promise.all([
+        readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
+        readFile(
+          join(installedPackage, 'dist/apps/nekosearch/serve.js'),
+          'utf8',
+        ),
+        readFile(
+          join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
+          'utf8',
+        ),
+        readFile(
+          join(installedPackage, 'dist/apps/nekosearch/build.js'),
+          'utf8',
+        ),
+      ]);
     assert.match(cliSource, /import\('\.\/remote-snapshots\.js'\)/u);
+    assert.match(cliSource, /import\('\.\/build\.js'\)/u);
     assert.doesNotMatch(cliSource, /^import .*remote-snapshots/mu);
+    assert.doesNotMatch(cliSource, /^import .*build\.js/mu);
     assert.doesNotMatch(
       serveSource,
-      /remote-snapshots|markdown-parser|docs-indexer/u,
+      /remote-snapshots|markdown-parser|document-normalizer|docs-indexer|build-runtime/u,
     );
     assert.doesNotMatch(
       remoteSnapshotSource,
       /markdown-parser|document-normalizer|docs-indexer/u,
     );
+    assert.match(
+      buildSource,
+      /build-runtime\/services\/build-local-documentation\.js/u,
+    );
+    assert.doesNotMatch(buildSource, /@mdx-js\/mdx|remark-gfm/u);
     const installedEngine = join(
       installedPackage,
       'node_modules',
@@ -629,18 +792,15 @@ globalThis.fetch = function () {
       'dist/infrastructure/sqlite/sqlite-documentation-store.js',
       'dist/infrastructure/sqlite/runtime-index.js',
       'dist/domain/documentation.schemas.js',
+      'dist/infrastructure/markdown/markdown-parser.js',
+      'dist/infrastructure/markdown/document-normalizer.js',
+      'dist/infrastructure/filesystem/documentation-discovery.js',
+      'dist/infrastructure/sqlite/indexing/index-writer.js',
+      'dist/infrastructure/sqlite/indexing/index-integrity.js',
+      'dist/infrastructure/sqlite/indexing/index-corpus.js',
+      'dist/application/services/documentation-ingestion.service.js',
     ]) {
       await readFile(join(installedEngine, runtimePath));
-    }
-    for (const buildOnlyPath of [
-      'infrastructure/markdown/markdown-parser.js',
-      'infrastructure/filesystem/documentation-discovery.js',
-      'infrastructure/sqlite/indexing/index-writer.js',
-    ]) {
-      await assert.rejects(
-        readFile(join(installedEngine, 'dist', buildOnlyPath)),
-        { code: 'ENOENT' },
-      );
     }
     const dependencyTree = JSON.parse(
       run('npm', ['ls', '--all', '--omit=dev', '--json'], {
@@ -654,8 +814,6 @@ globalThis.fetch = function () {
       '@nestjs/mcp',
       '@nestjs/platform-express',
       '@modelcontextprotocol/client',
-      '@mdx-js/mdx',
-      'remark-gfm',
       'eventsource',
       'eventsource-parser',
       'express',
@@ -668,6 +826,12 @@ globalThis.fetch = function () {
       assert.ok(
         !installedDependencyNames.has(excludedPackage),
         `${excludedPackage} must be absent from the production dependency tree`,
+      );
+    }
+    for (const requiredBuildDependency of ['@mdx-js/mdx', 'remark-gfm']) {
+      assert.ok(
+        installedDependencyNames.has(requiredBuildDependency),
+        `${requiredBuildDependency} must be installed for the offline build command`,
       );
     }
     for (const developmentOnlyPackage of [

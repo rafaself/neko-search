@@ -56,10 +56,13 @@ nekosearch list
 The catalog displays each documentation source, version, source revision, and whether it is bundled or installed. Add a validated local snapshot directory produced by the documentation indexer with `corpus.json`, `index.sqlite`, and `manifest.json`:
 
 ```sh
-nekosearch add --from /path/to/snapshot-directory
+nekosearch build ./docs --id minha-api@1 --output ./snapshots/minha-api
+nekosearch add --from ./snapshots/minha-api
 nekosearch list
 nekosearch serve
 ```
+
+`build` scans local Markdown and MDX files and writes a validated snapshot directory without installing it or changing the catalog. It makes no network requests; MDX is parsed as static documentation and is never compiled or executed. Use the output directory with `add --from` when you are ready to install the snapshot.
 
 Install or update a prebuilt NestJS major from the official project release:
 

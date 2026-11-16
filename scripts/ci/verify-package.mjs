@@ -45,6 +45,9 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
 
   const requiredPackageFiles = [
     'dist/apps/nekosearch/**',
+    'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
+    'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
+    'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
     'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
     'dist/modules/documentation/mcp/documentation-tool-handlers.js',
     'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
@@ -67,10 +70,23 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
   const executablePath = resolve(root, 'dist/apps/nekosearch/cli.js');
   const runtimeFiles = [
     'dist/apps/nekosearch/serve.js',
+    'dist/apps/nekosearch/build.js',
+    'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
+    'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
+    'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
     'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
     'dist/modules/documentation/mcp/documentation-tool-handlers.js',
     'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
     'dist/shared/config/package-metadata.js',
+  ];
+  const requiredBuildEngineFiles = [
+    'dist/application/services/documentation-ingestion.service.js',
+    'dist/infrastructure/filesystem/documentation-discovery.js',
+    'dist/infrastructure/markdown/document-normalizer.js',
+    'dist/infrastructure/markdown/markdown-parser.js',
+    'dist/infrastructure/sqlite/indexing/index-corpus.js',
+    'dist/infrastructure/sqlite/indexing/index-integrity.js',
+    'dist/infrastructure/sqlite/indexing/index-writer.js',
   ];
   await Promise.all([
     requireFile(executablePath),
@@ -90,6 +106,8 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
       true ||
     packageMetadata.dependencies?.['@nestjs-docs/documentation-engine'] !==
       '0.1.0' ||
+    packageMetadata.dependencies?.['@mdx-js/mdx'] !== '^3.1.1' ||
+    packageMetadata.dependencies?.['remark-gfm'] !== '^4.0.1' ||
     !packageMetadata.bundleDependencies?.includes(
       '@nestjs-docs/documentation-engine',
     ) ||
@@ -107,10 +125,13 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
     requiredPackageFiles.some(
       (path) => !packageMetadata.files?.includes(path),
     ) ||
-    enginePackage.dependencies?.['@mdx-js/mdx'] !== undefined ||
-    enginePackage.dependencies?.['remark-gfm'] !== undefined ||
-    enginePackage.devDependencies?.['@mdx-js/mdx'] !== '^3.1.1' ||
-    enginePackage.devDependencies?.['remark-gfm'] !== '^4.0.1' ||
+    enginePackage.dependencies?.['@mdx-js/mdx'] !== '^3.1.1' ||
+    enginePackage.dependencies?.['remark-gfm'] !== '^4.0.1' ||
+    enginePackage.devDependencies?.['@mdx-js/mdx'] !== undefined ||
+    enginePackage.devDependencies?.['remark-gfm'] !== undefined ||
+    requiredBuildEngineFiles.some(
+      (path) => !enginePackage.files?.includes(path),
+    ) ||
     enginePackage.files?.includes('dist/**') === true ||
     !executable.startsWith('#!/usr/bin/env node\n')
   ) {

@@ -15,22 +15,27 @@
     "dist/application/services/documentation-search.service.js",
     "dist/domain/documentation-index-manifest.schemas.js",
     "dist/domain/documentation.schemas.js",
+    "dist/application/services/documentation-ingestion.service.js",
     "dist/infrastructure/sqlite/documentation-index-manifest.js",
     "dist/infrastructure/sqlite/index-schema.js",
     "dist/infrastructure/sqlite/runtime-index.js",
     "dist/infrastructure/sqlite/sqlite-documentation-store.js",
+    "dist/infrastructure/sqlite/indexing/index-corpus.js",
+    "dist/infrastructure/sqlite/indexing/index-integrity.js",
+    "dist/infrastructure/sqlite/indexing/index-writer.js",
+    "dist/infrastructure/filesystem/documentation-discovery.js",
+    "dist/infrastructure/markdown/document-normalizer.js",
+    "dist/infrastructure/markdown/markdown-parser.js",
     "dist/retrieval/document-page.js",
     "dist/retrieval/search-input.js",
     "dist/retrieval/search.constants.js"
   ],
   "dependencies": {
+    "@mdx-js/mdx": "^3.1.1",
     "@nestjs/common": "^12.5.0",
+    "remark-gfm": "^4.0.1",
     "rxjs": "^7.8.2",
     "zod": "^4.6.7"
-  },
-  "devDependencies": {
-    "@mdx-js/mdx": "^3.1.1",
-    "remark-gfm": "^4.0.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
