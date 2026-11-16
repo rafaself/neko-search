@@ -77,16 +77,13 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   const networkMarker = join(project, 'network-blocked');
   const mdxExecutionMarker = join(project, 'mdx-executed');
   const xdgDataHome = join(project, 'xdg-data');
-  const fixtureDirectory = join(temporaryDirectory, 'minha-api-docs');
-  const fixtureSnapshotDirectory = join(
-    temporaryDirectory,
-    'minha-api-snapshot',
-  );
+  const fixtureDirectory = join(temporaryDirectory, 'fastapi-docs');
+  const fixtureSnapshotDirectory = join(temporaryDirectory, 'fastapi-snapshot');
   await mkdir(xdgDataHome);
   await mkdir(fixtureDirectory);
   await writeFile(
     join(fixtureDirectory, 'index.md'),
-    '# Minha API\n\nA busca local preserva tokens de mandacaru no contexto.\n',
+    '# FastAPI\n\nFastAPI uses sharedtopic, dependency injection, and the mandacaru fixture token.\n',
   );
   await writeFile(
     join(fixtureDirectory, 'guide.mdx'),
@@ -97,7 +94,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       '',
       '# Guia de MDX',
       '',
-      '<Callout type="note">Jabuticaba e mandacaru aparecem no guia estático.</Callout>',
+      '<Callout type="note">Jabuticaba and mandacaru appear in this static FastAPI guide.</Callout>',
       '',
       '{globalThis.__nekosearchMdxExecuted = true}',
       '',
@@ -120,7 +117,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       'build',
       fixtureDirectory,
       '--id',
-      'minha-api@1',
+      'fastapi@1',
       '--output',
       fixtureSnapshotDirectory,
     ],
@@ -164,7 +161,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     ['add', '--from', fixtureSnapshotDirectory],
     { cwd: project, env: guardedEnvironment },
   );
-  assert.match(fixtureAdded, /Added minha-api@1 revision /u);
+  assert.match(fixtureAdded, /Added fastapi@1 revision /u);
 
   const codexStateAfterConfigure = await verifyCodexConfiguration(
     binary,
@@ -174,11 +171,11 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   );
   const updatedSnapshotDirectory = join(
     temporaryDirectory,
-    'minha-api-snapshot-updated',
+    'fastapi-snapshot-updated',
   );
   await writeFile(
     join(fixtureDirectory, 'index.md'),
-    '# Minha API\n\nA busca local agora preserva os tokens de mandacaru atualizados.\n',
+    '# FastAPI\n\nThe local snapshot now preserves the updated mandacaru token.\n',
   );
   run(
     binary,
@@ -186,7 +183,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       'build',
       fixtureDirectory,
       '--id',
-      'minha-api@1',
+      'fastapi@1',
       '--output',
       updatedSnapshotDirectory,
     ],
@@ -236,8 +233,8 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   });
   assert.equal(rows.get('nestjs@12')?.revision, mockRevision);
   assert.equal(rows.get('nestjs@12')?.status, 'installed');
-  assert.match(rows.get('minha-api@1')?.revision ?? '', /^[a-f0-9]{64}$/u);
-  assert.equal(rows.get('minha-api@1')?.status, 'installed');
+  assert.match(rows.get('fastapi@1')?.revision ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal(rows.get('fastapi@1')?.status, 'installed');
   assert.equal(
     rows.size,
     3,
@@ -253,7 +250,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   )?.directoryKey;
   assert.match(installedSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
   const fixtureSnapshotKey = catalogRegistry.snapshots.find(
-    (snapshot) => snapshot.source === 'minha-api' && snapshot.version === '1',
+    (snapshot) => snapshot.source === 'fastapi' && snapshot.version === '1',
   )?.directoryKey;
   assert.match(fixtureSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
   const indexPaths = [
@@ -316,28 +313,52 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     const tools = await withTimeout(client.listTools(), 'NekoSearch listTools');
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
-      ['fetch_docs', 'search_docs'],
-      'the server must expose search_docs and fetch_docs',
+      ['fetch_docs', 'list_docs', 'search_docs'],
+      'the server must expose list_docs, search_docs, and fetch_docs',
     );
     const searchTool = tools.tools.find((tool) => tool.name === 'search_docs');
     const fetchTool = tools.tools.find((tool) => tool.name === 'fetch_docs');
+    const listTool = tools.tools.find((tool) => tool.name === 'list_docs');
     assert.deepEqual(
       Object.keys(searchTool.inputSchema.properties).sort(),
-      ['limit', 'query', 'source', 'version'],
-      'search_docs must expose selectors and no filesystem paths',
+      ['limit', 'query', 'sources'],
+      'search_docs must require source selectors and expose no filesystem paths',
     );
     assert.deepEqual(
       Object.keys(fetchTool.inputSchema.properties).sort(),
-      ['cursor', 'documentId', 'sectionId', 'source', 'version'],
-      'fetch_docs must expose selectors and no filesystem paths',
+      ['cursor', 'documentId', 'sectionId', 'selector'],
+      'fetch_docs must accept one selector and expose no filesystem paths',
+    );
+    assert.deepEqual(
+      Object.keys(listTool.inputSchema.properties),
+      [],
+      'list_docs should not require arguments',
+    );
+
+    const listed = await withTimeout(
+      client.callTool({ name: 'list_docs', arguments: {} }),
+      'list_docs',
+    );
+    assert.ok(!listed.isError, 'list_docs should succeed');
+    const listedSources = listed.structuredContent.sources;
+    assert.deepEqual(
+      listedSources.map((source) => source.selector),
+      ['fastapi@1', 'mcp@2025-11-25', 'nestjs@12'],
+    );
+    assert.ok(
+      listedSources.every(
+        (source) =>
+          Object.keys(source).sort().join(',') ===
+          'revision,selector,source,version',
+      ),
+      'list_docs must not expose filesystem paths',
     );
 
     const protocolSearch = await withTimeout(
       client.callTool({
         name: 'search_docs',
         arguments: {
-          source: 'mcp',
-          version: '2025-11-25',
+          sources: ['mcp@2025-11-25'],
           query: 'JSON-RPC messages',
           limit: 3,
         },
@@ -346,13 +367,14 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     );
     assert.ok(!protocolSearch.isError, 'MCP protocol search should succeed');
     const protocolData = protocolSearch.structuredContent;
-    assert.equal(protocolData.source, 'mcp');
-    assert.equal(protocolData.version, '2025-11-25');
-    assert.equal(protocolData.revision, '2025-11-25');
-    assert.ok(protocolData.results.length > 0);
-    const protocolHit = protocolData.results[0];
-    assert.equal(protocolHit.source, protocolData.source);
-    assert.equal(protocolHit.version, protocolData.version);
+    assert.ok(protocolData.totalResults <= 3);
+    const protocolGroup = protocolData.groups[0];
+    assert.equal(protocolGroup.selector, 'mcp@2025-11-25');
+    assert.equal(protocolGroup.source, 'mcp');
+    assert.equal(protocolGroup.version, '2025-11-25');
+    assert.equal(protocolGroup.revision, '2025-11-25');
+    assert.ok(protocolGroup.results.length > 0);
+    const protocolHit = protocolGroup.results[0];
     assert.match(
       protocolHit.canonicalUrl,
       /^https:\/\/modelcontextprotocol\.io\//u,
@@ -362,8 +384,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       client.callTool({
         name: 'search_docs',
         arguments: {
-          source: 'nestjs',
-          version: '12',
+          sources: ['nestjs@12'],
           query: 'dependency injection providers',
           limit: 3,
         },
@@ -372,22 +393,112 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     );
     assert.ok(!localNestSearch.isError);
     const localNestData = localNestSearch.structuredContent;
-    assert.equal(localNestData.source, 'nestjs');
-    assert.equal(localNestData.version, '12');
-    assert.equal(localNestData.revision, mockRevision);
-    assert.ok(localNestData.results.length > 0);
-    const localNestHit = localNestData.results[0];
-    assert.equal(localNestHit.source, 'nestjs');
-    assert.equal(localNestHit.version, '12');
+    assert.ok(localNestData.totalResults <= 3);
+    assert.equal(localNestData.groups.length, 1);
+    const localNestGroup = localNestData.groups[0];
+    assert.equal(localNestGroup.selector, 'nestjs@12');
+    assert.equal(localNestGroup.source, 'nestjs');
+    assert.equal(localNestGroup.version, '12');
+    assert.equal(localNestGroup.revision, mockRevision);
+    assert.ok(localNestGroup.results.length > 0);
+    const localNestHit = localNestGroup.results[0];
     assert.match(localNestHit.documentId, /^nestjs-doc:v12:/u);
     assert.match(localNestHit.canonicalUrl, /^https:\/\/docs\.nestjs\.com/u);
+
+    const emptySources = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: { query: 'dependency injection', sources: [] },
+      }),
+      'empty search_docs sources',
+    );
+    assert.ok(emptySources.isError);
+    assert.match(emptySources.content[0].text, /Input validation error/u);
+
+    const unknownSource = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          query: 'dependency injection',
+          sources: ['nestjs@12', 'missing@1'],
+        },
+      }),
+      'unknown search_docs source',
+    );
+    assert.ok(unknownSource.isError);
+    assert.match(unknownSource.content[0].text, /Call list_docs/u);
+
+    const tooManySources = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          query: 'dependency injection',
+          sources: [
+            'nestjs@12',
+            'fastapi@1',
+            'mcp@2025-11-25',
+            'source-4@1',
+            'source-5@1',
+            'source-6@1',
+          ],
+        },
+      }),
+      'too many search_docs sources',
+    );
+    assert.ok(tooManySources.isError);
+    assert.match(tooManySources.content[0].text, /Input validation error/u);
+
+    const overBudget = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          query: 'dependency injection',
+          sources: ['nestjs@12'],
+          limit: 11,
+        },
+      }),
+      'search_docs result budget',
+    );
+    assert.ok(overBudget.isError);
+    assert.match(overBudget.content[0].text, /Input validation error/u);
+
+    const combinedSearch = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          sources: ['nestjs@12', 'fastapi@1'],
+          query: 'mandacaru',
+          limit: 3,
+        },
+      }),
+      'NestJS and FastAPI search_docs',
+    );
+    assert.ok(!combinedSearch.isError);
+    const combinedData = combinedSearch.structuredContent;
+    assert.equal(
+      combinedData.totalResults,
+      3,
+      JSON.stringify(
+        combinedData.groups.map(({ selector, results }) => [
+          selector,
+          results.map(({ documentId, excerpt }) => ({ documentId, excerpt })),
+        ]),
+      ),
+    );
+    assert.deepEqual(
+      combinedData.groups.map((group) => group.selector),
+      ['nestjs@12', 'fastapi@1'],
+    );
+    assert.deepEqual(
+      combinedData.groups.map((group) => group.results.length),
+      [1, 2],
+    );
 
     const localFixtureSearch = await withTimeout(
       client.callTool({
         name: 'search_docs',
         arguments: {
-          source: 'minha-api',
-          version: '1',
+          sources: ['fastapi@1'],
           query: 'mandacaru',
           limit: 3,
         },
@@ -396,57 +507,43 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     );
     assert.ok(!localFixtureSearch.isError);
     const localFixtureData = localFixtureSearch.structuredContent;
-    assert.equal(localFixtureData.source, 'minha-api');
-    assert.equal(localFixtureData.version, '1');
-    assert.equal(localFixtureData.documentationId, 'minha-api');
-    assert.equal(localFixtureData.documentationVersion, '1');
-    assert.match(localFixtureData.revision, /^[a-f0-9]{64}$/u);
-    assert.ok(localFixtureData.results.length > 0);
-    const localFixtureHit = localFixtureData.results[0];
-    assert.equal(localFixtureHit.source, 'minha-api');
-    assert.equal(localFixtureHit.version, '1');
+    assert.ok(localFixtureData.totalResults <= 3);
+    const localFixtureGroup = localFixtureData.groups[0];
+    assert.equal(localFixtureGroup.selector, 'fastapi@1');
+    assert.equal(localFixtureGroup.source, 'fastapi');
+    assert.equal(localFixtureGroup.version, '1');
+    assert.match(localFixtureGroup.revision, /^[a-f0-9]{64}$/u);
+    assert.ok(localFixtureGroup.results.length > 0);
+    const localFixtureHit = localFixtureGroup.results[0];
     assert.match(localFixtureHit.canonicalUrl, /^https:\/\/docs\.example\//u);
     assert.ok(
-      localFixtureData.results.some((result) =>
+      localFixtureGroup.results.some((result) =>
         result.excerpt.includes('mandacaru'),
       ),
     );
 
-    for (const [sourceData, hit] of [
-      [protocolData, protocolHit],
-      [localNestData, localNestHit],
-      [localFixtureData, localFixtureHit],
+    for (const [sourceGroup, hit] of [
+      [protocolGroup, protocolHit],
+      [localNestGroup, localNestHit],
+      [localFixtureGroup, localFixtureHit],
     ]) {
-      assert.ok(
-        sourceData.results.every(
-          (result) =>
-            result.source === sourceData.source &&
-            result.version === sourceData.version,
-        ),
-        'each search response must contain results from only the selected index',
-      );
       const fetched = await withTimeout(
         client.callTool({
           name: 'fetch_docs',
           arguments: {
-            source: hit.source,
-            version: hit.version,
+            selector: sourceGroup.selector,
             documentId: hit.documentId,
             sectionId: hit.chunkId,
           },
         }),
-        `${sourceData.source}@${sourceData.version} fetch_docs`,
+        `${sourceGroup.selector} fetch_docs`,
       );
       assert.ok(!fetched.isError, 'fetch_docs should succeed');
       const document = fetched.structuredContent;
-      assert.equal(document.source, sourceData.source);
-      assert.equal(document.version, sourceData.version);
-      assert.equal(document.revision, sourceData.revision);
-      assert.equal(document.documentationId, sourceData.documentationId);
-      assert.equal(
-        document.documentationVersion,
-        sourceData.documentationVersion,
-      );
+      assert.equal(document.selector, sourceGroup.selector);
+      assert.equal(document.source, sourceGroup.source);
+      assert.equal(document.version, sourceGroup.version);
+      assert.equal(document.revision, sourceGroup.revision);
       assert.equal(document.found, true);
       assert.equal(document.sourceRevision, hit.sourceRevision);
       assert.ok(document.sections.length > 0);
@@ -805,7 +902,7 @@ globalThis.fetch = async function (input) {
         ['src/app/shared/nav/nav-items.ts', "export const NAV_ITEMS: NavItem[] = [{ path: '/' }];"],
         ['tools/generate-llms-txt.ts', "const CONTENT_ALIASES: Record<string, string> = {\\n  '/': 'introduction',\\n};"],
         ['content/migration.md', '# Migration guide\\n\\nThis article walks you through migrating from NestJS version 11 to version 12.'],
-        ['content/introduction.md', '# NestJS package smoke\\n\\nA modular framework uses dependency injection and providers.'],
+        ['content/introduction.md', '# NestJS package smoke\\n\\nA modular framework uses dependency injection and providers around sharedtopic and mandacaru.'],
       ]);
       const body = files.get(path);
       return new Response(body ?? 'Not Found', { status: body ? 200 : 404 });

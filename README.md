@@ -7,7 +7,7 @@
 
 ---
 
-NekoSearch builds and serves local documentation indexes. Bring your own Markdown or MDX files, install a curated source such as NestJS, then search and fetch from one source and version at a time. The server runs over stdio, opens SQLite indexes read-only, and does not fetch documentation while serving.
+NekoSearch builds and serves local documentation indexes. Bring your own Markdown or MDX files, install a curated source such as NestJS, then search selected sources together or individually. Results stay grouped by source, and each fetch uses one exact source selector. The server runs over stdio, opens SQLite indexes read-only, and does not fetch documentation while serving.
 
 NekoSearch is a generic documentation server. NestJS is an optional curated example; no NestJS index is bundled or required. The package includes a small summary of the MCP protocol specification as a documentation source. That reference content is separate from NekoSearch itself, which is an MCP server.
 
@@ -65,16 +65,17 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 | `nekosearch serve`                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections. |
 | `nekosearch mcp configure codex`            | No             | Registers the local executable with the installed Codex CLI.                 |
 
-`serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing or updating a snapshot to load the new catalog. Search results include their source, version, URL, and revision; use those selectors with `fetch_docs` to read the matching document.
+`serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing or updating a snapshot to load the new catalog. MCP clients discover sources with `list_docs`; each entry has a selector such as `nestjs@12`, its source and version, and the pinned revision. No CLI command is needed for discovery.
 
 ## MCP tools
 
-| Tool          | Arguments                                                            | Behavior                                                |
-| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------- |
-| `search_docs` | `query`, `source`, `version`, optional `limit` (1–10)                | Searches exactly one source and version.                |
-| `fetch_docs`  | `source`, `version`, `documentId`, optional `sectionId` and `cursor` | Fetches bounded Markdown from the matching local index. |
+| Tool          | Arguments                                                                                    | Behavior                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `list_docs`   | None                                                                                         | Lists each loaded selector, source, version, and revision. It does not expose filesystem paths.       |
+| `search_docs` | `query`, required non-empty `sources` (1–5 selectors), optional `limit` (1–10 total results) | Searches only the requested indexes and returns separate ranked groups per selector.                  |
+| `fetch_docs`  | One `selector`, `documentId`, optional `sectionId` and `cursor`                              | Fetches bounded Markdown from that exact local index. Use a search result's `chunkId` as `sectionId`. |
 
-Use the `source` and `version` returned by `search_docs` when calling `fetch_docs`. MCP tools accept documentation selectors and result IDs; filesystem paths are accepted only by the local CLI.
+Use selectors returned by `list_docs` or the result groups from `search_docs`. Unknown selectors fail with an instruction to call `list_docs`; NekoSearch never falls back to searching the full catalog. The `limit` is a total result budget across all groups, so multi-source requests return at most 10 results. Filesystem paths are accepted only by the local CLI.
 
 ## Development
 

@@ -6,58 +6,109 @@ import {
   searchDocsOutputSchema,
 } from '../../modules/documentation/mcp/contracts/documentation-tools.contract.js';
 
-const catalogSourceSchema = z
+export const MAX_SEARCH_SOURCES = 5;
+export const MAX_TOTAL_SEARCH_RESULTS = 10;
+const MAX_SELECTOR_LENGTH = 256 + 1 + 64;
+
+const selectorSchema = z
   .string()
-  .trim()
+  .min(1)
+  .max(MAX_SELECTOR_LENGTH)
+  .refine((value) => value.trim().length > 0)
+  .refine((value) => !containsControlCharacters(value))
+  .describe(
+    'Canonical documentation selector returned by list_docs, such as nestjs@12.',
+  );
+
+const sourceSchema = z
+  .string()
   .min(1)
   .max(256)
   .refine((value) => !containsControlCharacters(value));
-const catalogVersionSchema = z
+const versionSchema = z
   .string()
-  .trim()
   .min(1)
   .max(64)
   .refine((value) => !containsControlCharacters(value));
+const revisionSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine((value) => !containsControlCharacters(value));
 
-export const catalogSearchDocsInputSchema = searchDocsInputSchema.extend({
-  source: catalogSourceSchema.describe(
-    'Source identity returned by nekosearch list or a previous search_docs result.',
-  ),
-  version: catalogVersionSchema.describe(
-    'Documentation version returned by nekosearch list or search_docs.',
-  ),
+const documentationSourceSchema = z.object({
+  selector: selectorSchema,
+  source: sourceSchema,
+  version: versionSchema,
+  revision: revisionSchema,
+});
+
+export const catalogListDocsInputSchema = z.strictObject({});
+
+export const catalogListDocsOutputSchema = z.object({
+  sources: z.array(documentationSourceSchema),
+});
+
+export const catalogSearchDocsInputSchema = z
+  .strictObject({
+    query: searchDocsInputSchema.shape.query,
+    sources: z
+      .array(selectorSchema)
+      .min(1)
+      .max(MAX_SEARCH_SOURCES)
+      .describe(
+        `Canonical selectors from list_docs; choose 1 to ${MAX_SEARCH_SOURCES} sources.`,
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_TOTAL_SEARCH_RESULTS)
+      .optional()
+      .describe(
+        `Maximum results across all source groups (1 to ${MAX_TOTAL_SEARCH_RESULTS}; defaults to ${MAX_TOTAL_SEARCH_RESULTS}).`,
+      ),
+  })
+  .superRefine(({ sources }, context) => {
+    if (new Set(sources).size !== sources.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sources'],
+        message: 'Each source selector may appear only once.',
+      });
+    }
+  });
+
+const catalogSearchGroupSchema = documentationSourceSchema.extend({
+  results: z.array(searchDocsOutputSchema.shape.results.element),
+});
+
+export const catalogSearchDocsOutputSchema = z.object({
+  groups: z.array(catalogSearchGroupSchema),
+  totalResults: z.number().int().min(0).max(MAX_TOTAL_SEARCH_RESULTS),
 });
 
 export const catalogFetchDocsInputSchema = fetchDocsInputSchema.extend({
-  source: catalogSourceSchema.describe(
-    'Source identity returned by search_docs for this document.',
+  selector: selectorSchema.describe(
+    'One canonical source selector returned by list_docs or search_docs.',
   ),
-  version: catalogVersionSchema.describe(
-    'Documentation version returned by search_docs for this document.',
-  ),
-});
-
-const catalogSearchResultSchema =
-  searchDocsOutputSchema.shape.results.element.extend({
-    source: catalogSourceSchema,
-    version: catalogVersionSchema,
-  });
-
-export const catalogSearchDocsOutputSchema = searchDocsOutputSchema.extend({
-  source: catalogSourceSchema,
-  version: catalogVersionSchema,
-  revision: z.string(),
-  results: z.array(catalogSearchResultSchema),
 });
 
 export const catalogFetchDocsOutputSchema = fetchDocsOutputSchema.extend({
-  source: catalogSourceSchema,
-  version: catalogVersionSchema,
-  revision: z.string(),
+  selector: selectorSchema,
+  source: sourceSchema,
+  version: versionSchema,
+  revision: revisionSchema,
 });
 
+export type CatalogDocumentationSource = z.infer<
+  typeof documentationSourceSchema
+>;
 export type CatalogSearchDocsInput = z.infer<
   typeof catalogSearchDocsInputSchema
+>;
+export type CatalogSearchDocsOutput = z.infer<
+  typeof catalogSearchDocsOutputSchema
 >;
 export type CatalogFetchDocsInput = z.infer<typeof catalogFetchDocsInputSchema>;
 
