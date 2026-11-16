@@ -40,7 +40,6 @@ const CATALOG_LOCK_DIRECTORY_NAME = '.catalog.lock';
 const CATALOG_LOCK_OWNER_FILE_NAME = 'owner.json';
 const CATALOG_LOCK_WAIT_MS = 30_000;
 const CATALOG_LOCK_POLL_MS = 25;
-const CATALOG_LOCK_OWNER_GRACE_MS = 5_000;
 
 export type CatalogEntryStatus = 'bundled' | 'installed';
 
@@ -478,14 +477,13 @@ async function withCatalogLock<T>(
         if (cause?.code === 'ENOENT') continue;
         throw inspectionError;
       }
-      const reclaimed = await reclaimStaleCatalogLock(lockPath);
-      if (!reclaimed && Date.now() >= deadline) {
+      if (Date.now() >= deadline) {
         throw new Error(
-          `Timed out waiting for the catalog lock at ${catalogRoot}`,
+          `Timed out waiting for the catalog lock at ${lockPath}. Automatic stale-lock recovery is disabled to avoid removing a replacement lock held by another process. Confirm no NekoSearch process is using this catalog, then remove this lock directory and retry.`,
           { cause: error },
         );
       }
-      if (!reclaimed) await delay(CATALOG_LOCK_POLL_MS);
+      await delay(CATALOG_LOCK_POLL_MS);
     }
   }
 
@@ -498,41 +496,6 @@ async function withCatalogLock<T>(
       await rm(lockPath, { recursive: true, force: true });
     }
   }
-}
-
-async function reclaimStaleCatalogLock(lockPath: string): Promise<boolean> {
-  const owner = await readLockOwner(
-    join(lockPath, CATALOG_LOCK_OWNER_FILE_NAME),
-  ).catch(() => undefined);
-  let stale = false;
-  if (owner) {
-    if (owner.host === hostname()) {
-      try {
-        process.kill(owner.pid, 0);
-      } catch (error) {
-        stale = (error as NodeJS.ErrnoException).code === 'ESRCH';
-      }
-    }
-  } else {
-    const info = await lstat(lockPath).catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-      throw error;
-    });
-    if (!info) return true;
-    stale = Date.now() - info.mtimeMs > CATALOG_LOCK_OWNER_GRACE_MS;
-  }
-  if (!stale) return false;
-
-  const abandonedPath = `${lockPath}.stale-${randomUUID()}`;
-  try {
-    await rename(lockPath, abandonedPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    throw error;
-  }
-  await rm(abandonedPath, { recursive: true, force: true });
-  return true;
 }
 
 async function readLockOwner(path: string): Promise<CatalogLockOwner> {

@@ -6,8 +6,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { access, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, readFile, readdir, writeFile } from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createMcpServerTestIndex } from '../../../fixtures/mcp-server-index.js';
@@ -51,25 +51,52 @@ describe('NekoSearch catalog writes across processes', () => {
     runnerPath = join(root, 'catalog-writer.mjs');
     await writeFile(
       runnerPath,
-      `import { access, readFile, writeFile } from 'node:fs/promises';
+      `import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
+import { hostname } from 'node:os';
 import { addSnapshot, updateSnapshot } from ${JSON.stringify(catalogModuleUrl)};
 const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
-if (input.readyPath) await writeFile(input.readyPath, 'ready');
-if (input.startPath) {
+async function waitFor(path) {
   while (true) {
-    try { await access(input.startPath); break; }
+    try { await access(path); return; }
     catch { await delay(5); }
   }
 }
-if (input.delayMs) await delay(input.delayMs);
 try {
-  const options = { catalogRoot: input.catalogRoot, packageDataDirectory: input.packageDataDirectory };
-  const result = input.operation === 'add'
-    ? await addSnapshot(input.snapshotDirectory, options)
-    : await updateSnapshot(input.snapshotDirectory, options, { expectedCurrent: input.expectedCurrent });
-  const entry = 'entry' in result ? result.entry : result;
-  process.stdout.write(JSON.stringify({ ok: true, revision: entry.revision, changed: 'changed' in result ? result.changed : true }) + '\\n');
+  const lockPath = input.catalogRoot + '/.catalog.lock';
+  if (input.operation === 'hold-replacement') {
+    await access(lockPath);
+    const staleOwner = JSON.parse(await readFile(lockPath + '/owner.json', 'utf8'));
+    if (staleOwner.token !== 'abandoned-owner') throw new Error('Expected abandoned lock');
+    await writeFile(input.observedPath, 'observed');
+    await waitFor(input.replacePath);
+    await rm(lockPath, { recursive: true, force: true });
+    await mkdir(lockPath, { mode: 0o700 });
+    await writeFile(lockPath + '/owner.json', JSON.stringify({
+      formatVersion: 1, pid: process.pid, host: hostname(), token: 'replacement-owner'
+    }) + '\\n', { flag: 'wx', mode: 0o600 });
+    await writeFile(input.enteredPath, 'entered');
+    await waitFor(input.releasePath);
+    await rm(lockPath, { recursive: true, force: true });
+    process.stdout.write('replacement lock released\\n');
+  } else {
+    if (input.readyPath) await writeFile(input.readyPath, 'ready');
+    if (input.observedLockPath) {
+      const staleOwner = JSON.parse(await readFile(input.observedLockPath + '/owner.json', 'utf8'));
+      if (staleOwner.token !== 'abandoned-owner') throw new Error('Expected abandoned lock');
+      await writeFile(input.observedPath, 'observed');
+      await waitFor(input.startPath);
+      await writeFile(input.attemptingPath, 'attempting');
+    }
+    if (input.startPath && !input.observedLockPath) await waitFor(input.startPath);
+    if (input.delayMs) await delay(input.delayMs);
+    const options = { catalogRoot: input.catalogRoot, packageDataDirectory: input.packageDataDirectory };
+    const result = input.operation === 'add'
+      ? await addSnapshot(input.snapshotDirectory, options)
+      : await updateSnapshot(input.snapshotDirectory, options, { expectedCurrent: input.expectedCurrent });
+    const entry = 'entry' in result ? result.entry : result;
+    process.stdout.write(JSON.stringify({ ok: true, revision: entry.revision, changed: 'changed' in result ? result.changed : true }) + '\\n');
+  }
 } catch (error) {
   process.stderr.write(String(error instanceof Error ? error.message : error) + '\\n');
   process.exitCode = 1;
@@ -110,6 +137,93 @@ try {
       .sort();
     expect(installed).toEqual(['docs-alpha@1', 'docs-beta@1']);
   });
+
+  it('does not reclaim a replacement lock after observing an abandoned lock', async () => {
+    const lockPath = join(catalogRoot, '.catalog.lock');
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(
+      join(lockPath, 'owner.json'),
+      `${JSON.stringify({
+        formatVersion: 1,
+        pid: 2_147_483_647,
+        host: hostname(),
+        token: 'abandoned-owner',
+      })}\n`,
+    );
+    const snapshot = createSnapshot('docs-waiter', '1', 'waiter-r1');
+    const holderObservedPath = join(root, 'holder-observed');
+    const waiterObservedPath = join(root, 'waiter-observed');
+    const replacePath = join(root, 'replace-lock');
+    const replacementEnteredPath = join(root, 'replacement-entered');
+    const waiterStartPath = join(root, 'waiter-start');
+    const waiterAttemptingPath = join(root, 'waiter-attempting');
+    const releasePath = join(root, 'release-replacement');
+    const holder = spawnWriter({
+      operation: 'hold-replacement',
+      observedPath: holderObservedPath,
+      replacePath,
+      enteredPath: replacementEnteredPath,
+      releasePath,
+    });
+    const holderResultPromise = waitForProcess(holder);
+    const waiter = spawnWriter({
+      operation: 'add',
+      snapshotDirectory: snapshot,
+      observedLockPath: lockPath,
+      observedPath: waiterObservedPath,
+      startPath: waiterStartPath,
+      attemptingPath: waiterAttemptingPath,
+    });
+    const waiterResultPromise = waitForProcess(waiter);
+
+    try {
+      await Promise.all([
+        waitForFile(holderObservedPath),
+        waitForFile(waiterObservedPath),
+      ]);
+      await writeFile(replacePath, 'replace abandoned lock');
+      await waitForFile(replacementEnteredPath);
+      await writeFile(waiterStartPath, 'attempt lock');
+      await waitForFile(waiterAttemptingPath);
+      await waitForPendingSnapshot(join(catalogRoot, 'snapshots'));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+
+      const replacementOwner = JSON.parse(
+        await readFile(join(lockPath, 'owner.json'), 'utf8'),
+      ) as { pid: number; token: string };
+      expect(replacementOwner).toMatchObject({
+        pid: holder.pid,
+        token: 'replacement-owner',
+      });
+      expect(existsSync(join(catalogRoot, 'catalog.json'))).toBe(false);
+      expect(waiter.exitCode).toBeNull();
+    } finally {
+      await writeFile(replacePath, 'replace').catch(() => undefined);
+      await writeFile(waiterStartPath, 'attempt').catch(() => undefined);
+      await writeFile(releasePath, 'release').catch(() => undefined);
+      await Promise.allSettled([holderResultPromise, waiterResultPromise]);
+    }
+
+    const [holderResult, waiterResult] = await Promise.all([
+      holderResultPromise,
+      waiterResultPromise,
+    ]);
+    expect(holderResult.code).toBe(0);
+    expect(waiterResult.code).toBe(0);
+    expect(
+      (
+        await listCatalogIndexes({
+          catalogRoot,
+          packageDataDirectory: dataDirectory,
+        })
+      ).some(
+        (entry) =>
+          entry.source === 'docs-waiter' &&
+          entry.version === '1' &&
+          entry.revision === 'waiter-r1',
+      ),
+    ).toBe(true);
+  }, 20_000);
 
   it('rejects a stale overlapping update instead of replacing the winner', async () => {
     const initial = createSnapshot('docs-shared', '1', 'shared-r1');
@@ -249,4 +363,20 @@ async function waitForFile(path: string): Promise<void> {
     }
   }
   throw new Error(`Timed out waiting for process readiness file ${path}`);
+}
+
+async function waitForPendingSnapshot(directory: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      if (
+        (await readdir(directory)).some((name) => name.startsWith('.pending-'))
+      )
+        return;
+    } catch {
+      // The writer may not have created the snapshots directory yet.
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5));
+  }
+  throw new Error('Timed out waiting for the snapshot to stage before locking');
 }
