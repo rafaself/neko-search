@@ -11,6 +11,7 @@ import {
   DOCUMENTATION_INDEX_METADATA_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
+  DOCUMENTATION_REFERENCES_SCHEMA,
 } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/index-schema.js';
 import { DocumentationIndexWriter } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-writer.js';
 import { TestDocumentationSearchService } from '../../../../fixtures/test-documentation-search-service.js';
@@ -84,6 +85,7 @@ describe('read-only documentation index startup', () => {
     const database = new DatabaseSync(path);
     database.exec(DOCUMENTATION_INDEX_METADATA_SCHEMA);
     database.exec(DOCUMENTATION_INDEX_SCHEMA);
+    database.exec(DOCUMENTATION_REFERENCES_SCHEMA);
     const metadata = database.prepare(
       'INSERT INTO documentation_index_metadata (key, value) VALUES (?, ?)',
     );

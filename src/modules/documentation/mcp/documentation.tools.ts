@@ -42,7 +42,7 @@ export class DocumentationTools {
   @Tool({
     name: 'fetch_docs',
     description:
-      'Fetch a document or a section identified by search_docs. Use the returned cursor with the same document and section to continue a truncated excerpt.',
+      'Fetch a document or section identified by search_docs. The structured response includes up to 100 resolved internal links whose full Markdown link appears on this page; each reference can be fetched offline with its documentId and optional sectionId. Unresolved and external links stay only in the Markdown. Use the returned cursor with the same document and section to continue a truncated excerpt.',
     inputSchema: fetchDocsInputSchema,
     outputSchema: fetchDocsOutputSchema,
     annotations: {

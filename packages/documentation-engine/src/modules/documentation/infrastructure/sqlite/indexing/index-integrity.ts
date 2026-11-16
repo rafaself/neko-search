@@ -6,9 +6,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { DocumentationCorpusSchema } from '../../../domain/documentation.schemas.js';
 import type {
   DocumentationCorpus,
+  DocumentationLinkReference,
   DocumentationVersion,
 } from '../../../domain/documentation.types.js';
 import { validateRuntimeIndex } from '../runtime-index.js';
+import { DOCUMENTATION_REFERENCES_TABLE } from '../index-schema.js';
 
 interface ExpectedRow {
   chunkId: string;
@@ -89,6 +91,7 @@ export function validateCorpusIndex(
     compareStrings(left.id, right.id),
   );
   const documentIds = new Set<string>();
+  const chunkOwners = new Map<string, string>();
   const expectedRows: ExpectedRow[] = [];
 
   for (const document of documents) {
@@ -138,6 +141,7 @@ export function validateCorpusIndex(
         canonicalUrl: chunk.canonicalUrl,
         sourceRevision: revision,
       });
+      chunkOwners.set(chunk.id, document.id);
     }
   }
 
@@ -178,7 +182,90 @@ export function validateCorpusIndex(
     }
   }
 
+  if (validatedCorpus.formatVersion === 2) {
+    validateCorpusReferences(
+      validatedCorpus,
+      database,
+      documentIds,
+      chunkOwners,
+    );
+  }
+
   return { documentCount: documentIds.size, chunkCount: expectedRows.length };
+}
+
+function validateCorpusReferences(
+  corpus: DocumentationCorpus,
+  database: DatabaseSync,
+  documentIds: ReadonlySet<string>,
+  chunkOwners: ReadonlyMap<string, string>,
+): void {
+  const expected: Array<{
+    chunkId: string;
+    occurrenceIndex: number;
+    reference: DocumentationLinkReference;
+  }> = [];
+  for (const document of corpus.documents) {
+    for (const chunk of document.chunks) {
+      for (const [occurrenceIndex, reference] of (
+        chunk.references ?? []
+      ).entries()) {
+        if (reference.endOffset > chunk.markdown.length) {
+          throw new Error('Documentation link occurrence exceeds its chunk');
+        }
+        if (!documentIds.has(reference.documentId)) {
+          throw new Error(
+            'Documentation link target is missing from its corpus',
+          );
+        }
+        if (
+          reference.sectionId &&
+          chunkOwners.get(reference.sectionId) !== reference.documentId
+        ) {
+          throw new Error('Documentation link section target is invalid');
+        }
+        expected.push({ chunkId: chunk.id, occurrenceIndex, reference });
+      }
+    }
+  }
+  expected.sort(
+    (left, right) =>
+      compareStrings(left.chunkId, right.chunkId) ||
+      left.occurrenceIndex - right.occurrenceIndex,
+  );
+  const actual = database
+    .prepare(
+      `SELECT chunk_id AS chunkId, occurrence_index AS occurrenceIndex,
+          href, start_offset AS startOffset, end_offset AS endOffset,
+          target_document_id AS documentId, target_section_id AS sectionId
+        FROM ${DOCUMENTATION_REFERENCES_TABLE}
+        ORDER BY chunk_id COLLATE BINARY ASC, occurrence_index ASC`,
+    )
+    .all();
+  if (actual.length !== expected.length) {
+    throw new Error(
+      'SQLite link references do not match the documentation corpus',
+    );
+  }
+  for (const [index, row] of actual.entries()) {
+    const expectedReference = expected[index];
+    const reference = expectedReference?.reference;
+    if (
+      !expectedReference ||
+      !reference ||
+      row.chunkId !== expectedReference.chunkId ||
+      row.occurrenceIndex !== expectedReference.occurrenceIndex ||
+      row.href !== reference.href ||
+      row.startOffset !== reference.startOffset ||
+      row.endOffset !== reference.endOffset ||
+      row.documentId !== reference.documentId ||
+      (row.sectionId ?? undefined) !== reference.sectionId
+    ) {
+      throw new Error(
+        'SQLite link references do not match the documentation corpus',
+      );
+    }
+  }
 }
 
 function isSha256(value: unknown): value is string {

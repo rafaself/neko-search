@@ -16,11 +16,18 @@ export interface DocumentationSectionResult {
   markdown: string;
 }
 
+export interface DocumentationPageReference {
+  href: string;
+  documentId: string;
+  sectionId?: string;
+}
+
 export interface FetchedDocumentation {
   documentId: string;
   title: string;
   sourceRevision: string;
   sections: DocumentationSectionResult[];
+  references: DocumentationPageReference[];
   truncated: boolean;
   nextCursor?: string;
 }

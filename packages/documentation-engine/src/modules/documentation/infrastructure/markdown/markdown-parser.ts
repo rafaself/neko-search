@@ -2,7 +2,7 @@ import { createProcessor } from '@mdx-js/mdx';
 import remarkGfm from 'remark-gfm';
 
 /** Increment when parsing semantics or the persisted parse result changes. */
-export const MARKDOWN_PARSER_VERSION = 1;
+export const MARKDOWN_PARSER_VERSION = 2;
 
 export type MarkdownFormat = 'markdown' | 'mdx';
 
@@ -29,6 +29,13 @@ export interface ParsedHeading {
 export interface ParsedLink {
   kind: 'link' | 'image';
   text: string;
+  url: string;
+  title?: string;
+  startOffset?: number;
+  endOffset?: number;
+}
+
+export interface ParsedLinkDefinition {
   url: string;
   title?: string;
 }
@@ -89,6 +96,7 @@ export interface ParsedMarkdownDocument {
   lists: string[];
   tables: string[];
   links: ParsedLink[];
+  linkDefinitions: ReadonlyMap<string, ParsedLinkDefinition>;
   codeExamples: ParsedCodeExample[];
   jsxElements: ParsedStaticJsxElement[];
   diagnostics: MarkdownDiagnostic[];
@@ -119,7 +127,11 @@ const mdxProcessor = createProcessor({
  * only: MDX imports, expressions, and components are never compiled or run. */
 export function parseMarkdown(
   input: string,
-  options: { path?: string; format?: MarkdownFormat } = {},
+  options: {
+    path?: string;
+    format?: MarkdownFormat;
+    linkDefinitions?: ReadonlyMap<string, ParsedLinkDefinition>;
+  } = {},
 ): ParsedMarkdownDocument {
   const source = normalizeLineEndings(input);
   const format =
@@ -151,7 +163,10 @@ export function parseMarkdown(
   const codeExamples: ParsedCodeExample[] = [];
   const jsxElements: ParsedStaticJsxElement[] = [];
   const blocks: ParsedMarkdownBlock[] = [];
-  const definitions = collectDefinitions(tree);
+  const definitions = new Map(options.linkDefinitions ?? []);
+  for (const [identifier, definition] of collectDefinitions(tree)) {
+    definitions.set(identifier, definition);
+  }
 
   for (const node of tree.children ?? []) {
     const markdown = sourceSlice(body, node);
@@ -191,6 +206,7 @@ export function parseMarkdown(
           text: nodeText(node),
           url,
           ...(title && { title }),
+          ...linkOffsets(node),
         });
       }
     } else if (
@@ -205,6 +221,7 @@ export function parseMarkdown(
           text: nodeText(node),
           url: definition.url,
           ...(definition.title && { title: definition.title }),
+          ...linkOffsets(node),
         });
       }
     } else if (
@@ -247,6 +264,7 @@ export function parseMarkdown(
     lists,
     tables,
     links,
+    linkDefinitions: definitions,
     codeExamples,
     jsxElements,
     diagnostics,
@@ -468,10 +486,8 @@ function childrenText(node: AstNode): string {
   return (node.children ?? []).map(nodeText).join('');
 }
 
-function collectDefinitions(
-  tree: AstNode,
-): Map<string, { url: string; title?: string }> {
-  const definitions = new Map<string, { url: string; title?: string }>();
+function collectDefinitions(tree: AstNode): Map<string, ParsedLinkDefinition> {
+  const definitions = new Map<string, ParsedLinkDefinition>();
   visit(tree, (node) => {
     if (node.type !== 'definition') return;
     const identifier = stringProperty(node, 'identifier');
@@ -484,6 +500,17 @@ function collectDefinitions(
     });
   });
   return definitions;
+}
+
+function linkOffsets(node: AstNode): {
+  startOffset?: number;
+  endOffset?: number;
+} {
+  const startOffset = node.position?.start?.offset;
+  const endOffset = node.position?.end?.offset;
+  return typeof startOffset === 'number' && typeof endOffset === 'number'
+    ? { startOffset, endOffset }
+    : {};
 }
 
 function normalizedLabel(value: string): string {

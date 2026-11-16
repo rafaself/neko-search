@@ -253,8 +253,16 @@ describe('generic Markdown and MDX parsing', () => {
         text: 'installation guide',
         url: 'https://example.test/install',
         title: 'Install',
+        startOffset: 180,
+        endOffset: 240,
       },
-      { kind: 'image', text: 'logo', url: 'https://example.test/logo.png' },
+      {
+        kind: 'image',
+        text: 'logo',
+        url: 'https://example.test/logo.png',
+        startOffset: 245,
+        endOffset: 283,
+      },
     ]);
     expect(parsed.codeExamples).toEqual([
       {

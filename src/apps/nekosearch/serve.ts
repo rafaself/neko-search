@@ -117,7 +117,7 @@ export async function serve(): Promise<void> {
     'fetch_docs',
     {
       description:
-        'Fetches a document from one exact selector returned by list_docs or a search result group. Pass the documentId and optional sectionId from that group; use the result chunkId as sectionId. Use a returned cursor to continue a truncated excerpt.',
+        'Fetches a document from one exact selector returned by list_docs or a search result group. Pass the documentId and optional sectionId from that group; use the result chunkId as sectionId. The structured response includes up to 100 resolved internal links fully visible on this page, each with offline-fetchable target IDs. External and unresolved links remain in the Markdown. Use a returned cursor to continue a truncated excerpt.',
       inputSchema: catalogFetchDocsInputSchema,
       outputSchema: catalogFetchDocsOutputSchema,
       annotations: readOnlyAnnotations,

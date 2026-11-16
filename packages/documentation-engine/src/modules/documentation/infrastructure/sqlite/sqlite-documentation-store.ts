@@ -8,6 +8,7 @@ import type {
   DocumentationSectionReference,
 } from '../../application/contracts/documentation-search-store.contract.js';
 import type { DocumentationSearchResult } from '../../application/contracts/documentation-reader.contract.js';
+import type { DocumentationLinkReference } from '../../domain/documentation.types.js';
 import {
   DOCUMENTATION_INDEX_MANIFEST,
   SEARCH_DATABASE_PATH,
@@ -20,6 +21,7 @@ export class SQLiteDocumentationStore
   implements DocumentationSearchStore, OnModuleDestroy
 {
   private readonly database: DatabaseSync;
+  private readonly indexFormatVersion: number;
   private closed = false;
 
   constructor(
@@ -49,6 +51,7 @@ export class SQLiteDocumentationStore
           'Documentation index contents do not match the validated manifest',
         );
       }
+      this.indexFormatVersion = summary.indexFormatVersion;
     } catch (error) {
       this.database.close();
       this.closed = true;
@@ -86,10 +89,11 @@ export class SQLiteDocumentationStore
   }
 
   fetchRows(documentId: string): DocumentationRow[] {
-    return this.database
+    const rows = this.database
       .prepare(
         `
-        SELECT title, heading_path AS headingPath,
+        SELECT chunk_id AS chunkId, title,
+          heading_path AS headingPath,
           canonical_url AS canonicalUrl,
           source_revision AS sourceRevision, markdown
         FROM documentation_search
@@ -99,6 +103,39 @@ export class SQLiteDocumentationStore
       )
       .all(documentId, this.indexManifest.documentation.version)
       .map(toDocumentationRow);
+    const referencesByChunk = new Map<string, DocumentationLinkReference[]>();
+    if (this.indexFormatVersion >= 2) {
+      const references = this.database
+        .prepare(
+          `SELECT reference.chunk_id AS chunkId, reference.href,
+              reference.start_offset AS startOffset,
+              reference.end_offset AS endOffset,
+              reference.target_document_id AS documentId,
+              reference.target_section_id AS sectionId
+            FROM documentation_references AS reference
+            JOIN documentation_search AS source_chunk
+              ON source_chunk.chunk_id = reference.chunk_id
+            WHERE source_chunk.document_id = ?
+              AND source_chunk.documentation_version = ?
+            ORDER BY source_chunk.chunk_index ASC,
+              reference.occurrence_index ASC`,
+        )
+        .all(documentId, this.indexManifest.documentation.version);
+      for (const row of references) {
+        const referenceRow = row as Record<string, unknown>;
+        if (typeof referenceRow.chunkId !== 'string') {
+          throw new Error('SQLite returned an invalid documentation reference');
+        }
+        const referencesForChunk =
+          referencesByChunk.get(referenceRow.chunkId) ?? [];
+        referencesForChunk.push(toDocumentationLinkReference(referenceRow));
+        referencesByChunk.set(referenceRow.chunkId, referencesForChunk);
+      }
+    }
+    return rows.map((row) => ({
+      ...row,
+      references: referencesByChunk.get(row.chunkId) ?? [],
+    }));
   }
 
   findSection(
@@ -170,8 +207,16 @@ function toSearchResult(
 }
 
 function toDocumentationRow(row: Record<string, unknown>): DocumentationRow {
-  const { title, headingPath, canonicalUrl, sourceRevision, markdown } = row;
+  const {
+    chunkId,
+    title,
+    headingPath,
+    canonicalUrl,
+    sourceRevision,
+    markdown,
+  } = row;
   if (
+    typeof chunkId !== 'string' ||
     typeof title !== 'string' ||
     typeof headingPath !== 'string' ||
     typeof canonicalUrl !== 'string' ||
@@ -180,5 +225,35 @@ function toDocumentationRow(row: Record<string, unknown>): DocumentationRow {
   ) {
     throw new Error('SQLite returned an invalid documentation row');
   }
-  return { title, headingPath, canonicalUrl, sourceRevision, markdown };
+  return {
+    chunkId,
+    title,
+    headingPath,
+    canonicalUrl,
+    sourceRevision,
+    markdown,
+    references: [],
+  };
+}
+
+function toDocumentationLinkReference(
+  row: Record<string, unknown>,
+): DocumentationLinkReference {
+  const { href, startOffset, endOffset, documentId, sectionId } = row;
+  if (
+    typeof href !== 'string' ||
+    typeof startOffset !== 'number' ||
+    typeof endOffset !== 'number' ||
+    typeof documentId !== 'string' ||
+    (sectionId !== null && typeof sectionId !== 'string')
+  ) {
+    throw new Error('SQLite returned an invalid documentation reference');
+  }
+  return {
+    href,
+    startOffset,
+    endOffset,
+    documentId,
+    ...(typeof sectionId === 'string' ? { sectionId } : {}),
+  };
 }

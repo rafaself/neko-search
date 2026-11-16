@@ -19,6 +19,7 @@ import {
   DOCUMENTATION_INDEX_FORMAT_VERSION,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
 } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/index-schema.js';
+import { DOCUMENTATION_LINK_RESOLVER_VERSION } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -48,9 +49,18 @@ export function createMcpServerTestIndex(
     parseMarkdown(file.markdown, { path: file.path }),
   );
   const corpus = DocumentationCorpusSchema.parse({
+    formatVersion: 2,
     version,
     source,
-    documents: [document],
+    documents: [
+      {
+        ...document,
+        chunks: document.chunks.map((chunk) => ({
+          ...chunk,
+          references: [],
+        })),
+      },
+    ],
   });
   const writer = new DocumentationIndexWriter(databasePath, version);
   try {
@@ -66,6 +76,7 @@ export function createMcpServerTestIndex(
   );
   const manifest = DocumentationBuildManifestSchema.parse({
     manifestVersion: DOCUMENTATION_BUILD_MANIFEST_VERSION,
+    snapshotFormatVersion: 2,
     documentation: {
       id: options.documentationId ?? 'synthetic-mcp-documentation',
       version: corpus.version,
@@ -79,8 +90,10 @@ export function createMcpServerTestIndex(
       maxChunkChars: 4000,
       indexSchemaVersion: DOCUMENTATION_INDEX_SCHEMA_VERSION,
       indexFormatVersion: DOCUMENTATION_INDEX_FORMAT_VERSION,
+      linkResolverVersion: DOCUMENTATION_LINK_RESOLVER_VERSION,
     },
     corpus: {
+      formatVersion: 2,
       file: 'corpus.json',
       sha256: createHash('sha256').update(corpusContents).digest('hex'),
       documentCount: corpus.documents.length,

@@ -5,6 +5,7 @@ import type {
   DocumentationCorpusSchema,
   DocumentationFrontmatterSchema,
   DocumentationIdentitySchema,
+  DocumentationLinkReferenceSchema,
   DocumentationSnapshotSchema,
   DocumentationSourceProvenanceSchema,
   DocumentationVersionSchema,
@@ -32,6 +33,9 @@ export type DocumentationSnapshot = z.infer<typeof DocumentationSnapshotSchema>;
 export type Heading = z.infer<typeof HeadingSchema>;
 export type CodeExample = z.infer<typeof CodeExampleSchema>;
 export type DocumentationChunk = z.infer<typeof DocumentationChunkSchema>;
+export type DocumentationLinkReference = z.infer<
+  typeof DocumentationLinkReferenceSchema
+>;
 export type DocumentationFrontmatter = z.infer<
   typeof DocumentationFrontmatterSchema
 >;

@@ -11,6 +11,8 @@ import { join, resolve } from 'node:path';
 import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
 import { DocumentationBuildManifestSchema } from '@nestjs-docs/documentation-engine/domain/documentation-index-manifest.schemas.js';
 import { MARKDOWN_PARSER_VERSION } from '@nestjs-docs/documentation-engine/infrastructure/markdown/markdown-parser.js';
+import { DOCUMENTATION_LINK_RESOLVER_VERSION } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
+import { DOCUMENTATION_INDEX_FORMAT_VERSION } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/index-schema.js';
 
 describe('local documentation build command', () => {
   let workspace: string;
@@ -87,6 +89,7 @@ describe('local documentation build command', () => {
     );
     expect(firstManifest).toMatchObject({
       manifestVersion: 2,
+      snapshotFormatVersion: 2,
       documentation: { id: 'local-handbook', version: 'candidate-3' },
       source: { kind: 'local' },
       pipeline: {
@@ -96,9 +99,10 @@ describe('local documentation build command', () => {
         chunkingAlgorithmVersion: 1,
         maxChunkChars: 4000,
         indexSchemaVersion: 1,
-        indexFormatVersion: 1,
+        indexFormatVersion: DOCUMENTATION_INDEX_FORMAT_VERSION,
+        linkResolverVersion: DOCUMENTATION_LINK_RESOLVER_VERSION,
       },
-      corpus: { file: 'corpus.json', documentCount: 2 },
+      corpus: { formatVersion: 2, file: 'corpus.json', documentCount: 2 },
       index: {
         file: 'index.sqlite',
         documentationVersion: 'candidate-3',

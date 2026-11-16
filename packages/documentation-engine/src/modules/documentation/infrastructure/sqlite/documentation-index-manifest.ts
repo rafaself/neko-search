@@ -7,7 +7,7 @@ import {
   type DocumentationIndexRuntimeManifest,
 } from '../../domain/documentation-index-manifest.schemas.js';
 import {
-  DOCUMENTATION_INDEX_FORMAT_VERSION,
+  isSupportedDocumentationIndexFormat,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
 } from './index-schema.js';
 
@@ -56,7 +56,7 @@ export function loadDocumentationIndexManifest(
   }
   if (
     manifest.index.schemaVersion !== DOCUMENTATION_INDEX_SCHEMA_VERSION ||
-    manifest.index.formatVersion !== DOCUMENTATION_INDEX_FORMAT_VERSION
+    !isSupportedDocumentationIndexFormat(manifest.index.formatVersion)
   ) {
     throw new Error('Documentation index manifest format is unsupported');
   }

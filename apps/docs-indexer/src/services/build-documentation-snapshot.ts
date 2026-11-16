@@ -48,6 +48,10 @@ import {
   DOCUMENTATION_INDEX_FORMAT_VERSION,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
 } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/index-schema.js';
+import {
+  DOCUMENTATION_LINK_RESOLVER_VERSION,
+  resolveInternalDocumentationLinks,
+} from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import { DocumentationIndexWriter } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-writer.js';
 import { validateDocumentationIndex } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-integrity.js';
 import {
@@ -76,6 +80,7 @@ interface DocumentationPipelineMetadata {
   maxChunkChars: number;
   indexSchemaVersion: number;
   indexFormatVersion: number;
+  linkResolverVersion: number;
 }
 
 interface PreviousDocumentationBuild {
@@ -149,6 +154,7 @@ export async function buildDocumentationSnapshot(
     maxChunkChars,
     indexSchemaVersion: DOCUMENTATION_INDEX_SCHEMA_VERSION,
     indexFormatVersion: DOCUMENTATION_INDEX_FORMAT_VERSION,
+    linkResolverVersion: DOCUMENTATION_LINK_RESOLVER_VERSION,
   };
   const previous =
     mode === 'incremental'
@@ -170,7 +176,7 @@ export async function buildDocumentationSnapshot(
     previousByPath,
     previous?.pipelineMatches ?? false,
   );
-  const corpus = ingestSnapshot(
+  const ingestedCorpus = ingestSnapshot(
     snapshot,
     request.transformDocument,
     maxChunkChars,
@@ -190,6 +196,7 @@ export async function buildDocumentationSnapshot(
       },
     },
   );
+  const corpus = resolveInternalDocumentationLinks(ingestedCorpus);
   const stagingDirectory = await mkdtemp(
     join(dirname(outputDirectory), `.${basename(outputDirectory)}.staging-`),
   );
@@ -222,10 +229,12 @@ export async function buildDocumentationSnapshot(
     );
     const manifest = DocumentationBuildManifestSchema.parse({
       manifestVersion: DOCUMENTATION_BUILD_MANIFEST_VERSION,
+      snapshotFormatVersion: 2,
       documentation: request.identity,
       source: corpus.source,
       pipeline,
       corpus: {
+        formatVersion: 2,
         file: CORPUS_FILENAME,
         sha256: sha256(corpusContents),
         documentCount,

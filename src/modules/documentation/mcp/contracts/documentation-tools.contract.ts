@@ -5,6 +5,7 @@ import {
 } from '@nestjs-docs/documentation-engine/retrieval/search.constants.js';
 
 const MAX_TOOL_SEARCH_RESULTS = 10;
+const MAX_FETCH_REFERENCES = 100;
 
 export const searchDocsInputSchema = z.strictObject({
   query: z
@@ -79,6 +80,15 @@ export const fetchDocsOutputSchema = z.object({
       markdown: z.string(),
     }),
   ),
+  references: z
+    .array(
+      z.object({
+        href: z.string(),
+        documentId: z.string(),
+        sectionId: z.string().optional(),
+      }),
+    )
+    .max(MAX_FETCH_REFERENCES),
   truncated: z.boolean(),
   nextCursor: z.string().nullable(),
 });

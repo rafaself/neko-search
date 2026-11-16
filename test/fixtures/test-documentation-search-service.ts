@@ -7,7 +7,6 @@ import {
   DocumentationIndexRuntimeManifestSchema,
 } from '@nestjs-docs/documentation-engine/domain/documentation-index-manifest.schemas.js';
 import {
-  DOCUMENTATION_INDEX_FORMAT_VERSION,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
 } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/index-schema.js';
 import { validateRuntimeIndex } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/runtime-index.js';
@@ -40,7 +39,7 @@ export class TestDocumentationSearchService extends DocumentationSearchService {
         documentationVersion: version,
         sourceRevision: summary.revision,
         schemaVersion: DOCUMENTATION_INDEX_SCHEMA_VERSION,
-        formatVersion: DOCUMENTATION_INDEX_FORMAT_VERSION,
+        formatVersion: summary.indexFormatVersion,
         documentCount: summary.documentCount,
         chunkCount: summary.chunkCount,
       },

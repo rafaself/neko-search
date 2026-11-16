@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
 import { loadIngestionFixtures } from '../../../fixtures/ingestion.fixtures.js';
+import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import {
   buildNestJsDocumentationSnapshot,
   resolveDocumentationSource,
@@ -104,6 +105,23 @@ describe('NekoSearch curated source installs', () => {
       ref: 'master',
       revision,
     });
+    const generatedCorpus = JSON.parse(
+      await readFile(join(installedSnapshotDirectory, 'corpus.json'), 'utf8'),
+    ) as DocumentationCorpus;
+    const introduction = generatedCorpus.documents.find(
+      (document) => document.source.path === 'content/introduction.md',
+    )!;
+    const providers = generatedCorpus.documents.find(
+      (document) => document.source.path === 'content/components.md',
+    )!;
+    expect(
+      introduction.chunks.flatMap((chunk) => chunk.references ?? []),
+    ).toContainEqual(
+      expect.objectContaining({
+        href: '/providers',
+        documentId: providers.id,
+      }),
+    );
     expect(
       (
         await listCatalogIndexes({

@@ -460,7 +460,14 @@ async function withCatalogLock<T>(
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      await assertRealDirectory(lockPath, 'Catalog lock');
+      try {
+        await assertRealDirectory(lockPath, 'Catalog lock');
+      } catch (inspectionError) {
+        const cause = (inspectionError as Error).cause as
+          NodeJS.ErrnoException | undefined;
+        if (cause?.code === 'ENOENT') continue;
+        throw inspectionError;
+      }
       const reclaimed = await reclaimStaleCatalogLock(lockPath);
       if (!reclaimed && Date.now() >= deadline) {
         throw new Error(
@@ -497,7 +504,11 @@ async function reclaimStaleCatalogLock(lockPath: string): Promise<boolean> {
       }
     }
   } else {
-    const info = await lstat(lockPath);
+    const info = await lstat(lockPath).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (!info) return true;
     stale = Date.now() - info.mtimeMs > CATALOG_LOCK_OWNER_GRACE_MS;
   }
   if (!stale) return false;

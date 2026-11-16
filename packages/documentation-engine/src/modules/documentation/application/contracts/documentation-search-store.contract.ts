@@ -1,11 +1,14 @@
 import type { DocumentationSearchResult } from './documentation-reader.contract.js';
+import type { DocumentationLinkReference } from '../../domain/documentation.types.js';
 
 export interface DocumentationRow {
+  chunkId: string;
   title: string;
   headingPath: string;
   canonicalUrl: string;
   sourceRevision: string;
   markdown: string;
+  references: DocumentationLinkReference[];
 }
 
 export interface DocumentationSectionReference {

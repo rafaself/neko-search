@@ -6,6 +6,9 @@ import {
   DOCUMENTATION_INDEX_METADATA_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
+  DOCUMENTATION_REFERENCES_SCHEMA,
+  DOCUMENTATION_REFERENCES_TABLE,
+  isSupportedDocumentationIndexFormat,
   normalizeIndexSchema,
 } from './index-schema.js';
 
@@ -13,13 +16,18 @@ import {
 export function validateRuntimeIndex(
   database: DatabaseSync,
   version: DocumentationVersion,
-): { revision: string; documentCount: number; chunkCount: number } {
+): {
+  revision: string;
+  documentCount: number;
+  chunkCount: number;
+  indexFormatVersion: number;
+} {
   const fail = (reason: string): never => {
     throw new Error(`Invalid documentation v${version} index: ${reason}`);
   };
   const tables = database
     .prepare(
-      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata')",
+      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata', 'documentation_references')",
     )
     .all();
   const tableSql = new Map(tables.map((table) => [table.name, table.sql]));
@@ -86,13 +94,23 @@ export function validateRuntimeIndex(
     }
     metadata.set(String(key), String(value));
   }
+  const indexFormatVersion = Number(metadata.get('index_format_version'));
   if (
     metadata.get('schema_version') !==
       String(DOCUMENTATION_INDEX_SCHEMA_VERSION) ||
-    metadata.get('index_format_version') !==
-      String(DOCUMENTATION_INDEX_FORMAT_VERSION)
+    !isSupportedDocumentationIndexFormat(indexFormatVersion)
   ) {
     fail('index schema or format version is unsupported');
+  }
+  if (indexFormatVersion === DOCUMENTATION_INDEX_FORMAT_VERSION) {
+    const referencesSql = tableSql.get(DOCUMENTATION_REFERENCES_TABLE);
+    if (
+      typeof referencesSql !== 'string' ||
+      normalizeIndexSchema(referencesSql) !==
+        normalizeIndexSchema(DOCUMENTATION_REFERENCES_SCHEMA)
+    ) {
+      fail('documentation references table is missing or incompatible');
+    }
   }
   if (metadata.get('documentation_version') !== version) {
     fail('selected documentation version does not match index metadata');
@@ -165,5 +183,6 @@ export function validateRuntimeIndex(
     revision,
     documentCount: documents.size,
     chunkCount,
+    indexFormatVersion,
   };
 }

@@ -10,6 +10,8 @@ import {
   DOCUMENTATION_INDEX_METADATA_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
+  DOCUMENTATION_REFERENCES_SCHEMA,
+  DOCUMENTATION_REFERENCES_TABLE,
   normalizeIndexSchema,
 } from '../index-schema.js';
 
@@ -19,6 +21,16 @@ export function indexDocumentationCorpus(
   corpus: unknown,
 ): number {
   const chunks = validateCorpus(corpus, documentationVersion);
+  const parsedCorpus = DocumentationCorpusSchema.parse(corpus);
+  const references = parsedCorpus.documents.flatMap((document) =>
+    document.chunks.flatMap((chunk) =>
+      (chunk.references ?? []).map((reference, occurrenceIndex) => ({
+        chunkId: chunk.id,
+        occurrenceIndex,
+        ...reference,
+      })),
+    ),
+  );
   const chunksByDocument = new Map<string, DocumentationChunk[]>();
   for (const chunk of chunks) {
     const documentChunks = chunksByDocument.get(chunk.documentId) ?? [];
@@ -65,6 +77,15 @@ export function indexDocumentationCorpus(
           chunk_id, document_id, canonical_url, source_revision
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
+    const deleteReferences = database.prepare(
+      `DELETE FROM ${DOCUMENTATION_REFERENCES_TABLE}`,
+    );
+    const insertReference = database.prepare(`
+      INSERT INTO ${DOCUMENTATION_REFERENCES_TABLE} (
+        chunk_id, occurrence_index, href, start_offset, end_offset,
+        target_document_id, target_section_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
 
     const existingDocumentIds = listExistingDocuments
       .all(documentationVersion)
@@ -112,6 +133,19 @@ export function indexDocumentationCorpus(
           chunk.sourceRevision,
         );
       }
+    }
+
+    deleteReferences.run();
+    for (const reference of references) {
+      insertReference.run(
+        reference.chunkId,
+        reference.occurrenceIndex,
+        reference.href,
+        reference.startOffset,
+        reference.endOffset,
+        reference.documentId,
+        reference.sectionId ?? null,
+      );
     }
 
     writeMetadata(database, {
@@ -244,7 +278,7 @@ function hasCompatibleIndex(
 ): boolean {
   const tables = database
     .prepare(
-      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata')",
+      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata', 'documentation_references')",
     )
     .all();
   const tableSql = new Map(tables.map((table) => [table.name, table.sql]));
@@ -256,6 +290,14 @@ function hasCompatibleIndex(
     normalizeIndexSchema(
       tableSql.get('documentation_index_metadata') as string,
     ) !== normalizeIndexSchema(DOCUMENTATION_INDEX_METADATA_SCHEMA)
+  ) {
+    return false;
+  }
+  if (
+    typeof tableSql.get(DOCUMENTATION_REFERENCES_TABLE) !== 'string' ||
+    normalizeIndexSchema(
+      tableSql.get(DOCUMENTATION_REFERENCES_TABLE) as string,
+    ) !== normalizeIndexSchema(DOCUMENTATION_REFERENCES_SCHEMA)
   ) {
     return false;
   }
@@ -280,10 +322,12 @@ function hasCompatibleIndex(
 }
 
 function rebuildIndexSchema(database: DatabaseSync): void {
+  database.exec(`DROP TABLE IF EXISTS ${DOCUMENTATION_REFERENCES_TABLE}`);
   database.exec('DROP TABLE IF EXISTS documentation_search');
   database.exec('DROP TABLE IF EXISTS documentation_index_metadata');
   database.exec(DOCUMENTATION_INDEX_METADATA_SCHEMA);
   database.exec(DOCUMENTATION_INDEX_SCHEMA);
+  database.exec(DOCUMENTATION_REFERENCES_SCHEMA);
 }
 
 function writeMetadata(

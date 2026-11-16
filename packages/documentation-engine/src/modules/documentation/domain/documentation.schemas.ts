@@ -3,6 +3,8 @@ import { z } from 'zod';
 const nonEmptyString = z.string().refine((value) => value.trim().length > 0);
 const sha256Hash = z.string().regex(/^[a-f0-9]{64}$/u);
 
+export const DOCUMENTATION_SNAPSHOT_FORMAT_VERSION = 2;
+
 export const DocumentationVersionSchema = nonEmptyString;
 
 export const DocumentationIdentitySchema = z.strictObject({
@@ -74,6 +76,24 @@ export const CodeExampleSchema = z.strictObject({
   code: z.string(),
 });
 
+export const DocumentationLinkReferenceSchema = z
+  .strictObject({
+    href: nonEmptyString,
+    startOffset: z.number().int().nonnegative(),
+    endOffset: z.number().int().positive(),
+    documentId: nonEmptyString,
+    sectionId: nonEmptyString.optional(),
+  })
+  .superRefine((reference, context) => {
+    if (reference.endOffset <= reference.startOffset) {
+      context.addIssue({
+        code: 'custom',
+        path: ['endOffset'],
+        message: 'Link occurrence end must follow its start',
+      });
+    }
+  });
+
 export const DocumentationChunkSchema = z.strictObject({
   id: nonEmptyString,
   documentId: nonEmptyString,
@@ -85,6 +105,7 @@ export const DocumentationChunkSchema = z.strictObject({
   markdown: z.string(),
   contentHash: sha256Hash,
   codeExamples: z.array(CodeExampleSchema),
+  references: z.array(DocumentationLinkReferenceSchema).optional(),
 });
 
 export const NormalizedDocumentSourceSchema = z.strictObject({
@@ -139,11 +160,31 @@ export const NormalizedDocumentSchema = DocumentationIdentitySchema.extend({
 
 export const DocumentationCorpusSchema = z
   .strictObject({
+    formatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION).optional(),
     version: DocumentationVersionSchema,
     source: DocumentationSourceProvenanceSchema,
     documents: z.array(NormalizedDocumentSchema).min(1),
   })
   .superRefine((corpus, context) => {
+    if (corpus.formatVersion === DOCUMENTATION_SNAPSHOT_FORMAT_VERSION) {
+      for (const [documentIndex, document] of corpus.documents.entries()) {
+        for (const [chunkIndex, chunk] of document.chunks.entries()) {
+          if (chunk.references === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [
+                'documents',
+                documentIndex,
+                'chunks',
+                chunkIndex,
+                'references',
+              ],
+              message: 'Versioned snapshots must record link references',
+            });
+          }
+        }
+      }
+    }
     const ids = new Set<string>();
     const chunkIds = new Set<string>();
     for (const [index, document] of corpus.documents.entries()) {

@@ -1,8 +1,14 @@
 export const DOCUMENTATION_INDEX_SCHEMA_VERSION = 1;
-export const DOCUMENTATION_INDEX_FORMAT_VERSION = 1;
+export const DOCUMENTATION_INDEX_FORMAT_VERSION = 2;
+export const LEGACY_DOCUMENTATION_INDEX_FORMAT_VERSION = 1;
+export const SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS = [
+  LEGACY_DOCUMENTATION_INDEX_FORMAT_VERSION,
+  DOCUMENTATION_INDEX_FORMAT_VERSION,
+] as const;
 export const DOCUMENTATION_INDEX_METADATA_TABLE =
   'documentation_index_metadata';
 export const DOCUMENTATION_INDEX_TABLE = 'documentation_search';
+export const DOCUMENTATION_REFERENCES_TABLE = 'documentation_references';
 
 export const DOCUMENTATION_INDEX_COLUMNS = [
   'title',
@@ -25,6 +31,17 @@ export const DOCUMENTATION_INDEX_SCHEMA = `CREATE VIRTUAL TABLE ${DOCUMENTATION_
   ${DOCUMENTATION_INDEX_COLUMNS.join(', ')}, tokenize = 'unicode61'
 )`;
 
+export const DOCUMENTATION_REFERENCES_SCHEMA = `CREATE TABLE ${DOCUMENTATION_REFERENCES_TABLE} (
+  chunk_id TEXT NOT NULL CHECK(length(chunk_id) > 0),
+  occurrence_index INTEGER NOT NULL CHECK(occurrence_index >= 0),
+  href TEXT NOT NULL CHECK(length(href) > 0),
+  start_offset INTEGER NOT NULL CHECK(start_offset >= 0),
+  end_offset INTEGER NOT NULL CHECK(end_offset > start_offset),
+  target_document_id TEXT NOT NULL CHECK(length(target_document_id) > 0),
+  target_section_id TEXT,
+  PRIMARY KEY(chunk_id, occurrence_index)
+) STRICT`;
+
 export const DOCUMENTATION_INDEX_METADATA_KEYS = [
   'schema_version',
   'index_format_version',
@@ -41,4 +58,10 @@ export function normalizeIndexSchema(sql: string): string {
       /^(create virtual table )[`"[]documentation_search[`"\]]/u,
       '$1documentation_search',
     );
+}
+
+export function isSupportedDocumentationIndexFormat(version: number): boolean {
+  return SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS.includes(
+    version as (typeof SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS)[number],
+  );
 }

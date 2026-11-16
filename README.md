@@ -73,11 +73,11 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 
 ## MCP tools
 
-| Tool          | Arguments                                                                                    | Behavior                                                                                              |
-| ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `list_docs`   | None                                                                                         | Lists each loaded selector, source, version, and revision. It does not expose filesystem paths.       |
-| `search_docs` | `query`, required non-empty `sources` (1–5 selectors), optional `limit` (1–10 total results) | Searches only the requested indexes and returns separate ranked groups per selector.                  |
-| `fetch_docs`  | One `selector`, `documentId`, optional `sectionId` and `cursor`                              | Fetches bounded Markdown from that exact local index. Use a search result's `chunkId` as `sectionId`. |
+| Tool          | Arguments                                                                                    | Behavior                                                                                                                                                                                                                                          |
+| ------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_docs`   | None                                                                                         | Lists each loaded selector, source, version, and revision. It does not expose filesystem paths.                                                                                                                                                   |
+| `search_docs` | `query`, required non-empty `sources` (1–5 selectors), optional `limit` (1–10 total results) | Searches only the requested indexes and returns separate ranked groups per selector.                                                                                                                                                              |
+| `fetch_docs`  | One `selector`, `documentId`, optional `sectionId` and `cursor`                              | Fetches bounded Markdown from that exact local index. The structured response includes up to 100 resolved internal links fully visible on this page, with target IDs that can be fetched offline. Use a search result's `chunkId` as `sectionId`. |
 
 Use selectors returned by `list_docs` or the result groups from `search_docs`. Unknown selectors fail with an instruction to call `list_docs`; NekoSearch never falls back to searching the full catalog. The `limit` is a total result budget across all groups, so multi-source requests return at most 10 results. Filesystem paths are accepted only by the local CLI.
 

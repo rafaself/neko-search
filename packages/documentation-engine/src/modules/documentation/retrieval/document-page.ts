@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
-import { MAX_FETCH_DOCUMENT_CHARS } from './search.constants.js';
+import {
+  MAX_FETCH_DOCUMENT_CHARS,
+  MAX_FETCH_DOCUMENT_REFERENCES,
+} from './search.constants.js';
 import type {
+  DocumentationPageReference,
   DocumentationSectionResult,
   FetchedDocumentation,
 } from '../application/contracts/documentation-reader.contract.js';
@@ -39,6 +43,7 @@ export function paginateDocumentation(
   let remaining = MAX_FETCH_DOCUMENT_CHARS;
   let nextCursor: string | undefined;
   const sections: DocumentationSectionResult[] = [];
+  const references: DocumentationPageReference[] = [];
   for (let index = sectionIndex; index < grouped.length; index++) {
     const section = grouped[index]!;
     const headingPath = section.headingPath || first.title;
@@ -57,6 +62,20 @@ export function paginateDocumentation(
       canonicalUrl: section.canonicalUrl,
       markdown: clipped.text,
     });
+    const visibleEnd = offset + clipped.text.length;
+    for (const reference of section.references) {
+      if (
+        reference.startOffset >= offset &&
+        reference.endOffset <= visibleEnd &&
+        references.length < MAX_FETCH_DOCUMENT_REFERENCES
+      ) {
+        references.push({
+          href: reference.href,
+          documentId: reference.documentId,
+          ...(reference.sectionId ? { sectionId: reference.sectionId } : {}),
+        });
+      }
+    }
     remaining -= framing.length + clipped.text.length;
     if (clipped.truncated) {
       nextCursor = `${scopeHash}:${index}:${offset + clipped.text.length}`;
@@ -71,6 +90,7 @@ export function paginateDocumentation(
     title: first.title,
     sourceRevision: first.sourceRevision,
     sections,
+    references,
     truncated,
     nextCursor,
   };
@@ -84,7 +104,15 @@ function groupSections(selectedRows: DocumentationRow[]): DocumentationRow[] {
       previous?.canonicalUrl === row.canonicalUrl &&
       previous.headingPath === row.headingPath
     ) {
+      const offset = previous.markdown.length + 2;
       previous.markdown += `\n\n${row.markdown}`;
+      previous.references.push(
+        ...row.references.map((reference) => ({
+          ...reference,
+          startOffset: reference.startOffset + offset,
+          endOffset: reference.endOffset + offset,
+        })),
+      );
     } else {
       grouped.push({ ...row });
     }
