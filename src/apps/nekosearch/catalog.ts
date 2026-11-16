@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
   lstat,
@@ -35,6 +35,8 @@ const MAX_CORPUS_BYTES = 512 * 1024 * 1024;
 const MAX_INDEX_BYTES = 512 * 1024 * 1024;
 const CATALOG_DIRECTORY_NAME = 'nekosearch';
 const SNAPSHOTS_DIRECTORY_NAME = 'snapshots';
+const CATALOG_FILE_NAME = 'catalog.json';
+const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 
 export type CatalogEntryStatus = 'bundled' | 'installed';
 
@@ -60,6 +62,23 @@ interface ValidatedSnapshot {
   databasePath: string;
   manifest: DocumentationIndexRuntimeManifest;
   files: SnapshotFiles;
+}
+
+interface CatalogSnapshotPointer {
+  source: string;
+  version: string;
+  revision: string;
+  directoryKey: string;
+}
+
+interface CatalogRegistry {
+  formatVersion: 1;
+  snapshots: CatalogSnapshotPointer[];
+}
+
+export interface SnapshotUpdateResult {
+  entry: DocumentationCatalogEntry;
+  changed: boolean;
 }
 
 export interface CatalogOptions {
@@ -95,7 +114,6 @@ export async function addSnapshot(
   options: CatalogOptions = {},
 ): Promise<DocumentationCatalogEntry> {
   const snapshot = await validateSnapshotDirectory(snapshotDirectory);
-  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
   const existingEntries = await listCatalogIndexes(options);
   if (
     existingEntries.some(
@@ -108,51 +126,139 @@ export async function addSnapshot(
     );
   }
 
+  await activateSnapshot(snapshot, options, existingEntries);
+  return catalogEntry(
+    { ...snapshot, databasePath: installedDatabasePath(snapshot, options) },
+    'installed',
+  );
+}
+
+/** Replace the installed revision only after the new snapshot validates. */
+export async function updateSnapshot(
+  snapshotDirectory: string,
+  options: CatalogOptions = {},
+): Promise<SnapshotUpdateResult> {
+  const snapshot = await validateSnapshotDirectory(snapshotDirectory);
+  const existingEntries = await listCatalogIndexes(options);
+  const current = existingEntries.find(
+    (entry) =>
+      entry.status === 'installed' &&
+      entry.source === snapshot.source &&
+      entry.version === snapshot.version,
+  );
+  if (!current) {
+    throw new Error(
+      `No installed snapshot exists for ${snapshot.source}@${snapshot.version}`,
+    );
+  }
+  if (
+    current.revision === snapshot.revision &&
+    current.manifest.index.sha256 === snapshot.manifest.index.sha256
+  ) {
+    return { entry: current, changed: false };
+  }
+
+  await activateSnapshot(snapshot, options, existingEntries);
+  return {
+    entry: catalogEntry(
+      { ...snapshot, databasePath: installedDatabasePath(snapshot, options) },
+      'installed',
+    ),
+    changed: true,
+  };
+}
+
+async function activateSnapshot(
+  snapshot: ValidatedSnapshot,
+  options: CatalogOptions,
+  existingEntries: DocumentationCatalogEntry[],
+): Promise<void> {
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+
   const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
   await assertDirectoryIfPresent(catalogRoot, 'Catalog directory');
   await assertDirectoryIfPresent(snapshotsDirectory, 'Snapshots directory');
 
-  const targetDirectory = join(
-    snapshotsDirectory,
-    snapshotDirectoryKey(snapshot.source, snapshot.version),
-  );
-  await assertMissing(targetDirectory, 'Snapshot catalog entry');
+  const directoryKey = snapshotStorageKey(snapshot);
+  const targetDirectory = join(snapshotsDirectory, directoryKey);
 
   await mkdir(snapshotsDirectory, { recursive: true, mode: 0o700 });
   await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
-  const stagingDirectory = await mkdtemp(join(snapshotsDirectory, '.pending-'));
-  try {
-    await writeFile(
-      join(stagingDirectory, 'corpus.json'),
-      snapshot.files.corpus,
-      {
-        flag: 'wx',
-        mode: 0o600,
-      },
+  if (await pathExists(targetDirectory)) {
+    await assertRealDirectory(targetDirectory, 'Installed snapshot directory');
+    const existingSnapshot = await validateSnapshotDirectory(targetDirectory);
+    if (
+      existingSnapshot.source !== snapshot.source ||
+      existingSnapshot.version !== snapshot.version ||
+      existingSnapshot.revision !== snapshot.revision ||
+      existingSnapshot.manifest.index.sha256 !== snapshot.manifest.index.sha256
+    ) {
+      throw new Error('Snapshot storage key points to different contents');
+    }
+  } else {
+    const stagingDirectory = await mkdtemp(
+      join(snapshotsDirectory, '.pending-'),
     );
-    await writeFile(
-      join(stagingDirectory, 'index.sqlite'),
-      snapshot.files.database,
-      { flag: 'wx', mode: 0o600 },
-    );
-    await writeFile(
-      join(stagingDirectory, 'manifest.json'),
-      snapshot.files.manifest,
-      { flag: 'wx', mode: 0o600 },
-    );
-    await rename(stagingDirectory, targetDirectory);
-  } catch (error) {
-    await rm(stagingDirectory, { recursive: true, force: true });
-    throw error;
+    try {
+      await writeFile(
+        join(stagingDirectory, 'corpus.json'),
+        snapshot.files.corpus,
+        { flag: 'wx', mode: 0o600 },
+      );
+      await writeFile(
+        join(stagingDirectory, 'index.sqlite'),
+        snapshot.files.database,
+        { flag: 'wx', mode: 0o600 },
+      );
+      await writeFile(
+        join(stagingDirectory, 'manifest.json'),
+        snapshot.files.manifest,
+        { flag: 'wx', mode: 0o600 },
+      );
+      const staged = await validateSnapshotDirectory(stagingDirectory);
+      if (
+        staged.source !== snapshot.source ||
+        staged.version !== snapshot.version ||
+        staged.revision !== snapshot.revision ||
+        staged.manifest.index.sha256 !== snapshot.manifest.index.sha256
+      ) {
+        throw new Error('Staged snapshot changed during installation');
+      }
+      await rename(stagingDirectory, targetDirectory);
+    } catch (error) {
+      await rm(stagingDirectory, { recursive: true, force: true });
+      throw error;
+    }
   }
 
-  return catalogEntry(
-    {
-      ...snapshot,
-      databasePath: join(targetDirectory, 'index.sqlite'),
-    },
-    'installed',
+  const snapshots = existingEntries
+    .filter(
+      (entry) =>
+        entry.status === 'installed' &&
+        (entry.source !== snapshot.source ||
+          entry.version !== snapshot.version),
+    )
+    .map((entry) => ({
+      source: entry.source,
+      version: entry.version,
+      revision: entry.revision,
+      directoryKey: basename(dirname(entry.databasePath)),
+    }));
+  snapshots.push({
+    source: snapshot.source,
+    version: snapshot.version,
+    revision: snapshot.revision,
+    directoryKey,
+  });
+  snapshots.sort(
+    (left, right) =>
+      compareStrings(left.source, right.source) ||
+      compareStrings(left.version, right.version),
   );
+  await writeCatalogRegistry(catalogRoot, {
+    formatVersion: 1,
+    snapshots,
+  });
 }
 
 /** Validate the exact three-file snapshot format emitted by the indexer. */
@@ -276,6 +382,38 @@ async function loadInstalledSnapshots(
   if (await pathExists(catalogRoot)) {
     await assertRealDirectory(catalogRoot, 'Catalog directory');
   }
+  const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
+  if (await pathExists(registryPath)) {
+    const registryBytes = await readRegularFile(
+      registryPath,
+      MAX_CATALOG_BYTES,
+    );
+    const registry = parseCatalogRegistry(registryBytes);
+    if (registry.snapshots.length === 0) return [];
+    if (!(await pathExists(snapshotsDirectory))) {
+      throw new Error('Catalog snapshots directory is missing');
+    }
+    await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+
+    const entries: DocumentationCatalogEntry[] = [];
+    for (const pointer of registry.snapshots) {
+      const directory = join(snapshotsDirectory, pointer.directoryKey);
+      await assertRealDirectory(directory, 'Installed snapshot directory');
+      const snapshot = await validateSnapshotDirectory(directory);
+      if (
+        snapshot.source !== pointer.source ||
+        snapshot.version !== pointer.version ||
+        snapshot.revision !== pointer.revision ||
+        !isValidSnapshotStorageKey(pointer.directoryKey, snapshot)
+      ) {
+        throw new Error('Catalog snapshot pointer identity is invalid');
+      }
+      entries.push(catalogEntry(snapshot, 'installed'));
+    }
+    assertUniqueInstalledIdentities(entries);
+    return entries;
+  }
+
   if (!(await pathExists(snapshotsDirectory))) return [];
   await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
 
@@ -294,6 +432,121 @@ async function loadInstalledSnapshots(
     entries.push(catalogEntry(snapshot, 'installed'));
   }
   return entries;
+}
+
+function parseCatalogRegistry(bytes: Buffer): CatalogRegistry {
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString('utf8')) as unknown;
+  } catch (cause) {
+    throw new Error('Catalog registry is not valid JSON', { cause });
+  }
+  if (
+    !isRecord(value) ||
+    hasOnlyKeys(value, ['formatVersion', 'snapshots']) !== true ||
+    value.formatVersion !== 1 ||
+    !Array.isArray(value.snapshots)
+  ) {
+    throw new Error('Catalog registry does not match the supported format');
+  }
+
+  const snapshots = value.snapshots.map((candidate): CatalogSnapshotPointer => {
+    if (
+      !isRecord(candidate) ||
+      hasOnlyKeys(candidate, [
+        'source',
+        'version',
+        'revision',
+        'directoryKey',
+      ]) !== true ||
+      typeof candidate.source !== 'string' ||
+      typeof candidate.version !== 'string' ||
+      typeof candidate.revision !== 'string' ||
+      typeof candidate.directoryKey !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(candidate.directoryKey)
+    ) {
+      throw new Error('Catalog registry contains an unsafe snapshot pointer');
+    }
+    const pointer = {
+      source: candidate.source,
+      version: candidate.version,
+      revision: candidate.revision,
+      directoryKey: candidate.directoryKey,
+    };
+    validateCatalogText(pointer.source, 256, 'Source');
+    validateCatalogText(pointer.version, 64, 'Version');
+    validateCatalogText(pointer.revision, 256, 'Revision');
+    return pointer;
+  });
+  return { formatVersion: 1, snapshots };
+}
+
+async function writeCatalogRegistry(
+  catalogRoot: string,
+  registry: CatalogRegistry,
+): Promise<void> {
+  await assertRealDirectory(catalogRoot, 'Catalog directory');
+  const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
+  if (await pathExists(registryPath)) {
+    const info = await lstat(registryPath);
+    if (info.isSymbolicLink() || !info.isFile()) {
+      throw new Error('Catalog registry must be a safe regular file');
+    }
+  }
+  const temporaryPath = join(catalogRoot, `.catalog-${randomUUID()}.pending`);
+  const contents = Buffer.from(`${JSON.stringify(registry, null, 2)}\n`);
+  if (contents.byteLength > MAX_CATALOG_BYTES) {
+    throw new Error('Catalog registry is too large');
+  }
+
+  try {
+    const handle = await open(
+      temporaryPath,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    );
+    try {
+      await handle.writeFile(contents);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporaryPath, registryPath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actual = Object.keys(value).sort(compareStrings);
+  const expected = [...keys].sort(compareStrings);
+  return (
+    actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index])
+  );
+}
+
+function assertUniqueInstalledIdentities(
+  entries: DocumentationCatalogEntry[],
+): void {
+  const identities = new Set<string>();
+  for (const entry of entries) {
+    const identity = `${entry.source}\0${entry.version}`;
+    if (identities.has(identity)) {
+      throw new Error(
+        `Catalog contains more than one installed snapshot for ${entry.source}@${entry.version}`,
+      );
+    }
+    identities.add(identity);
+  }
 }
 
 async function readRegularFile(
@@ -653,6 +906,38 @@ function snapshotDirectoryKey(source: string, version: string): string {
     .digest('hex');
 }
 
+function snapshotStorageKey(snapshot: ValidatedSnapshot): string {
+  return createHash('sha256')
+    .update(
+      `${snapshot.source}\0${snapshot.version}\0${snapshot.revision}\0${snapshot.manifest.index.sha256}`,
+      'utf8',
+    )
+    .digest('hex');
+}
+
+function isValidSnapshotStorageKey(
+  directoryKey: string,
+  snapshot: ValidatedSnapshot,
+): boolean {
+  return (
+    directoryKey === snapshotDirectoryKey(snapshot.source, snapshot.version) ||
+    directoryKey === snapshotStorageKey(snapshot)
+  );
+}
+
+function installedDatabasePath(
+  snapshot: ValidatedSnapshot,
+  options: CatalogOptions,
+): string {
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+  return join(
+    catalogRoot,
+    SNAPSHOTS_DIRECTORY_NAME,
+    snapshotStorageKey(snapshot),
+    'index.sqlite',
+  );
+}
+
 function getPackageDataDirectory(): string {
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
   return resolve(moduleDirectory, '../../..', 'data');
@@ -674,10 +959,6 @@ async function pathExists(path: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
   }
-}
-
-async function assertMissing(path: string, name: string): Promise<void> {
-  if (await pathExists(path)) throw new Error(`${name} already exists`);
 }
 
 async function assertDirectoryIfPresent(

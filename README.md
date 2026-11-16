@@ -53,13 +53,24 @@ Inspect the bundled indexes:
 nekosearch list
 ```
 
-The catalog displays each documentation source, version, source revision, and whether it is bundled or installed. Add a validated snapshot directory produced by the documentation indexer with `corpus.json`, `index.sqlite`, and `manifest.json`:
+The catalog displays each documentation source, version, source revision, and whether it is bundled or installed. Add a validated local snapshot directory produced by the documentation indexer with `corpus.json`, `index.sqlite`, and `manifest.json`:
 
 ```sh
 nekosearch add --from /path/to/snapshot-directory
 nekosearch list
 nekosearch serve
 ```
+
+Install or update a prebuilt NestJS major from the official project release:
+
+```sh
+nekosearch add nestjs@12
+nekosearch update nestjs@12
+```
+
+Remote installs are limited to the requested NestJS major (11 or 12); updates never switch majors. The CLI trusts release metadata from the TLS authenticated GitHub API for the pinned `rafaself/neko-search` repository (ID `1455942811`). It checks GitHub's API provided SHA-256 digest and asset size before reading the archive; an archive sidecar checksum is not a trust source. The CLI then checks the release revision, official NestJS source, requested version, bundle and SQLite format compatibility, corpus hashes, and database contents before atomically activating a new catalog revision. A failed or interrupted download leaves the active revision intact.
+
+Only `add` and `update` download snapshots. `serve` loads the active catalog once at startup, remains offline, and does not hot reload; start a new serve process to use an updated revision.
 
 When running from the repository after building, use:
 

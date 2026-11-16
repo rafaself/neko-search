@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
@@ -60,24 +61,58 @@ async function withTimeout(promise, label, milliseconds = 30_000) {
   }
 }
 
-async function createLocalNestSnapshot(snapshotDirectory) {
+async function createLocalNestSnapshot(snapshotDirectory, revisionOverride) {
   await mkdir(snapshotDirectory, { recursive: true });
   const sourceData = join(root, 'data');
-  const database = await readFile(join(sourceData, 'documentation-v12.sqlite'));
-  const corpus = await readFile(join(sourceData, 'documentation-v12.json'));
+  let database = await readFile(join(sourceData, 'documentation-v12.sqlite'));
+  const corpusValue = JSON.parse(
+    await readFile(join(sourceData, 'documentation-v12.json'), 'utf8'),
+  );
   const runtimeManifest = JSON.parse(
     await readFile(join(sourceData, 'documentation-v12.manifest.json'), 'utf8'),
   );
-  const parsedCorpus = JSON.parse(corpus.toString('utf8'));
+  if (revisionOverride) {
+    corpusValue.source.revision = revisionOverride;
+    for (const document of corpusValue.documents) {
+      document.source.provenance.revision = revisionOverride;
+      for (const chunk of document.chunks) {
+        chunk.sourceRevision = revisionOverride;
+      }
+    }
+    runtimeManifest.source.revision = revisionOverride;
+    runtimeManifest.index.sourceRevision = revisionOverride;
+  }
+  const parsedCorpus = corpusValue;
+  const corpus = Buffer.from(`${JSON.stringify(parsedCorpus, null, 2)}\n`);
   await Promise.all([
     writeFile(join(snapshotDirectory, 'index.sqlite'), database),
     writeFile(join(snapshotDirectory, 'corpus.json'), corpus),
   ]);
+  if (revisionOverride) {
+    const databasePath = join(snapshotDirectory, 'index.sqlite');
+    const index = new DatabaseSync(databasePath);
+    try {
+      index
+        .prepare(
+          'UPDATE documentation_search SET source_revision = ? WHERE documentation_version = ?',
+        )
+        .run(revisionOverride, '12');
+      index
+        .prepare(
+          'UPDATE documentation_index_metadata SET value = ? WHERE key = ?',
+        )
+        .run(revisionOverride, 'source_revision');
+    } finally {
+      index.close();
+    }
+    database = await readFile(databasePath);
+  }
+  runtimeManifest.index.sha256 = sha256(database);
 
   const buildManifest = {
     manifestVersion: 2,
     documentation: { id: 'nestjs', version: '12' },
-    source: runtimeManifest.source,
+    source: parsedCorpus.source,
     pipeline: {
       parserVersion: 1,
       transformerVersion: 1,
@@ -135,6 +170,20 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     env: guardedEnvironment,
   });
   assert.match(added, /Added nestjs@12 revision /u);
+  const updatedRevision = 'f'.repeat(40);
+  const updatedSnapshotDirectory = join(
+    temporaryDirectory,
+    'local-nest-v12-updated',
+  );
+  await createLocalNestSnapshot(updatedSnapshotDirectory, updatedRevision);
+  const { updateSnapshot } = await import(
+    pathToFileURL(join(root, 'dist/apps/nekosearch/catalog.js')).href
+  );
+  const update = await updateSnapshot(updatedSnapshotDirectory, {
+    catalogRoot: join(xdgDataHome, 'nekosearch'),
+  });
+  assert.equal(update.changed, true);
+  assert.equal(update.entry.revision, updatedRevision);
   const catalogOutput = run(binary, ['list'], {
     cwd: project,
     env: guardedEnvironment,
@@ -159,6 +208,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   assert.equal(rows.get(`${officialNestSource}@12`)?.status, 'bundled');
   assert.match(rows.get('nestjs@12')?.revision ?? '', /^[a-f0-9]{40}$/u);
   assert.equal(rows.get('nestjs@12')?.status, 'installed');
+  assert.equal(rows.get('nestjs@12')?.revision, updatedRevision);
   assert.equal(
     rows.size,
     4,
@@ -166,9 +216,13 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   );
 
   const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
-  const installedSnapshotKey = sha256(
-    Buffer.from(`nestjs${String.fromCharCode(0)}12`),
+  const catalogRegistry = JSON.parse(
+    await readFile(join(xdgDataHome, 'nekosearch', 'catalog.json'), 'utf8'),
   );
+  const installedSnapshotKey = catalogRegistry.snapshots.find(
+    (snapshot) => snapshot.source === 'nestjs' && snapshot.version === '12',
+  )?.directoryKey;
+  assert.match(installedSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
   const indexPaths = [
     join(installedPackage, 'data', 'mcp-protocol', 'index.sqlite'),
     join(installedPackage, 'data', 'documentation-v11.sqlite'),
@@ -456,6 +510,7 @@ async function main() {
       'dist/apps/nekosearch/cli.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/catalog.js',
+      'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/catalog-contract.js',
       'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
       'dist/modules/documentation/mcp/documentation-tool-handlers.js',
@@ -545,6 +600,24 @@ globalThis.fetch = function () {
     );
 
     const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
+    const [cliSource, serveSource, remoteSnapshotSource] = await Promise.all([
+      readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
+      readFile(join(installedPackage, 'dist/apps/nekosearch/serve.js'), 'utf8'),
+      readFile(
+        join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
+        'utf8',
+      ),
+    ]);
+    assert.match(cliSource, /import\('\.\/remote-snapshots\.js'\)/u);
+    assert.doesNotMatch(cliSource, /^import .*remote-snapshots/mu);
+    assert.doesNotMatch(
+      serveSource,
+      /remote-snapshots|markdown-parser|docs-indexer/u,
+    );
+    assert.doesNotMatch(
+      remoteSnapshotSource,
+      /markdown-parser|document-normalizer|docs-indexer/u,
+    );
     const installedEngine = join(
       installedPackage,
       'node_modules',

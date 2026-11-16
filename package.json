@@ -13,11 +13,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rafaself/nestjs-docs-mcp.git"
+    "url": "git+https://github.com/rafaself/neko-search.git"
   },
-  "homepage": "https://github.com/rafaself/nestjs-docs-mcp#readme",
+  "homepage": "https://github.com/rafaself/neko-search#readme",
   "bugs": {
-    "url": "https://github.com/rafaself/nestjs-docs-mcp/issues"
+    "url": "https://github.com/rafaself/neko-search/issues"
   },
   "keywords": [
     "nestjs",
