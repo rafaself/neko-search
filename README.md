@@ -11,6 +11,8 @@
 
 NekoSearch gives AI assistants local access to versioned NestJS documentation. It ships validated indexes for NestJS 11 and 12 and returns relevant sections with canonical source URLs and upstream revisions. Connect over stdio or loopback Streamable HTTP; the selected index is read-only, and the server does not download documentation at runtime. NekoSearch is independently maintained and is not affiliated with NestJS.
 
+The reusable engine handles document discovery, parsing, indexing, and retrieval independently of any documentation source. A separate NestJS integration builds the v11 and v12 indexes. The distributable package bundles the engine with those indexes for offline use.
+
 ---
 
 ### Installation
@@ -39,7 +41,7 @@ This validates and stages the v11 and v12 indexes in `data/`. You can also pass 
 
 ### Quick Start
 
-Select the documentation version by setting a matching SQLite index and manifest:
+For this NestJS docs example, select v12 by setting its matching SQLite index and manifest. Use the corresponding v11 paths to serve NestJS 11:
 
 ```sh
 export DOCUMENTATION_INDEX_PATH="$PWD/data/documentation-v12.sqlite"
