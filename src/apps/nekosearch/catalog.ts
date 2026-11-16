@@ -53,6 +53,12 @@ export interface DocumentationCatalogEntry {
   trackingRecipe?: string;
 }
 
+export interface CatalogOverview {
+  readable: boolean;
+  entries: DocumentationCatalogEntry[];
+  errors: string[];
+}
+
 interface SnapshotFiles {
   corpus: Buffer;
   database: Buffer;
@@ -126,6 +132,64 @@ export async function listCatalogIndexes(
   );
   assertUniqueCatalogIdentities(entries);
   return entries;
+}
+
+/** Read the overview without discarding valid bundled entries if the user catalog is corrupt. */
+export async function readCatalogOverview(
+  options: CatalogOptions = {},
+): Promise<CatalogOverview> {
+  const packageDataDirectory =
+    options.packageDataDirectory ?? getPackageDataDirectory();
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+  const entries: DocumentationCatalogEntry[] = [];
+  const errors: string[] = [];
+  try {
+    entries.push(...(await loadBundledProtocolSnapshot(packageDataDirectory)));
+  } catch (error) {
+    errors.push(errorMessage(error));
+  }
+  try {
+    entries.push(...(await loadInstalledSnapshots(catalogRoot)));
+  } catch (error) {
+    errors.push(errorMessage(error));
+  }
+  try {
+    assertUniqueCatalogIdentities(entries);
+  } catch (error) {
+    errors.push(errorMessage(error));
+  }
+  entries.sort(
+    (left, right) =>
+      compareStrings(left.source, right.source) ||
+      compareStrings(left.version, right.version) ||
+      compareStrings(left.status, right.status),
+  );
+  return { readable: errors.length === 0, entries, errors };
+}
+
+/** Find and validate only the requested bundled or installed snapshot. */
+export async function getCatalogIndex(
+  selector: string,
+  options: CatalogOptions = {},
+): Promise<DocumentationCatalogEntry | undefined> {
+  const { source, version } = parseCatalogSelector(selector);
+  const packageDataDirectory =
+    options.packageDataDirectory ?? getPackageDataDirectory();
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+  const installed = await loadInstalledSnapshotByIdentity(
+    catalogRoot,
+    source,
+    version,
+  );
+  let bundled: DocumentationCatalogEntry | undefined;
+  if (source === 'mcp') {
+    const entry = (await loadBundledProtocolSnapshot(packageDataDirectory))[0];
+    if (entry?.version === version) bundled = entry;
+  }
+  if (installed && bundled) {
+    throw new Error(`Catalog contains more than one index for ${selector}`);
+  }
+  return installed ?? bundled;
 }
 
 /** Validate the snapshot fully before creating or changing the user catalog. */
@@ -655,6 +719,68 @@ async function loadInstalledSnapshots(
   return entries;
 }
 
+async function loadInstalledSnapshotByIdentity(
+  catalogRoot: string,
+  source: string,
+  version: string,
+): Promise<DocumentationCatalogEntry | undefined> {
+  if (await pathExists(catalogRoot)) {
+    await assertRealDirectory(catalogRoot, 'Catalog directory');
+  }
+  const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
+  const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
+  if (await pathExists(registryPath)) {
+    const registry = parseCatalogRegistry(
+      await readRegularFile(registryPath, MAX_CATALOG_BYTES),
+    );
+    const pointer = registry.snapshots.find(
+      (candidate) =>
+        candidate.source === source && candidate.version === version,
+    );
+    if (!pointer) return undefined;
+    return loadInstalledSnapshotPointer(catalogRoot, pointer);
+  }
+
+  if (!(await pathExists(snapshotsDirectory))) return undefined;
+  await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+  const directoryKey = snapshotDirectoryKey(source, version);
+  const directory = join(snapshotsDirectory, directoryKey);
+  if (!(await pathExists(directory))) return undefined;
+  await assertRealDirectory(directory, 'Installed snapshot directory');
+  const snapshot = await validateSnapshotDirectory(directory);
+  if (
+    snapshot.source !== source ||
+    snapshot.version !== version ||
+    snapshotDirectoryKey(snapshot.source, snapshot.version) !== directoryKey
+  ) {
+    throw new Error('Installed snapshot directory identity is invalid');
+  }
+  return catalogEntry(snapshot, 'installed');
+}
+
+async function loadInstalledSnapshotPointer(
+  catalogRoot: string,
+  pointer: CatalogSnapshotPointer,
+): Promise<DocumentationCatalogEntry> {
+  const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
+  if (!(await pathExists(snapshotsDirectory))) {
+    throw new Error('Catalog snapshots directory is missing');
+  }
+  await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+  const directory = join(snapshotsDirectory, pointer.directoryKey);
+  await assertRealDirectory(directory, 'Installed snapshot directory');
+  const snapshot = await validateSnapshotDirectory(directory);
+  if (
+    snapshot.source !== pointer.source ||
+    snapshot.version !== pointer.version ||
+    snapshot.revision !== pointer.revision ||
+    !isValidSnapshotStorageKey(pointer.directoryKey, snapshot)
+  ) {
+    throw new Error('Catalog snapshot pointer identity is invalid');
+  }
+  return catalogEntry(snapshot, 'installed', pointer.trackingRecipe);
+}
+
 function parseCatalogRegistry(bytes: Buffer): CatalogRegistry {
   let value: unknown;
   try {
@@ -716,6 +842,23 @@ function parseCatalogRegistry(bytes: Buffer): CatalogRegistry {
     return pointer;
   });
   return { formatVersion: 1, snapshots };
+}
+
+function parseCatalogSelector(selector: string): {
+  source: string;
+  version: string;
+} {
+  const separator = selector.lastIndexOf('@');
+  if (separator <= 0 || separator === selector.length - 1) {
+    throw new Error(
+      `Invalid source selector "${selector}"; use the form source@version`,
+    );
+  }
+  const source = selector.slice(0, separator);
+  const version = selector.slice(separator + 1);
+  validateCatalogText(source, 256, 'Source');
+  validateCatalogText(version, 64, 'Version');
+  return { source, version };
 }
 
 async function writeCatalogRegistry(
@@ -1094,6 +1237,10 @@ function containsControlCharacters(value: string): boolean {
     if (code <= 31 || code === 127) return true;
   }
   return false;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function assertSafeCanonicalUrl(value: string): void {

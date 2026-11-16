@@ -41,17 +41,36 @@ export interface RemoteSnapshotOptions extends CatalogOptions {
 
 export type RemoteSnapshotResult = SnapshotUpdateResult;
 
-export type OutdatedStatus =
+export type UpstreamRevisionStatus =
   'current' | 'changed' | 'untracked' | 'check failed';
 
-export interface OutdatedSnapshotResult {
+export interface UpstreamRevisionResult {
   selector: string;
   source: string;
   version: string;
-  status: OutdatedStatus;
+  status: UpstreamRevisionStatus;
   installedRevision: string;
   upstreamRevision?: string;
   error?: string;
+}
+
+export type SnapshotTrackingState =
+  'tracked' | 'untracked' | 'pinned' | 'not applicable';
+
+export function getSnapshotTrackingState(
+  entry: DocumentationCatalogEntry,
+): SnapshotTrackingState {
+  if (entry.status === 'bundled') return 'not applicable';
+  if (
+    entry.manifest.source.kind === 'git' &&
+    isImmutableRef(entry.manifest.source.ref)
+  ) {
+    return 'pinned';
+  }
+  return entry.trackingRecipe === `${entry.source}@${entry.version}` &&
+    entry.manifest.source.kind === 'git'
+    ? 'tracked'
+    : 'untracked';
 }
 
 /** Resolve a curated upstream ref, build locally, validate, then activate. */
@@ -156,50 +175,18 @@ export async function installRemoteSnapshot(
   }
 }
 
-/** Resolve refs without downloading any documentation files. */
-export async function checkOutdatedSnapshots(
-  selector?: string,
+/** Check only the supplied installed snapshots and never download documentation. */
+export async function checkUpstreamRevisions(
+  entries: readonly DocumentationCatalogEntry[],
   options: RemoteSnapshotOptions = {},
-): Promise<OutdatedSnapshotResult[]> {
-  const entries = (await listCatalogIndexes(options)).filter(
-    (entry) => entry.status === 'installed',
-  );
-  let targets: DocumentationCatalogEntry[];
-  if (selector !== undefined) {
-    const parsed = parseSelector(selector);
-    const entry = entries.find(
-      (candidate) =>
-        candidate.source === parsed.source &&
-        candidate.version === parsed.version,
-    );
-    if (!entry) {
-      throw new Error(
-        `No installed snapshot exists for ${selector}; run "nekosearch list" to see installed sources`,
-      );
-    }
-    targets = [entry];
-  } else {
-    targets = entries.filter(
-      (entry) =>
-        entry.trackingRecipe !== undefined &&
-        !(
-          entry.manifest.source.kind === 'git' &&
-          isImmutableRef(entry.manifest.source.ref)
-        ),
-    );
-  }
-
-  if (targets.length === 0) return [];
+): Promise<UpstreamRevisionResult[]> {
+  const targets = entries.filter((entry) => entry.status === 'installed');
   const fetcher = options.fetcher ?? fetch;
-  const sourceBuilder = options.sourceBuilder ?? (await loadSourceBuilder());
-  const results: OutdatedSnapshotResult[] = [];
+  let sourceBuilderPromise: Promise<NestJsSnapshotBuilder> | undefined;
+  const results: UpstreamRevisionResult[] = [];
   for (const entry of targets) {
     const canonicalSelector = `${entry.source}@${entry.version}`;
-    if (
-      entry.trackingRecipe !== canonicalSelector ||
-      entry.manifest.source.kind !== 'git' ||
-      isImmutableRef(entry.manifest.source.ref)
-    ) {
+    if (getSnapshotTrackingState(entry) !== 'tracked') {
       results.push({
         selector: canonicalSelector,
         source: entry.source,
@@ -210,6 +197,10 @@ export async function checkOutdatedSnapshots(
       continue;
     }
     try {
+      sourceBuilderPromise ??= options.sourceBuilder
+        ? Promise.resolve(options.sourceBuilder)
+        : loadSourceBuilder();
+      const sourceBuilder = await sourceBuilderPromise;
       const targetVersion = parseTarget(entry.source, entry.version);
       const upstream = await resolveRecipe(
         targetVersion,
@@ -254,19 +245,6 @@ async function resolveRecipe(
     throw new Error('Resolved source does not match the curated NestJS recipe');
   }
   return resolvedSource;
-}
-
-function parseSelector(selector: string): { source: string; version: string } {
-  const separator = selector.lastIndexOf('@');
-  if (separator <= 0 || separator === selector.length - 1) {
-    throw new Error(
-      `Invalid source selector "${selector}"; use the form source@version`,
-    );
-  }
-  return {
-    source: selector.slice(0, separator),
-    version: selector.slice(separator + 1),
-  };
 }
 
 function isImmutableRef(ref: string): boolean {

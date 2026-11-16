@@ -8,6 +8,7 @@ import {
   formatCatalogList,
   listCatalogIndexes,
 } from './catalog.js';
+import { parseStatusArguments, renderStatus } from './status.js';
 
 const [command, ...arguments_] = process.argv.slice(2);
 
@@ -33,42 +34,8 @@ if (command === 'build') {
       process.stderr.write(`nekosearch list failed: ${formatError(error)}\n`);
       process.exitCode = 1;
     });
-} else if (command === 'outdated' && arguments_.length <= 1) {
-  void import('./remote-snapshots.js')
-    .then(({ checkOutdatedSnapshots }) => checkOutdatedSnapshots(arguments_[0]))
-    .then((results) => {
-      process.stdout.write(
-        [
-          [
-            'SOURCE',
-            'VERSION',
-            'STATUS',
-            'INSTALLED',
-            'UPSTREAM',
-            'DETAIL',
-          ].join('\t'),
-          ...results.map((result) =>
-            [
-              result.source,
-              result.version,
-              result.status,
-              result.installedRevision,
-              result.upstreamRevision ?? '',
-              result.error ?? '',
-            ].join('\t'),
-          ),
-        ].join('\n') + '\n',
-      );
-      if (results.some((result) => result.status === 'check failed')) {
-        process.exitCode = 1;
-      }
-    })
-    .catch((error: unknown) => {
-      process.stderr.write(
-        `nekosearch outdated failed: ${formatError(error)}\n`,
-      );
-      process.exitCode = 1;
-    });
+} else if (command === 'status') {
+  runStatusCommand(arguments_);
 } else if (
   command === 'add' &&
   arguments_.length === 2 &&
@@ -133,6 +100,28 @@ function runRemoteSnapshotCommand(
     });
 }
 
+function runStatusCommand(arguments_: string[]): void {
+  let parsed: ReturnType<typeof parseStatusArguments>;
+  try {
+    parsed = parseStatusArguments(arguments_);
+  } catch (error) {
+    process.stderr.write(
+      `nekosearch status failed: ${errorMessage(error)}\n${usage()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+  void renderStatus(parsed)
+    .then(({ text, exitCode }) => {
+      process.stdout.write(text);
+      if (exitCode !== 0) process.exitCode = exitCode;
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(`nekosearch status failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
+}
+
 function runBuildCommand(arguments_: string[]): void {
   void import('./build.js')
     .then(({ buildLocalSnapshot }) => buildLocalSnapshot(arguments_))
@@ -193,16 +182,19 @@ function usage(): string {
     '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
     '  nekosearch serve',
     '  nekosearch list',
-    '  nekosearch outdated [<source@version>]',
+    '  nekosearch status [<source@version>] [--check-upstream]',
     '  nekosearch add --from <snapshot-dir>',
     '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
     '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
     '  nekosearch mcp configure codex [--force]',
     '',
+    '  status defaults to a local overview; a selector reads only that snapshot.',
+    '  --check-upstream checks tracked refs only and reports untracked snapshots.',
+    '',
     'Network access:',
-    '  build, list, add --from, serve, and mcp configure codex use local files.',
+    '  build, list, status, add --from, serve, and mcp configure codex use local files.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
-    '  outdated resolves tracked upstream refs over HTTPS without downloading docs.',
+    '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',
     '  serve is stdio-only, offline, and read-only.',
     '  add/update store validated SQLite snapshots in the user data directory.',
     '',
@@ -213,4 +205,8 @@ function formatError(error: unknown): string {
   return error instanceof Error
     ? (error.stack ?? error.message)
     : String(error);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -13,13 +13,15 @@ import {
 import { sourceUrl } from '../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
 import {
   addSnapshot,
+  getCatalogIndex,
   listCatalogIndexes,
   updateSnapshot,
 } from '../../../../src/apps/nekosearch/catalog.js';
 import {
-  checkOutdatedSnapshots,
+  checkUpstreamRevisions,
   installRemoteSnapshot,
   type NestJsSnapshotBuilder,
+  type RemoteSnapshotOptions,
 } from '../../../../src/apps/nekosearch/remote-snapshots.js';
 
 const officialRepository = 'https://github.com/nestjs/docs.nestjs.com';
@@ -201,9 +203,9 @@ describe('NekoSearch curated source installs', () => {
 
     const currentUpstream = createV12Upstream(installedRevision);
     await expect(
-      checkOutdatedSnapshots(
-        'nestjs@12',
+      checkInstalledUpstream(
         remoteOptions(currentUpstream.fetcher),
+        'nestjs@12',
       ),
     ).resolves.toMatchObject([
       {
@@ -218,7 +220,7 @@ describe('NekoSearch curated source installs', () => {
 
     const changedUpstream = createV12Upstream('3'.repeat(40));
     await expect(
-      checkOutdatedSnapshots(undefined, remoteOptions(changedUpstream.fetcher)),
+      checkInstalledUpstream(remoteOptions(changedUpstream.fetcher)),
     ).resolves.toMatchObject([
       {
         selector: 'nestjs@12',
@@ -234,11 +236,14 @@ describe('NekoSearch curated source installs', () => {
   it('reports upstream failures as check failed and leaves add-from Git provenance untracked', async () => {
     const installedRevision = '4'.repeat(40);
     await installRevision(installedRevision);
-    const failedCheck = await checkOutdatedSnapshots('nestjs@12', {
-      ...remoteOptions(() =>
-        Promise.resolve(new Response('unavailable', { status: 503 })),
-      ),
-    });
+    const failedCheck = await checkInstalledUpstream(
+      {
+        ...remoteOptions(() =>
+          Promise.resolve(new Response('unavailable', { status: 503 })),
+        ),
+      },
+      'nestjs@12',
+    );
     expect(failedCheck).toMatchObject([
       { selector: 'nestjs@12', status: 'check failed', installedRevision },
     ]);
@@ -269,28 +274,27 @@ describe('NekoSearch curated source installs', () => {
       const imported = await addSnapshot(importedDirectory, importedOptions);
       expect(imported.trackingRecipe).toBeUndefined();
       expect(
-        await checkOutdatedSnapshots(undefined, {
-          ...importedOptions,
-          fetcher: fromUpstream.fetcher,
-          sourceBuilder,
-        }),
-      ).toEqual([]);
-      expect(
-        await checkOutdatedSnapshots('nestjs@12', {
+        await checkInstalledUpstream({
           ...importedOptions,
           fetcher: fromUpstream.fetcher,
           sourceBuilder,
         }),
       ).toMatchObject([{ selector: 'nestjs@12', status: 'untracked' }]);
+      expect(
+        await checkInstalledUpstream(
+          {
+            ...importedOptions,
+            fetcher: fromUpstream.fetcher,
+            sourceBuilder,
+          },
+          'nestjs@12',
+        ),
+      ).toMatchObject([{ selector: 'nestjs@12', status: 'untracked' }]);
       expect(fromUpstream.requestedRefNames()).toEqual([]);
 
-      await expect(
-        checkOutdatedSnapshots('nestjs@11', {
-          ...importedOptions,
-          fetcher: fromUpstream.fetcher,
-          sourceBuilder,
-        }),
-      ).rejects.toThrow(/No installed snapshot exists.*nekosearch list/iu);
+      await expect(getCatalogIndex('nestjs@11', importedOptions)).resolves.toBe(
+        undefined,
+      );
 
       const pinnedRevision = '6'.repeat(40);
       const pinnedUpstream = createV12Upstream(pinnedRevision);
@@ -356,11 +360,11 @@ describe('NekoSearch curated source installs', () => {
         pinnedOptions,
       );
       expect(pinned.entry.trackingRecipe).toBeUndefined();
-      expect(await checkOutdatedSnapshots(undefined, pinnedOptions)).toEqual(
-        [],
-      );
+      expect(await checkInstalledUpstream(pinnedOptions)).toMatchObject([
+        { selector: 'nestjs@12', status: 'untracked' },
+      ]);
       expect(
-        await checkOutdatedSnapshots('nestjs@12', pinnedOptions),
+        await checkInstalledUpstream(pinnedOptions, 'nestjs@12'),
       ).toMatchObject([{ selector: 'nestjs@12', status: 'untracked' }]);
       expect(pinnedUpstream.requestedRefNames()).toEqual([]);
     } finally {
@@ -611,6 +615,19 @@ describe('NekoSearch curated source installs', () => {
       'add',
       remoteOptions(createV12Upstream(revision).fetcher),
     );
+  }
+
+  async function checkInstalledUpstream(
+    options: RemoteSnapshotOptions,
+    selector?: string,
+  ) {
+    const entries = (await listCatalogIndexes(options)).filter(
+      (entry) =>
+        entry.status === 'installed' &&
+        (selector === undefined ||
+          `${entry.source}@${entry.version}` === selector),
+    );
+    return checkUpstreamRevisions(entries, options);
   }
 
   async function expectActiveRevision(revision: string): Promise<void> {
