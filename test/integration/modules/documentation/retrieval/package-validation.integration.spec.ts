@@ -110,6 +110,7 @@ describe('package index verification', () => {
     );
     for (const path of [
       'dist/apps/nekosearch/serve.js',
+      'dist/apps/nekosearch/codex-config.js',
       'dist/apps/nekosearch/build.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
       'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',

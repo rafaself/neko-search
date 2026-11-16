@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import 'reflect-metadata';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from './serve.js';
 import {
   addSnapshot,
@@ -11,6 +13,14 @@ const [command, ...arguments_] = process.argv.slice(2);
 
 if (command === 'build') {
   runBuildCommand(arguments_);
+} else if (
+  command === 'mcp' &&
+  arguments_[0] === 'configure' &&
+  arguments_[1] === 'codex' &&
+  (arguments_.length === 2 ||
+    (arguments_.length === 3 && arguments_[2] === '--force'))
+) {
+  runCodexConfigureCommand(arguments_.length === 3);
 } else if (command === 'serve' && arguments_.length === 0) {
   serve().catch((error: unknown) => {
     process.stderr.write(`nekosearch serve failed: ${formatError(error)}\n`);
@@ -115,6 +125,30 @@ function runBuildCommand(arguments_: string[]): void {
     });
 }
 
+function runCodexConfigureCommand(force: boolean): void {
+  const nekosearchCommand = resolve(
+    process.argv[1] ?? fileURLToPath(import.meta.url),
+  );
+  void import('./codex-config.js')
+    .then(({ configureCodexMcp }) =>
+      configureCodexMcp({ nekosearchCommand, force }),
+    )
+    .then((result) => {
+      const message = {
+        added: 'Configured Codex MCP server nekosearch.',
+        replaced: 'Replaced Codex MCP server nekosearch.',
+        unchanged: 'Codex MCP server nekosearch is already configured.',
+      }[result];
+      process.stdout.write(`${message}\n`);
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `nekosearch mcp configure codex failed: ${formatError(error)}\n`,
+      );
+      process.exitCode = 1;
+    });
+}
+
 function usage(): string {
   return [
     'Usage:',
@@ -124,6 +158,7 @@ function usage(): string {
     '  nekosearch add --from <snapshot-dir>',
     '  nekosearch add nestjs@<major>',
     '  nekosearch update nestjs@<major>',
+    '  nekosearch mcp configure codex [--force]',
     '',
   ].join('\n');
 }

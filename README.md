@@ -83,6 +83,14 @@ npm run start:nekosearch -- serve
 
 `nekosearch serve` opens bundled and installed indexes read-only. It needs no index path settings and does not open a network listener. Set `DEBUG=1` to log MCP tool timing to stderr.
 
+Codex registration is opt-in and uses the installed Codex CLI:
+
+```sh
+nekosearch mcp configure codex
+```
+
+This registers the current absolute NekoSearch executable with `serve` as its argument. A matching registration is left unchanged; a different registration named `nekosearch` requires `--force` to replace. Snapshot installs and updates change the catalog used by the next serve session, so they do not require reconfiguring Codex.
+
 ---
 
 ### MCP Tools

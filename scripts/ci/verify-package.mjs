@@ -70,6 +70,7 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
   const executablePath = resolve(root, 'dist/apps/nekosearch/cli.js');
   const runtimeFiles = [
     'dist/apps/nekosearch/serve.js',
+    'dist/apps/nekosearch/codex-config.js',
     'dist/apps/nekosearch/build.js',
     'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
     'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',

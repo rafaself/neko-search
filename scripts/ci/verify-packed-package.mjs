@@ -2,15 +2,17 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { Client } from '@modelcontextprotocol/client';
@@ -21,12 +23,7 @@ const versions = ['11', '12'];
 const officialNestSource = 'https://github.com/nestjs/docs.nestjs.com';
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd ?? root,
-    env: options.env ?? process.env,
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-  });
+  const result = runResult(command, args, options);
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
@@ -34,6 +31,15 @@ function run(command, args, options = {}) {
     );
   }
   return result.stdout;
+}
+
+function runResult(command, args, options = {}) {
+  return spawnSync(command, args, {
+    cwd: options.cwd ?? root,
+    env: options.env ?? process.env,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
 }
 
 function withoutNpmDryRun(environment) {
@@ -239,6 +245,12 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     env: guardedEnvironment,
   });
   assert.match(added, /Added nestjs@12 revision /u);
+  const codexStateAfterConfigure = await verifyCodexConfiguration(
+    binary,
+    project,
+    temporaryDirectory,
+    guardedEnvironment,
+  );
   const updatedRevision = 'f'.repeat(40);
   const updatedSnapshotDirectory = join(
     temporaryDirectory,
@@ -253,6 +265,19 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   });
   assert.equal(update.changed, true);
   assert.equal(update.entry.revision, updatedRevision);
+  const codexStateAfterSnapshotUpdate = JSON.parse(
+    await readFile(codexStateAfterConfigure.stateFile, 'utf8'),
+  );
+  assert.deepEqual(
+    codexStateAfterSnapshotUpdate.registrations,
+    codexStateAfterConfigure.registrations,
+    'updating a snapshot must preserve the Codex server registration',
+  );
+  assert.equal(
+    codexStateAfterSnapshotUpdate.calls.length,
+    codexStateAfterConfigure.calls.length,
+    'snapshot updates must not invoke Codex configuration commands',
+  );
   const catalogOutput = run(binary, ['list'], {
     cwd: project,
     env: guardedEnvironment,
@@ -546,6 +571,136 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   }
 }
 
+async function verifyCodexConfiguration(
+  binary,
+  project,
+  temporaryDirectory,
+  environment,
+) {
+  const fakeCodexDirectory = join(temporaryDirectory, 'fake-codex-bin');
+  const nodeOnlyDirectory = join(temporaryDirectory, 'node-only-bin');
+  const fakeCodex = join(fakeCodexDirectory, 'codex');
+  const stateFile = join(temporaryDirectory, 'codex-state.json');
+  await Promise.all([
+    mkdir(fakeCodexDirectory),
+    mkdir(nodeOnlyDirectory),
+    writeFile(stateFile, JSON.stringify({ registrations: [], calls: [] })),
+  ]);
+  await Promise.all([
+    writeFile(
+      fakeCodex,
+      [
+        '#!/usr/bin/env node',
+        "const fs = require('node:fs');",
+        'const stateFile = process.env.NEKOSEARCH_CODEX_TEST_STATE;',
+        'const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));',
+        'const args = process.argv.slice(2);',
+        'state.calls.push(args);',
+        'if (args[0] !== "mcp") process.exit(2);',
+        'if (args[1] === "list") {',
+        '  fs.writeFileSync(stateFile, JSON.stringify(state));',
+        '  process.stdout.write(JSON.stringify(state.registrations));',
+        '  process.exit(0);',
+        '}',
+        'if (args[1] === "remove") {',
+        '  state.registrations = state.registrations.filter((item) => item.name !== args[2]);',
+        '} else if (args[1] === "add") {',
+        '  const separator = args.indexOf("--");',
+        '  state.registrations = state.registrations.filter((item) => item.name !== args[2]);',
+        '  state.registrations.push({ name: args[2], enabled: true, transport: { type: "stdio", command: args[separator + 1], args: args.slice(separator + 2) } });',
+        '} else { process.exit(2); }',
+        'fs.writeFileSync(stateFile, JSON.stringify(state));',
+      ].join('\n') + '\n',
+    ),
+    symlink(process.execPath, join(nodeOnlyDirectory, 'node')),
+  ]);
+  await chmod(fakeCodex, 0o755);
+
+  const stateEnvironment = {
+    ...environment,
+    PATH: `${fakeCodexDirectory}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}`,
+    NEKOSEARCH_CODEX_TEST_STATE: stateFile,
+  };
+  const missingCodex = runResult(binary, ['mcp', 'configure', 'codex'], {
+    cwd: project,
+    env: { ...environment, PATH: nodeOnlyDirectory },
+  });
+  assert.equal(missingCodex.status, 1);
+  assert.match(missingCodex.stderr, /Codex CLI was not found/u);
+
+  assert.match(
+    run(binary, ['mcp', 'configure', 'codex'], {
+      cwd: project,
+      env: stateEnvironment,
+    }),
+    /Configured Codex MCP server nekosearch/u,
+  );
+  let state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.equal(state.registrations.length, 1);
+  assert.ok(
+    isAbsolute(state.registrations[0].transport.command),
+    'Codex must receive an absolute NekoSearch executable path',
+  );
+  assert.deepEqual(state.registrations[0].transport.args, ['serve']);
+  const registeredCommand = state.registrations[0].transport.command;
+
+  assert.match(
+    run(binary, ['mcp', 'configure', 'codex'], {
+      cwd: project,
+      env: stateEnvironment,
+    }),
+    /already configured/u,
+  );
+  state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.equal(
+    state.calls.filter((args) => args[1] === 'add').length,
+    1,
+    'repeated configuration must not add a duplicate registration',
+  );
+
+  const conflict = {
+    name: 'nekosearch',
+    enabled: true,
+    transport: { type: 'stdio', command: '/other/nekosearch', args: ['serve'] },
+  };
+  state = { registrations: [conflict], calls: [] };
+  await writeFile(stateFile, JSON.stringify(state));
+  const refusedConflict = runResult(binary, ['mcp', 'configure', 'codex'], {
+    cwd: project,
+    env: stateEnvironment,
+  });
+  assert.equal(refusedConflict.status, 1);
+  assert.match(refusedConflict.stderr, /pass --force/u);
+  state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.deepEqual(state.registrations, [conflict]);
+  assert.deepEqual(state.calls, [['mcp', 'list', '--json']]);
+
+  assert.match(
+    run(binary, ['mcp', 'configure', 'codex', '--force'], {
+      cwd: project,
+      env: stateEnvironment,
+    }),
+    /Replaced Codex MCP server nekosearch/u,
+  );
+  state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.deepEqual(state.calls, [
+    ['mcp', 'list', '--json'],
+    ['mcp', 'list', '--json'],
+    ['mcp', 'remove', 'nekosearch'],
+    ['mcp', 'add', 'nekosearch', '--', registeredCommand, 'serve'],
+  ]);
+  assert.deepEqual(state.registrations[0].transport, {
+    type: 'stdio',
+    command: registeredCommand,
+    args: ['serve'],
+  });
+  return {
+    stateFile,
+    registrations: state.registrations,
+    calls: state.calls,
+  };
+}
+
 function assertProtocolStdout(stdout) {
   const lines = stdout.trim().split('\n');
   assert.ok(
@@ -621,6 +776,7 @@ async function main() {
       'licenses/nestjs-docs-v11-LICENSE',
       'licenses/nestjs-docs-v12-LICENSE',
       'dist/apps/nekosearch/cli.js',
+      'dist/apps/nekosearch/codex-config.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
@@ -748,26 +904,33 @@ process.once('exit', () => {
     );
 
     const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
-    const [cliSource, serveSource, remoteSnapshotSource, buildSource] =
-      await Promise.all([
-        readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
-        readFile(
-          join(installedPackage, 'dist/apps/nekosearch/serve.js'),
-          'utf8',
-        ),
-        readFile(
-          join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
-          'utf8',
-        ),
-        readFile(
-          join(installedPackage, 'dist/apps/nekosearch/build.js'),
-          'utf8',
-        ),
-      ]);
+    const [
+      cliSource,
+      codexConfigSource,
+      serveSource,
+      remoteSnapshotSource,
+      buildSource,
+    ] = await Promise.all([
+      readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
+      readFile(
+        join(installedPackage, 'dist/apps/nekosearch/codex-config.js'),
+        'utf8',
+      ),
+      readFile(join(installedPackage, 'dist/apps/nekosearch/serve.js'), 'utf8'),
+      readFile(
+        join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
+        'utf8',
+      ),
+      readFile(join(installedPackage, 'dist/apps/nekosearch/build.js'), 'utf8'),
+    ]);
     assert.match(cliSource, /import\('\.\/remote-snapshots\.js'\)/u);
     assert.match(cliSource, /import\('\.\/build\.js'\)/u);
+    assert.match(cliSource, /import\('\.\/codex-config\.js'\)/u);
     assert.doesNotMatch(cliSource, /^import .*remote-snapshots/mu);
     assert.doesNotMatch(cliSource, /^import .*build\.js/mu);
+    assert.doesNotMatch(cliSource, /^import .*codex-config\.js/mu);
+    assert.match(codexConfigSource, /execFile\(/u);
+    assert.doesNotMatch(codexConfigSource, /shell:\s*true/u);
     assert.doesNotMatch(
       serveSource,
       /remote-snapshots|markdown-parser|document-normalizer|docs-indexer|build-runtime/u,
