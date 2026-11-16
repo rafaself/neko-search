@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { serve } from './serve.js';
 import {
   addSnapshot,
@@ -36,6 +37,8 @@ if (command === 'build') {
     });
 } else if (command === 'status') {
   runStatusCommand(arguments_);
+} else if (command === 'add' && arguments_.includes('--github')) {
+  runGitHubSnapshotCommand(arguments_);
 } else if (
   command === 'add' &&
   arguments_.length === 4 &&
@@ -180,6 +183,57 @@ function runLocalSnapshotCommand(
     });
 }
 
+function runGitHubSnapshotCommand(arguments_: string[]): void {
+  let values: { github?: string; ref?: string; path?: string; id?: string };
+  try {
+    ({ values } = parseArgs({
+      args: arguments_,
+      options: {
+        github: { type: 'string' },
+        ref: { type: 'string' },
+        path: { type: 'string' },
+        id: { type: 'string' },
+      },
+      strict: true,
+      allowPositionals: false,
+    }));
+  } catch (error) {
+    process.stderr.write(
+      `nekosearch add --github failed: ${errorMessage(error)}\n${usage()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+  if (!values.github || !values.ref || !values.path || !values.id) {
+    process.stderr.write(
+      `nekosearch add --github requires --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>\n${usage()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  void import('./github-snapshots.js')
+    .then(({ installGitHubSnapshot }) =>
+      installGitHubSnapshot(
+        values.github!,
+        values.ref!,
+        values.path!,
+        values.id!,
+      ),
+    )
+    .then((entry) =>
+      process.stdout.write(
+        `Added ${entry.source}@${entry.version} revision ${entry.revision} (installed)\n`,
+      ),
+    )
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `nekosearch add --github failed: ${formatError(error)}\n`,
+      );
+      process.exitCode = 1;
+    });
+}
+
 function runCodexConfigureCommand(force: boolean): void {
   const nekosearchCommand = resolve(
     process.argv[1] ?? fileURLToPath(import.meta.url),
@@ -214,6 +268,7 @@ function usage(): string {
     '  nekosearch list',
     '  nekosearch status [<source@version>] [--check-upstream]',
     '  nekosearch add --dir <docs-dir> --id <source@version> (offline local build and install)',
+    '  nekosearch add --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>',
     '  nekosearch add --from <snapshot-dir>',
     '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
     '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
@@ -224,6 +279,7 @@ function usage(): string {
     '',
     'Network access:',
     '  build, list, status, add --dir, add --from, serve, and mcp configure codex use local files.',
+    '  add --github fetches a public GitHub source over HTTPS and pins the resolved commit.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
     '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',
     '  serve is stdio-only, offline, and read-only.',

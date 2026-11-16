@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { DocumentationSourceProvenance } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 
-interface LocalBuildConfiguration {
+export interface LocalBuildConfiguration {
   id: string;
   version: string;
   inputDirectory: string;
@@ -13,6 +14,12 @@ interface LocalBuildConfiguration {
     pathPrefix: string;
     indexFileNames: string[];
   };
+}
+
+export interface LocalBuildOptions {
+  mode: 'clean' | 'incremental';
+  sourceProvenance?: DocumentationSourceProvenance;
+  sourceLocationForPath?: (path: string) => string;
 }
 
 interface LocalBuildSummary {
@@ -34,7 +41,7 @@ interface LocalBuildSummary {
 interface BuildLocalDocumentationModule {
   buildLocalDocumentation(
     config: LocalBuildConfiguration,
-    options: { mode: 'clean' | 'incremental' },
+    options: LocalBuildOptions,
   ): Promise<LocalBuildSummary>;
 }
 
@@ -84,6 +91,16 @@ export async function buildLocalSnapshot(args: string[]) {
     },
   };
 
+  return buildLocalSnapshotConfiguration(configuration, {
+    mode: values.clean ? 'clean' : 'incremental',
+  });
+}
+
+/** Build a configured local source through the same Markdown/MDX indexer. */
+export async function buildLocalSnapshotConfiguration(
+  configuration: LocalBuildConfiguration,
+  options: LocalBuildOptions,
+): Promise<LocalBuildSummary> {
   const buildServicePath = resolve(
     dirname(fileURLToPath(import.meta.url)),
     'build-runtime/services/build-local-documentation.js',
@@ -91,7 +108,5 @@ export async function buildLocalSnapshot(args: string[]) {
   const buildService = (await import(
     pathToFileURL(buildServicePath).href
   )) as BuildLocalDocumentationModule;
-  return buildService.buildLocalDocumentation(configuration, {
-    mode: values.clean ? 'clean' : 'incremental',
-  });
+  return buildService.buildLocalDocumentation(configuration, options);
 }

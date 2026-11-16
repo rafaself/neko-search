@@ -1,4 +1,7 @@
-import type { DocumentationIdentity } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type {
+  DocumentationIdentity,
+  DocumentationSourceProvenance,
+} from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { DocumentationSnapshotSchema } from '@nestjs-docs/documentation-engine/domain/documentation.schemas.js';
 import {
   discoverLocalDocumentation,
@@ -24,6 +27,12 @@ import {
 /** Increment when local source-to-document transforms change. */
 export const LOCAL_DOCUMENTATION_TRANSFORMER_VERSION = 1;
 
+export interface BuildLocalDocumentationOptions {
+  mode?: DocumentationBuildMode;
+  sourceProvenance?: DocumentationSourceProvenance;
+  sourceLocationForPath?: (path: string) => string;
+}
+
 export type {
   DocumentationBuildDiagnostic,
   DocumentationBuildSummary,
@@ -32,7 +41,7 @@ export type {
 /** Build a local Markdown/MDX directory through the shared documentation engine. */
 export async function buildLocalDocumentation(
   configInput: DocumentationBuildConfig,
-  options: { mode?: DocumentationBuildMode } = {},
+  options: BuildLocalDocumentationOptions = {},
 ): Promise<DocumentationBuildSummary> {
   const config = DocumentationBuildConfigSchema.parse(configInput);
   const discoverySettings = DocumentationDiscoverySettingsSchema.parse(
@@ -45,8 +54,12 @@ export async function buildLocalDocumentation(
   } satisfies DocumentationDiscoveryOptions);
   const routedSnapshot = DocumentationSnapshotSchema.parse({
     ...snapshot,
+    source: options.sourceProvenance ?? snapshot.source,
     documents: snapshot.documents.map((document) => ({
       ...document,
+      sourceLocation:
+        options.sourceLocationForPath?.(document.path) ??
+        document.sourceLocation,
       canonicalUrl: mapCanonicalRoute(
         document.path,
         config.routeMapping.baseUrl,

@@ -22,6 +22,7 @@ export const GitDocumentationSourceSchema = z.strictObject({
   kind: z.literal('git'),
   repository: nonEmptyString,
   ref: nonEmptyString,
+  directory: nonEmptyString.optional(),
   revision: nonEmptyString,
 });
 

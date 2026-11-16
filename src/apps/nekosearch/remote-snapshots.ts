@@ -63,6 +63,12 @@ export function getSnapshotTrackingState(
   if (entry.status === 'bundled') return 'not applicable';
   if (
     entry.manifest.source.kind === 'git' &&
+    entry.manifest.source.directory !== undefined
+  ) {
+    return 'untracked';
+  }
+  if (
+    entry.manifest.source.kind === 'git' &&
     isImmutableRef(entry.manifest.source.ref)
   ) {
     return 'pinned';

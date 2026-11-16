@@ -46,6 +46,16 @@ nekosearch add --dir ./docs --id my-api@1
 - Linux and macOS: `$XDG_DATA_HOME/nekosearch/snapshots/` or `~/.local/share/nekosearch/snapshots/` when `XDG_DATA_HOME` is unset.
 - Windows: `%LOCALAPPDATA%\nekosearch\snapshots\`.
 
+## Optional public GitHub source
+
+Install Markdown or MDX from one directory of a public GitHub repository:
+
+```sh
+nekosearch add --github https://github.com/owner/repository --ref main --path docs --id my-api@1
+```
+
+This command accepts repository URLs on `https://github.com` only. It resolves the requested ref to a commit, lists that commit's Git tree, then downloads only regular `.md` and `.mdx` files inside `--path`. Symlinks and submodules are skipped; repository code is never executed and dependencies are never installed. Requests use bounded timeouts and responses are limited to 10,000 files, 4 MiB per file, and 64 MiB total. The snapshot records the normalized repository URL, requested ref, documentation directory, and resolved commit. GitHub installs are untracked and do not gain update behavior from provenance alone. This command requires network access; `serve` remains offline.
+
 ## Optional curated source: NestJS
 
 NestJS 11 and 12 can be installed on demand:
@@ -66,18 +76,19 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 
 ## Network access and serving
 
-| Command                                                 | Network access | What it does                                                                      |
-| ------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------- |
-| `nekosearch build ...`                                  | No             | Builds a snapshot from local files at the chosen output path.                     |
-| `nekosearch add --dir ... --id ...`                     | No             | Builds, validates, and installs a local Markdown/MDX directory.                   |
-| `nekosearch add --from ...`                             | No             | Validates and installs a local snapshot.                                          |
-| `nekosearch list`                                       | No             | Lists bundled and installed snapshots.                                            |
-| `nekosearch status [<source@version>]`                  | No             | Shows catalog and snapshot state without contacting upstream sources.             |
-| `nekosearch status [<source@version>] --check-upstream` | Yes            | Resolves selected tracked refs only; does not download docs or write the catalog. |
-| `nekosearch add nestjs@11` / `nestjs@12`                | Yes            | Fetches the selected curated source over HTTPS and builds it locally.             |
-| `nekosearch update nestjs@11` / `nestjs@12`             | Yes            | Resolves and builds the requested major's latest curated commit.                  |
-| `nekosearch serve`                                      | No             | Serves search and fetch tools over stdio using read-only SQLite connections.      |
-| `nekosearch mcp configure codex`                        | No             | Registers the local executable with the installed Codex CLI.                      |
+| Command                                                     | Network access | What it does                                                                       |
+| ----------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `nekosearch build ...`                                      | No             | Builds a snapshot from local files at the chosen output path.                      |
+| `nekosearch add --dir ... --id ...`                         | No             | Builds, validates, and installs a local Markdown/MDX directory.                    |
+| `nekosearch add --from ...`                                 | No             | Validates and installs a local snapshot.                                           |
+| `nekosearch add --github ... --ref ... --path ... --id ...` | Yes            | Fetches supported Markdown/MDX files from a public GitHub repo at a pinned commit. |
+| `nekosearch list`                                           | No             | Lists bundled and installed snapshots.                                             |
+| `nekosearch status [<source@version>]`                      | No             | Shows catalog and snapshot state without contacting upstream sources.              |
+| `nekosearch status [<source@version>] --check-upstream`     | Yes            | Resolves selected tracked refs only; does not download docs or write the catalog.  |
+| `nekosearch add nestjs@11` / `nestjs@12`                    | Yes            | Fetches the selected curated source over HTTPS and builds it locally.              |
+| `nekosearch update nestjs@11` / `nestjs@12`                 | Yes            | Resolves and builds the requested major's latest curated commit.                   |
+| `nekosearch serve`                                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections.       |
+| `nekosearch mcp configure codex`                            | No             | Registers the local executable with the installed Codex CLI.                       |
 
 `serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing or updating a snapshot to load the new catalog. MCP clients discover sources with `list_docs`; each entry has a selector such as `nestjs@12`, its source and version, and the pinned revision. No CLI command is needed for discovery.
 
