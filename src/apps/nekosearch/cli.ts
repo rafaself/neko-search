@@ -7,6 +7,7 @@ import {
   addSnapshot,
   formatCatalogList,
   listCatalogIndexes,
+  removeSnapshot,
 } from './catalog.js';
 import { parseStatusArguments, renderStatus } from './status.js';
 
@@ -36,6 +37,8 @@ if (command === 'build') {
     });
 } else if (command === 'status') {
   runStatusCommand(arguments_);
+} else if (command === 'remove' && arguments_.length === 1 && arguments_[0]) {
+  runRemoveCommand(arguments_[0]);
 } else if (command === 'add' && arguments_.includes('--github')) {
   runGitHubSnapshotCommand(arguments_);
 } else if (
@@ -129,6 +132,22 @@ function runStatusCommand(arguments_: string[]): void {
     })
     .catch((error: unknown) => {
       process.stderr.write(`nekosearch status failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
+}
+
+function runRemoveCommand(selector: string): void {
+  void removeSnapshot(selector)
+    .then(({ entry, cleanupWarning }) => {
+      process.stdout.write(
+        `Removed ${entry.source}@${entry.version} revision ${entry.revision} (installed)\n`,
+      );
+      if (cleanupWarning) {
+        process.stderr.write(`Warning: ${cleanupWarning}\n`);
+      }
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(`nekosearch remove failed: ${formatError(error)}\n`);
       process.exitCode = 1;
     });
 }
@@ -266,6 +285,7 @@ function usage(): string {
     '  nekosearch serve',
     '  nekosearch list',
     '  nekosearch status [<source@version>] [--check-upstream]',
+    '  nekosearch remove <source@version>',
     '  nekosearch add --dir <docs-dir> --id <source@version> (offline local build and install)',
     '  nekosearch add --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>',
     '  nekosearch add --from <snapshot-dir>',
@@ -277,7 +297,7 @@ function usage(): string {
     '  --check-upstream checks tracked refs only and reports untracked snapshots.',
     '',
     'Network access:',
-    '  build, list, status, add --dir, add --from, serve, and mcp configure codex use local files.',
+    '  build, list, status, remove, add --dir, add --from, serve, and mcp configure codex use local files.',
     '  add --github fetches a public GitHub source over HTTPS and pins the resolved commit.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
     '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',

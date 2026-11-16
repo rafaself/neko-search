@@ -8,13 +8,16 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   addSnapshot,
   listCatalogIndexes,
+  removeSnapshot,
 } from '../../../../src/apps/nekosearch/catalog.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
+import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
 
 describe('NekoSearch snapshot catalog', () => {
   let root: string;
@@ -64,6 +67,81 @@ describe('NekoSearch snapshot catalog', () => {
         }),
       ]),
     );
+  });
+
+  it('removes an installed snapshot while preserving other entries and open readers', async () => {
+    const added = await addSnapshot(snapshotDirectory, { catalogRoot });
+    const otherSnapshot = join(root, 'other-snapshot');
+    mkdirSync(otherSnapshot);
+    createDocumentationTestIndex(join(otherSnapshot, 'index.sqlite'), '1', {
+      documentationId: 'fastapi',
+      revision: 'fastapi-synthetic-revision',
+    });
+    await addSnapshot(otherSnapshot, { catalogRoot });
+
+    const reader = new TestDocumentationSearchService(added.databasePath, '12');
+    try {
+      const removed = await removeSnapshot('nestjs@12', { catalogRoot });
+
+      expect(removed.entry).toMatchObject({
+        source: 'nestjs',
+        version: '12',
+        status: 'installed',
+      });
+      expect(removed.cleanupWarning).toBeUndefined();
+      expect(existsSync(dirname(added.databasePath))).toBe(false);
+      expect(reader.search('ExecutionContext')).toHaveLength(1);
+
+      const entries = await listCatalogIndexes({ catalogRoot });
+      expect(
+        entries.map(({ source, version }) => `${source}@${version}`),
+      ).toEqual(['fastapi@1', 'mcp@2025-11-25']);
+    } finally {
+      reader.close();
+    }
+  });
+
+  it('rejects unknown and bundled selectors without changing the catalog', async () => {
+    await expect(removeSnapshot('missing@1', { catalogRoot })).rejects.toThrow(
+      'No installed snapshot exists for missing@1',
+    );
+    await expect(
+      removeSnapshot('mcp@2025-11-25', { catalogRoot }),
+    ).rejects.toThrow('Cannot remove bundled snapshot mcp@2025-11-25');
+    expect(existsSync(catalogRoot)).toBe(false);
+  });
+
+  it('accepts the source selector through the public CLI command', async () => {
+    const dataHome = join(root, 'cli-data');
+    const cliCatalogRoot = join(dataHome, 'nekosearch');
+    await addSnapshot(snapshotDirectory, { catalogRoot: cliCatalogRoot });
+
+    const output = execFileSync(
+      process.execPath,
+      [
+        resolve(process.cwd(), 'dist/apps/nekosearch/cli.js'),
+        'remove',
+        'nestjs@12',
+      ],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          LOCALAPPDATA: dataHome,
+          XDG_DATA_HOME: dataHome,
+        },
+      },
+    );
+
+    expect(output).toContain(
+      'Removed nestjs@12 revision mcp-synthetic-revision',
+    );
+    expect(
+      (await listCatalogIndexes({ catalogRoot: cliCatalogRoot })).map(
+        ({ source, version }) => `${source}@${version}`,
+      ),
+    ).toEqual(['mcp@2025-11-25']);
   });
 
   it('rejects a corpus hash mismatch before creating the catalog', async () => {

@@ -92,6 +92,11 @@ export interface SnapshotUpdateResult {
   changed: boolean;
 }
 
+export interface SnapshotRemovalResult {
+  entry: DocumentationCatalogEntry;
+  cleanupWarning?: string;
+}
+
 export interface SnapshotIdentity {
   source: string;
   version: string;
@@ -274,6 +279,101 @@ export async function updateSnapshot(
   };
 }
 
+/** Remove one installed snapshot from the active catalog. */
+export async function removeSnapshot(
+  selector: string,
+  options: CatalogOptions = {},
+): Promise<SnapshotRemovalResult> {
+  const { source, version } = parseCatalogSelector(selector);
+  const existingEntries = await listCatalogIndexes(options);
+  const entry = existingEntries.find(
+    (candidate) => candidate.source === source && candidate.version === version,
+  );
+  if (!entry) {
+    throw new Error(`No installed snapshot exists for ${selector}`);
+  }
+  if (entry.status !== 'installed') {
+    throw new Error(
+      `Cannot remove bundled snapshot ${selector}; only installed snapshots can be removed`,
+    );
+  }
+
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+  const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
+  const expected = snapshotIdentity(entry);
+  let retiredDirectory: string | undefined;
+  let cleanupWarning: string | undefined;
+
+  await withCatalogLock(catalogRoot, async () => {
+    const snapshots = await readRegistryForActivation(
+      catalogRoot,
+      existingEntries,
+    );
+    const currentIndex = snapshots.findIndex(
+      (candidate) =>
+        candidate.source === source && candidate.version === version,
+    );
+    const current = currentIndex < 0 ? undefined : snapshots[currentIndex];
+    if (!current) {
+      throw new Error(
+        `Installed snapshot ${selector} changed while removal was waiting; retry the removal`,
+      );
+    }
+    if (!sameSnapshotIdentity(current, expected)) {
+      throw new Error(
+        `Installed snapshot ${selector} changed while removal was waiting; retry the removal`,
+      );
+    }
+
+    await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+    const snapshotDirectory = join(snapshotsDirectory, current.directoryKey);
+    await assertRealDirectory(
+      snapshotDirectory,
+      'Installed snapshot directory',
+    );
+    const snapshot = await validateSnapshotDirectory(snapshotDirectory);
+    if (
+      snapshot.source !== source ||
+      snapshot.version !== version ||
+      snapshot.revision !== current.revision ||
+      !isValidSnapshotStorageKey(current.directoryKey, snapshot)
+    ) {
+      throw new Error('Catalog snapshot pointer identity is invalid');
+    }
+
+    await writeCatalogRegistry(catalogRoot, {
+      formatVersion: 1,
+      snapshots: sortPointers(
+        snapshots.filter(
+          (candidate) =>
+            candidate.source !== source || candidate.version !== version,
+        ),
+      ),
+    });
+
+    const retiredPath = join(
+      snapshotsDirectory,
+      `.pending-removed-${randomUUID()}`,
+    );
+    try {
+      await rename(snapshotDirectory, retiredPath);
+      retiredDirectory = retiredPath;
+    } catch (error) {
+      cleanupWarning = `The catalog entry was removed, but snapshot files could not be retired; an existing serve session may still be using them (${errorMessage(error)})`;
+    }
+  });
+
+  if (retiredDirectory) {
+    try {
+      await rm(retiredDirectory, { recursive: true, force: true });
+    } catch (error) {
+      cleanupWarning = `The catalog entry was removed, but snapshot files could not be fully deleted (${errorMessage(error)})`;
+    }
+  }
+
+  return { entry, ...(cleanupWarning ? { cleanupWarning } : {}) };
+}
+
 async function activateSnapshot(
   snapshot: ValidatedSnapshot,
   options: CatalogOptions,
@@ -397,9 +497,25 @@ async function activateSnapshot(
         return false;
       }
 
-      if (stagingDirectory) {
+      if (stagingDirectory && !(await pathExists(targetDirectory))) {
         await rename(stagingDirectory, targetDirectory);
         stagingDirectory = undefined;
+      } else if (stagingDirectory) {
+        const existingSnapshot =
+          await validateSnapshotDirectory(targetDirectory);
+        if (
+          existingSnapshot.source !== snapshot.source ||
+          existingSnapshot.version !== snapshot.version ||
+          existingSnapshot.revision !== snapshot.revision ||
+          existingSnapshot.manifest.index.sha256 !==
+            snapshot.manifest.index.sha256
+        ) {
+          throw new Error('Snapshot storage key points to different contents');
+        }
+      } else if (!(await pathExists(targetDirectory))) {
+        throw new Error(
+          `Snapshot files for ${snapshot.source}@${snapshot.version} were removed while waiting for the catalog lock; retry the operation`,
+        );
       }
       const replacement: CatalogSnapshotPointer = {
         source: snapshot.source,

@@ -66,6 +66,7 @@ nekosearch update nestjs@12
 nekosearch status
 nekosearch status nestjs@12
 nekosearch status nestjs@12 --check-upstream
+nekosearch remove nestjs@12
 ```
 
 `add` and `update` require network access to GitHub over HTTPS. NekoSearch resolves the curated official source ref to a concrete commit, downloads supported documentation files from that commit without Git, applies the NestJS-specific Markdown transformation, and builds and validates the SQLite snapshot locally. The resolved commit and ref are recorded in its manifest. Updates stay within the requested major and activate only after the replacement snapshot passes validation; a failed update leaves the active snapshot in place.
@@ -84,13 +85,16 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 | `nekosearch add --github ... --ref ... --path ... --id ...` | Yes            | Fetches supported Markdown/MDX files from a public GitHub repo at a pinned commit. |
 | `nekosearch list`                                           | No             | Lists bundled and installed snapshots.                                             |
 | `nekosearch status [<source@version>]`                      | No             | Shows catalog and snapshot state without contacting upstream sources.              |
+| `nekosearch remove <source@version>`                        | No             | Removes an installed snapshot from the catalog and retires its active files.       |
 | `nekosearch status [<source@version>] --check-upstream`     | Yes            | Resolves selected tracked refs only; does not download docs or write the catalog.  |
 | `nekosearch add nestjs@11` / `nestjs@12`                    | Yes            | Fetches the selected curated source over HTTPS and builds it locally.              |
 | `nekosearch update nestjs@11` / `nestjs@12`                 | Yes            | Resolves and builds the requested major's latest curated commit.                   |
 | `nekosearch serve`                                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections.       |
 | `nekosearch mcp configure codex`                            | No             | Registers the local executable with the installed Codex CLI.                       |
 
-`serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing or updating a snapshot to load the new catalog. MCP clients discover sources with `list_docs`; each entry has a selector such as `nestjs@12`, its source and version, and the pinned revision. No CLI command is needed for discovery.
+`remove` is offline and only removes installed snapshots; bundled snapshots cannot be removed. It removes the selector from the catalog and retires its active snapshot files. A running `serve` process keeps using the SQLite indexes it opened at startup; restart it to load catalog changes. If the filesystem cannot retire files still in use, the command reports a cleanup warning.
+
+`serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing, updating, or removing a snapshot to load the new catalog. MCP clients discover sources with `list_docs`; each entry has a selector such as `nestjs@12`, its source and version, and the pinned revision. No CLI command is needed for discovery.
 
 ## MCP tools
 
