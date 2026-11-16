@@ -14,6 +14,7 @@ import { sourceUrl } from '../../../../apps/docs-indexer/src/integrations/nestjs
 import {
   addSnapshot,
   listCatalogIndexes,
+  updateSnapshot,
 } from '../../../../src/apps/nekosearch/catalog.js';
 import {
   checkOutdatedSnapshots,
@@ -365,6 +366,164 @@ describe('NekoSearch curated source installs', () => {
     } finally {
       rmSync(importedDirectory, { recursive: true, force: true });
     }
+  }, 20_000);
+
+  it.each([
+    ['matching upstream revision', '5'.repeat(40)],
+    ['different upstream revision', '6'.repeat(40)],
+  ])(
+    'rejects an imported official Git snapshot before network access when %s',
+    async (_case, upstreamRevision) => {
+      const importedRevision = '5'.repeat(40);
+      const importedDirectory = mkdtempSync(
+        join(tmpdir(), 'nekosearch-untracked-update-'),
+      );
+      try {
+        await sourceBuilder.buildNestJsDocumentationSnapshot(
+          '12',
+          importedDirectory,
+          createV12Upstream(importedRevision).fetcher,
+          {
+            kind: 'git',
+            repository: officialRepository,
+            ref: 'master',
+            revision: importedRevision,
+          },
+        );
+        const catalogOptions = {
+          catalogRoot,
+          packageDataDirectory: dataDirectory,
+        };
+        const imported = await addSnapshot(importedDirectory, catalogOptions);
+        expect(imported).toMatchObject({
+          source: 'nestjs',
+          version: '12',
+          revision: importedRevision,
+          manifest: {
+            source: {
+              kind: 'git',
+              repository: officialRepository,
+              ref: 'master',
+              revision: importedRevision,
+            },
+          },
+        });
+        expect(imported.trackingRecipe).toBeUndefined();
+        const registryPath = join(catalogRoot, 'catalog.json');
+        const registryBefore = await readFile(registryPath, 'utf8');
+        let resolveCalls = 0;
+        let fetchCalls = 0;
+        const uncalledFetcher: typeof fetch = () => {
+          fetchCalls += 1;
+          return Promise.reject(new Error('network access was not expected'));
+        };
+        const upstreamBuilder: NestJsSnapshotBuilder = {
+          resolveDocumentationSource: () => {
+            resolveCalls += 1;
+            return Promise.resolve({
+              kind: 'git',
+              repository: officialRepository,
+              ref: 'master',
+              revision: upstreamRevision,
+            });
+          },
+          buildNestJsDocumentationSnapshot: () => {
+            throw new Error('snapshot build was not expected');
+          },
+        };
+
+        await expect(
+          installRemoteSnapshot('nestjs', '12', 'update', {
+            ...catalogOptions,
+            fetcher: uncalledFetcher,
+            sourceBuilder: upstreamBuilder,
+          }),
+        ).rejects.toThrow(/not linked to its matching curated recipe/u);
+        expect(resolveCalls).toBe(0);
+        expect(fetchCalls).toBe(0);
+        expect(await readFile(registryPath, 'utf8')).toBe(registryBefore);
+        await expectActiveRevision(importedRevision);
+      } finally {
+        rmSync(importedDirectory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('rechecks the curated recipe link under the catalog lock before activation', async () => {
+    const activeRevision = '7'.repeat(40);
+    const nextRevision = '8'.repeat(40);
+    await installRevision(activeRevision);
+    const active = (
+      await listCatalogIndexes({
+        catalogRoot,
+        packageDataDirectory: dataDirectory,
+      })
+    ).find(
+      (entry) =>
+        entry.status === 'installed' &&
+        entry.source === 'nestjs' &&
+        entry.version === '12',
+    );
+    if (!active) throw new Error('Tracked snapshot was not installed');
+
+    let signalBuildStarted!: () => void;
+    const buildStarted = new Promise<void>((resolvePromise) => {
+      signalBuildStarted = resolvePromise;
+    });
+    let releaseBuild!: () => void;
+    const buildGate = new Promise<void>((resolvePromise) => {
+      releaseBuild = resolvePromise;
+    });
+    const upstream = createV12Upstream(nextRevision);
+    const gatedBuilder: NestJsSnapshotBuilder = {
+      resolveDocumentationSource,
+      buildNestJsDocumentationSnapshot: async (
+        version,
+        outputDirectory,
+        fetcher,
+        resolvedSource,
+      ) => {
+        signalBuildStarted();
+        await buildGate;
+        await buildNestJsDocumentationSnapshot(
+          version,
+          outputDirectory,
+          fetcher,
+          resolvedSource,
+        );
+      },
+    };
+    const update = installRemoteSnapshot('nestjs', '12', 'update', {
+      ...remoteOptions(upstream.fetcher),
+      sourceBuilder: gatedBuilder,
+    });
+    await buildStarted;
+
+    await updateSnapshot(
+      dirname(active.databasePath),
+      {
+        catalogRoot,
+        packageDataDirectory: dataDirectory,
+      },
+      { trackingRecipe: null },
+    );
+    releaseBuild();
+    await expect(update).rejects.toThrow(
+      /no longer linked to curated recipe nestjs@12/u,
+    );
+    await expectActiveRevision(activeRevision);
+    const after = (
+      await listCatalogIndexes({
+        catalogRoot,
+        packageDataDirectory: dataDirectory,
+      })
+    ).find(
+      (entry) =>
+        entry.status === 'installed' &&
+        entry.source === 'nestjs' &&
+        entry.version === '12',
+    );
+    expect(after?.trackingRecipe).toBeUndefined();
   }, 20_000);
 
   it('fails explicitly on a missing curated ref and does not try a fallback', async () => {

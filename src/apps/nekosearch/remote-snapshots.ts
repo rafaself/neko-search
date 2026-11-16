@@ -75,6 +75,12 @@ export async function installRemoteSnapshot(
   if (operation === 'update' && !current) {
     throw new Error(`No installed snapshot exists for ${source}@${version}`);
   }
+  const recipeSelector = `${source}@${version}`;
+  if (operation === 'update' && current?.trackingRecipe !== recipeSelector) {
+    throw new Error(
+      `Installed snapshot ${recipeSelector} is not linked to its matching curated recipe; only snapshots installed by the curated add command can be updated`,
+    );
+  }
 
   const fetcher = options.fetcher ?? fetch;
   const sourceBuilder = options.sourceBuilder ?? (await loadSourceBuilder());
@@ -95,7 +101,8 @@ export async function installRemoteSnapshot(
       {
         trackingRecipe: isImmutableRef(resolvedSource.ref)
           ? null
-          : `${source}@${version}`,
+          : recipeSelector,
+        expectedTrackingRecipe: recipeSelector,
         expectedCurrent: snapshotIdentity(current),
       },
     );
@@ -138,7 +145,10 @@ export async function installRemoteSnapshot(
     return await updateSnapshot(snapshotDirectory, options, {
       trackingRecipe: isImmutableRef(resolvedSource.ref)
         ? null
-        : `${source}@${version}`,
+        : recipeSelector,
+      ...(operation === 'update'
+        ? { expectedTrackingRecipe: recipeSelector }
+        : {}),
       ...(current ? { expectedCurrent: snapshotIdentity(current) } : {}),
     });
   } finally {

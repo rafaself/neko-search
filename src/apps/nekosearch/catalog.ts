@@ -97,6 +97,8 @@ export interface SnapshotIdentity {
 export interface SnapshotActivationOptions {
   /** A curated recipe selector that authorizes checking future ref changes. */
   trackingRecipe?: string | null;
+  /** The recipe link that must still be active when an update is activated. */
+  expectedTrackingRecipe?: string;
   /** The installed identity observed before an update was built. */
   expectedCurrent?: SnapshotIdentity;
 }
@@ -291,6 +293,14 @@ async function activateSnapshot(
         if (!current) {
           throw new Error(
             `No installed snapshot exists for ${snapshot.source}@${snapshot.version}`,
+          );
+        }
+        if (
+          activation.expectedTrackingRecipe !== undefined &&
+          current.trackingRecipe !== activation.expectedTrackingRecipe
+        ) {
+          throw new Error(
+            `Installed snapshot ${snapshot.source}@${snapshot.version} is no longer linked to curated recipe ${activation.expectedTrackingRecipe}; retry the update`,
           );
         }
         if (
