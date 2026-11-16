@@ -138,8 +138,11 @@ function formatUpstreamStatus(
   if (!enabled) return 'not checked';
   if (bundled) return 'not applicable';
   if (!result) return 'not checked';
-  if (result.status === 'current' || result.status === 'changed') {
+  if (result.status === 'current') {
     return `${result.status}: ${result.upstreamRevision ?? ''}`;
+  }
+  if (result.status === 'changed') {
+    return `changed: tracked ref resolves to a different commit (${result.upstreamRevision ?? ''})`;
   }
   if (result.status === 'check failed') {
     return `check failed: ${result.error ?? 'upstream check failed'}`;

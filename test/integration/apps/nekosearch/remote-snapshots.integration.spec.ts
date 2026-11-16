@@ -233,6 +233,49 @@ describe('NekoSearch curated source installs', () => {
     expect(changedUpstream.requestedRawPaths()).toEqual([]);
   }, 20_000);
 
+  it('reports a moved ref without claiming v12 compatibility and rejects an incompatible update', async () => {
+    const activeRevision = '7'.repeat(40);
+    const movedRevision = '8'.repeat(40);
+    await installRevision(activeRevision);
+
+    const incompatibleUpstream = createV12Upstream(movedRevision, {
+      migrationGuide:
+        'This article walks you through migrating from NestJS version 10 to version 11.',
+    });
+    await expect(
+      checkInstalledUpstream(
+        remoteOptions(incompatibleUpstream.fetcher),
+        'nestjs@12',
+      ),
+    ).resolves.toMatchObject([
+      {
+        selector: 'nestjs@12',
+        status: 'changed',
+        installedRevision: activeRevision,
+        upstreamRevision: movedRevision,
+      },
+    ]);
+    expect(incompatibleUpstream.requestedRefNames()).toEqual(['master']);
+    expect(incompatibleUpstream.requestedRawPaths()).toEqual([]);
+
+    await expect(
+      installRemoteSnapshot(
+        'nestjs',
+        '12',
+        'update',
+        remoteOptions(incompatibleUpstream.fetcher),
+      ),
+    ).rejects.toThrow(/no longer identifies a v12 migration guide/iu);
+    expect(incompatibleUpstream.requestedRefNames()).toEqual([
+      'master',
+      'master',
+    ]);
+    expect(incompatibleUpstream.requestedRawPaths()).toContain(
+      'content/migration.md',
+    );
+    await expectActiveRevision(activeRevision);
+  }, 20_000);
+
   it('reports upstream failures as check failed and leaves add-from Git provenance untracked', async () => {
     const installedRevision = '4'.repeat(40);
     await installRevision(installedRevision);
@@ -653,7 +696,7 @@ describe('NekoSearch curated source installs', () => {
 
   function createV12Upstream(
     revision: string,
-    options: { missingPath?: string } = {},
+    options: { missingPath?: string; migrationGuide?: string } = {},
   ) {
     const fixtureDocuments = new Map(
       fixtureData.snapshot.documents.map((document) => [
@@ -686,7 +729,8 @@ describe('NekoSearch curated source installs', () => {
         ['tools/generate-llms-txt.ts', fixtureData.aliases],
         [
           'content/migration.md',
-          'This article walks you through migrating from NestJS version 11 to version 12.',
+          options.migrationGuide ??
+            'This article walks you through migrating from NestJS version 11 to version 12.',
         ],
         ...fixtureDocuments,
       ]);

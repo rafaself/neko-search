@@ -31,6 +31,10 @@ export interface NestJsDocumentationRecipe {
 /**
  * Curated official source definitions. The v11 tag and v12 master content tree
  * were verified in the upstream NestJS docs repository on 2026-11-16.
+ * The docs/v12-release branch is v12-specific, but its latest branch commit
+ * found in November 2026 predates recent v12.5 updates on master. Keep master
+ * for current docs and reject it at update time if its major check no longer
+ * identifies a v11-to-v12 migration.
  * Every install resolves the configured ref to a commit first and then reads
  * only files from that commit. There is deliberately no default-branch fallback.
  */

@@ -158,7 +158,10 @@ describe('nekosearch status', () => {
     mockUpstream({ master: 'd'.repeat(40) });
     const changed = await runStatus('nestjs@12', '--check-upstream');
     expect(changed.exitCode).toBe(0);
-    expect(changed.text).toContain('tracked\tchanged: ' + 'd'.repeat(40));
+    expect(changed.text).toContain(
+      `tracked\tchanged: tracked ref resolves to a different commit (${'d'.repeat(40)})`,
+    );
+    expect(changed.text).not.toMatch(/compatible|update available/iu);
     expect(fetchRequests).toEqual([
       'https://api.github.com/repos/nestjs/docs.nestjs.com/commits/master',
     ]);
