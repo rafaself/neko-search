@@ -38,6 +38,15 @@ if (command === 'build') {
   runStatusCommand(arguments_);
 } else if (
   command === 'add' &&
+  arguments_.length === 4 &&
+  arguments_[0] === '--dir' &&
+  arguments_[1] &&
+  arguments_[2] === '--id' &&
+  arguments_[3]
+) {
+  runLocalSnapshotCommand(arguments_[1], arguments_[3]);
+} else if (
+  command === 'add' &&
   arguments_.length === 2 &&
   arguments_[0] === '--from' &&
   arguments_[1]
@@ -150,6 +159,27 @@ function runBuildCommand(arguments_: string[]): void {
     });
 }
 
+function runLocalSnapshotCommand(
+  inputDirectory: string,
+  selector: string,
+): void {
+  void import('./local-snapshots.js')
+    .then(({ installLocalSnapshot }) =>
+      installLocalSnapshot(inputDirectory, selector),
+    )
+    .then((entry) =>
+      process.stdout.write(
+        `Added ${entry.source}@${entry.version} revision ${entry.revision} (installed)\n`,
+      ),
+    )
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `nekosearch add --dir failed: ${formatError(error)}\n`,
+      );
+      process.exitCode = 1;
+    });
+}
+
 function runCodexConfigureCommand(force: boolean): void {
   const nekosearchCommand = resolve(
     process.argv[1] ?? fileURLToPath(import.meta.url),
@@ -183,6 +213,7 @@ function usage(): string {
     '  nekosearch serve',
     '  nekosearch list',
     '  nekosearch status [<source@version>] [--check-upstream]',
+    '  nekosearch add --dir <docs-dir> --id <source@version> (offline local build and install)',
     '  nekosearch add --from <snapshot-dir>',
     '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
     '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
@@ -192,7 +223,7 @@ function usage(): string {
     '  --check-upstream checks tracked refs only and reports untracked snapshots.',
     '',
     'Network access:',
-    '  build, list, status, add --from, serve, and mcp configure codex use local files.',
+    '  build, list, status, add --dir, add --from, serve, and mcp configure codex use local files.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
     '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',
     '  serve is stdio-only, offline, and read-only.',

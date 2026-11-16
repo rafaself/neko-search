@@ -33,9 +33,15 @@ nekosearch list
 nekosearch serve
 ```
 
-`build` scans local Markdown and MDX files and writes `corpus.json`, `index.sqlite`, and `manifest.json` to the output directory you choose. It does not install the snapshot or make network requests. MDX is parsed as static documentation; it is never compiled or executed.
+For a one-step offline install from a local docs directory, use:
 
-`add --from` validates and installs an existing snapshot directory. It also works with snapshots built by another tool, provided they contain the same three files and a supported manifest. The installed SQLite database is stored under the user catalog:
+```sh
+nekosearch add --dir ./docs --id my-api@1
+```
+
+`add --dir` builds into a private temporary directory, validates the result, and installs it into your catalog. It refuses to replace an existing selector. `build` and `add --dir` scan supported Markdown and MDX files without compiling or executing MDX, and make no network requests.
+
+`build` writes `corpus.json`, `index.sqlite`, and `manifest.json` to the output directory you choose; it does not install the snapshot. `add --from` validates and installs an existing portable snapshot directory. It also works with snapshots built by another tool, provided they contain the same three files and a supported manifest. The installed SQLite database is stored under the user catalog:
 
 - Linux and macOS: `$XDG_DATA_HOME/nekosearch/snapshots/` or `~/.local/share/nekosearch/snapshots/` when `XDG_DATA_HOME` is unset.
 - Windows: `%LOCALAPPDATA%\nekosearch\snapshots\`.
@@ -63,6 +69,7 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 | Command                                                 | Network access | What it does                                                                      |
 | ------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------- |
 | `nekosearch build ...`                                  | No             | Builds a snapshot from local files at the chosen output path.                     |
+| `nekosearch add --dir ... --id ...`                     | No             | Builds, validates, and installs a local Markdown/MDX directory.                   |
 | `nekosearch add --from ...`                             | No             | Validates and installs a local snapshot.                                          |
 | `nekosearch list`                                       | No             | Lists bundled and installed snapshots.                                            |
 | `nekosearch status [<source@version>]`                  | No             | Shows catalog and snapshot state without contacting upstream sources.             |

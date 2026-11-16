@@ -83,22 +83,9 @@ export async function serve(): Promise<void> {
       annotations: readOnlyAnnotations,
     },
     () =>
-      runTool('list_docs', () => {
-        const sources = runtimes.map(documentationSource);
-        const text = sources.length
-          ? [
-              'Documentation available in this session:',
-              ...sources.map(
-                ({ selector, source, version, revision }) =>
-                  `- ${selector} (source: ${source}, version: ${version}, revision: ${revision})`,
-              ),
-            ].join('\n')
-          : 'No documentation sources are available in this session.';
-        return {
-          content: [{ type: 'text' as const, text }],
-          structuredContent: { sources },
-        };
-      }),
+      runTool('list_docs', () =>
+        listCatalogDocumentation(runtimesBySelector.values()),
+      ),
   );
   server.registerTool(
     'search_docs',
@@ -197,6 +184,28 @@ export function searchCatalogDocumentation(
   return {
     content: [{ type: 'text', text: formatSearchGroups(groups, totalResults) }],
     structuredContent,
+  };
+}
+
+export function listCatalogDocumentation(
+  runtimes: Iterable<SearchableCatalogRuntime>,
+): {
+  content: [{ type: 'text'; text: string }];
+  structuredContent: { sources: CatalogDocumentationSource[] };
+} {
+  const sources = [...runtimes].map(documentationSource);
+  const text = sources.length
+    ? [
+        'Documentation available in this session:',
+        ...sources.map(
+          ({ selector, source, version, revision }) =>
+            `- ${selector} (source: ${source}, version: ${version}, revision: ${revision})`,
+        ),
+      ].join('\n')
+    : 'No documentation sources are available in this session.';
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: { sources },
   };
 }
 
