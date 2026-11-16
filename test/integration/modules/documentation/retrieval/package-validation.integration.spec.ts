@@ -83,27 +83,35 @@ describe('package index verification', () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'nestjs-docs-package-'));
-    for (const path of ['data', 'dist', 'licenses'])
-      mkdirSync(join(root, path));
+    for (const path of [
+      'data',
+      'dist/apps/nekosearch',
+      'dist/modules/documentation/mcp/contracts',
+      'dist/modules/documentation/mcp/presenters',
+      'dist/shared/config',
+      'licenses',
+      'packages/documentation-engine',
+    ])
+      mkdirSync(join(root, path), { recursive: true });
     copyFileSync(
       join(repositoryRoot, 'package.json'),
       join(root, 'package.json'),
     );
-    const bootstrapDirectory = join(
-      root,
-      'dist',
-      'apps',
-      'mcp-server',
-      'bootstrap',
-    );
-    mkdirSync(bootstrapDirectory, { recursive: true });
     writeFileSync(
-      join(bootstrapDirectory, 'http.js'),
-      '#!/usr/bin/env node\nHTTP entry point\n',
-    );
-    writeFileSync(
-      join(bootstrapDirectory, 'stdio.js'),
+      join(root, 'dist/apps/nekosearch/cli.js'),
       '#!/usr/bin/env node\n',
+    );
+    for (const path of [
+      'dist/apps/nekosearch/serve.js',
+      'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
+      'dist/modules/documentation/mcp/documentation-tool-handlers.js',
+      'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
+      'dist/shared/config/package-metadata.js',
+    ])
+      writeFileSync(join(root, path), '');
+    copyFileSync(
+      join(repositoryRoot, 'packages/documentation-engine/package.json'),
+      join(root, 'packages/documentation-engine/package.json'),
     );
     manifest = {
       formatVersion: 1,

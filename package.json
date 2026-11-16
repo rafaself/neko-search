@@ -1,15 +1,14 @@
 {
   "name": "nestjs-docs-mcp",
   "version": "0.0.1",
-  "description": "A local stdio and HTTP MCP server for versioned documentation indexes.",
+  "description": "A local stdio MCP server for versioned documentation indexes.",
   "type": "module",
   "workspaces": [
     "apps/docs-indexer",
     "packages/documentation-engine"
   ],
   "bin": {
-    "nestjs-docs-mcp": "./dist/apps/mcp-server/bootstrap/stdio.js",
-    "nestjs-docs-mcp-http": "./dist/apps/mcp-server/bootstrap/http.js"
+    "nekosearch": "./dist/apps/nekosearch/cli.js"
   },
   "license": "MIT",
   "repository": {
@@ -26,10 +25,14 @@
     "model-context-protocol",
     "documentation",
     "stdio",
-    "streamable-http"
+    "offline"
   ],
   "files": [
-    "dist/**",
+    "dist/apps/nekosearch/**",
+    "dist/modules/documentation/mcp/contracts/documentation-tools.contract.js",
+    "dist/modules/documentation/mcp/documentation-tool-handlers.js",
+    "dist/modules/documentation/mcp/presenters/documentation.presenter.js",
+    "dist/shared/config/package-metadata.js",
     "data/documentation-v11.sqlite",
     "data/documentation-v11.manifest.json",
     "data/documentation-v12.sqlite",
@@ -44,9 +47,7 @@
   "dependencies": {
     "@nestjs-docs/documentation-engine": "0.1.0",
     "@nestjs/common": "^12.5.0",
-    "@nestjs/core": "^12.5.0",
-    "@nestjs/mcp": "^0.0.4",
-    "@nestjs/platform-express": "^12.5.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.6.7"
@@ -67,6 +68,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/apps/mcp-server/bootstrap/http.js",
     "start:stdio": "node dist/apps/mcp-server/bootstrap/stdio.js",
+    "start:nekosearch": "node dist/apps/nekosearch/cli.js",
     "docs:build": "npm run build && node apps/docs-indexer/dist/cli.js build",
     "docs:ingest": "npm run build && node apps/docs-indexer/dist/cli.js ingest",
     "package:verify": "node scripts/release/verify-npm-package.mjs",
@@ -85,6 +87,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/client": "^2.4.0",
+    "@nestjs/core": "^12.5.0",
+    "@nestjs/mcp": "^0.0.4",
+    "@nestjs/platform-express": "^12.5.0",
     "@nestjs/cli": "^12.0.12",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.19.2",

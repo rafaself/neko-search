@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Tool } from '@nestjs/mcp';
 import type { DocumentationReader } from '@nestjs-docs/documentation-engine/application/contracts/documentation-reader.contract.js';
 import { DOCUMENTATION_READER } from '@nestjs-docs/documentation-engine/application/contracts/documentation.tokens.js';
-import { DEFAULT_SEARCH_RESULT_LIMIT } from '@nestjs-docs/documentation-engine/retrieval/search.constants.js';
 import {
   fetchDocsInputSchema,
   fetchDocsOutputSchema,
@@ -12,9 +11,9 @@ import {
   type SearchDocsInput,
 } from './contracts/documentation-tools.contract.js';
 import {
-  presentFetchedDocumentation,
-  presentSearchResults,
-} from './presenters/documentation.presenter.js';
+  fetchDocumentation,
+  searchDocumentation,
+} from './documentation-tool-handlers.js';
 
 @Injectable()
 export class DocumentationTools {
@@ -37,11 +36,7 @@ export class DocumentationTools {
     },
   })
   searchDocs({ query, limit }: SearchDocsInput) {
-    const results = this.documentation.search(
-      query,
-      limit ?? DEFAULT_SEARCH_RESULT_LIMIT,
-    );
-    return presentSearchResults(results, this.documentation.documentation);
+    return searchDocumentation(this.documentation, { query, limit });
   }
 
   @Tool({
@@ -57,14 +52,7 @@ export class DocumentationTools {
       openWorldHint: false,
     },
   })
-  fetchDocs({ documentId, sectionId, cursor }: FetchDocsInput) {
-    return presentFetchedDocumentation({
-      documentId,
-      sectionId,
-      cursor,
-      documentationId: this.documentation.documentation.id,
-      document: this.documentation.fetchDocument(documentId, sectionId, cursor),
-      documentationVersion: this.documentation.documentation.version,
-    });
+  fetchDocs(input: FetchDocsInput) {
+    return fetchDocumentation(this.documentation, input);
   }
 }

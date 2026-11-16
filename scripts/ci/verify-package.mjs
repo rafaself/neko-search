@@ -43,7 +43,11 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
   }
 
   const requiredPackageFiles = [
-    'dist/**',
+    'dist/apps/nekosearch/**',
+    'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
+    'dist/modules/documentation/mcp/documentation-tool-handlers.js',
+    'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
+    'dist/shared/config/package-metadata.js',
     ...SUPPORTED_DOCUMENTATION_VERSIONS.map(
       (version) => `data/documentation-v${version}.sqlite`,
     ),
@@ -58,16 +62,25 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
       (version) => `licenses/nestjs-docs-v${version}-LICENSE`,
     ),
   ];
-  const httpEntryPath = resolve(root, 'dist/apps/mcp-server/bootstrap/http.js');
-  const executablePath = resolve(
-    root,
-    'dist/apps/mcp-server/bootstrap/stdio.js',
-  );
-  await Promise.all([requireFile(httpEntryPath), requireFile(executablePath)]);
-  const [httpEntry, stdioEntry] = await Promise.all([
-    readFile(httpEntryPath, 'utf8'),
-    readFile(executablePath, 'utf8'),
+  const executablePath = resolve(root, 'dist/apps/nekosearch/cli.js');
+  const runtimeFiles = [
+    'dist/apps/nekosearch/serve.js',
+    'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
+    'dist/modules/documentation/mcp/documentation-tool-handlers.js',
+    'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
+    'dist/shared/config/package-metadata.js',
+  ];
+  await Promise.all([
+    requireFile(executablePath),
+    ...runtimeFiles.map((path) => requireFile(resolve(root, path))),
   ]);
+  const executable = await readFile(executablePath, 'utf8');
+  const enginePackage = JSON.parse(
+    await readFile(
+      resolve(root, 'packages/documentation-engine/package.json'),
+      'utf8',
+    ),
+  );
   if (
     packageMetadata.private === true ||
     packageMetadata.workspaces?.includes('apps/docs-indexer') !== true ||
@@ -78,15 +91,26 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
     !packageMetadata.bundleDependencies?.includes(
       '@nestjs-docs/documentation-engine',
     ) ||
-    packageMetadata.bin?.['nestjs-docs-mcp'] !==
-      './dist/apps/mcp-server/bootstrap/stdio.js' ||
-    packageMetadata.bin?.['nestjs-docs-mcp-http'] !==
-      './dist/apps/mcp-server/bootstrap/http.js' ||
+    packageMetadata.bin?.nekosearch !== './dist/apps/nekosearch/cli.js' ||
+    Object.keys(packageMetadata.bin ?? {}).length !== 1 ||
+    packageMetadata.dependencies?.['@modelcontextprotocol/server'] !==
+      '^2.4.0' ||
+    packageMetadata.dependencies?.['@nestjs/mcp'] !== undefined ||
+    packageMetadata.dependencies?.['@nestjs/platform-express'] !== undefined ||
+    packageMetadata.dependencies?.['@nestjs/core'] !== undefined ||
+    packageMetadata.devDependencies?.['@nestjs/mcp'] !== '^0.0.4' ||
+    packageMetadata.devDependencies?.['@nestjs/platform-express'] !==
+      '^12.5.0' ||
+    packageMetadata.files?.includes('dist/**') === true ||
     requiredPackageFiles.some(
       (path) => !packageMetadata.files?.includes(path),
     ) ||
-    !httpEntry.startsWith('#!/usr/bin/env node\n') ||
-    !stdioEntry.startsWith('#!/usr/bin/env node\n')
+    enginePackage.dependencies?.['@mdx-js/mdx'] !== undefined ||
+    enginePackage.dependencies?.['remark-gfm'] !== undefined ||
+    enginePackage.devDependencies?.['@mdx-js/mdx'] !== '^3.1.1' ||
+    enginePackage.devDependencies?.['remark-gfm'] !== '^4.0.1' ||
+    enginePackage.files?.includes('dist/**') === true ||
+    !executable.startsWith('#!/usr/bin/env node\n')
   ) {
     throw new Error(
       'npm package metadata or executable entry point is invalid',
