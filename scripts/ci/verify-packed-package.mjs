@@ -14,13 +14,10 @@ import {
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const versions = ['11', '12'];
-const officialNestSource = 'https://github.com/nestjs/docs.nestjs.com';
 
 function run(command, args, options = {}) {
   const result = runResult(command, args, options);
@@ -74,94 +71,6 @@ async function withTimeout(promise, label, milliseconds = 30_000) {
   }
 }
 
-async function createLocalNestSnapshot(snapshotDirectory, revisionOverride) {
-  await mkdir(snapshotDirectory, { recursive: true });
-  const sourceData = join(root, 'data');
-  let database = await readFile(join(sourceData, 'documentation-v12.sqlite'));
-  const corpusValue = JSON.parse(
-    await readFile(join(sourceData, 'documentation-v12.json'), 'utf8'),
-  );
-  const runtimeManifest = JSON.parse(
-    await readFile(join(sourceData, 'documentation-v12.manifest.json'), 'utf8'),
-  );
-  if (revisionOverride) {
-    corpusValue.source.revision = revisionOverride;
-    for (const document of corpusValue.documents) {
-      document.source.provenance.revision = revisionOverride;
-      for (const chunk of document.chunks) {
-        chunk.sourceRevision = revisionOverride;
-      }
-    }
-    runtimeManifest.source.revision = revisionOverride;
-    runtimeManifest.index.sourceRevision = revisionOverride;
-  }
-  const parsedCorpus = corpusValue;
-  const corpus = Buffer.from(`${JSON.stringify(parsedCorpus, null, 2)}\n`);
-  await Promise.all([
-    writeFile(join(snapshotDirectory, 'index.sqlite'), database),
-    writeFile(join(snapshotDirectory, 'corpus.json'), corpus),
-  ]);
-  if (revisionOverride) {
-    const databasePath = join(snapshotDirectory, 'index.sqlite');
-    const index = new DatabaseSync(databasePath);
-    try {
-      index
-        .prepare(
-          'UPDATE documentation_search SET source_revision = ? WHERE documentation_version = ?',
-        )
-        .run(revisionOverride, '12');
-      index
-        .prepare(
-          'UPDATE documentation_index_metadata SET value = ? WHERE key = ?',
-        )
-        .run(revisionOverride, 'source_revision');
-    } finally {
-      index.close();
-    }
-    database = await readFile(databasePath);
-  }
-  runtimeManifest.index.sha256 = sha256(database);
-
-  const buildManifest = {
-    manifestVersion: 2,
-    documentation: { id: 'nestjs', version: '12' },
-    source: parsedCorpus.source,
-    pipeline: {
-      parserVersion: 1,
-      transformerVersion: 1,
-      normalizationAlgorithmVersion: 1,
-      chunkingAlgorithmVersion: 1,
-      maxChunkChars: 4000,
-      indexSchemaVersion: runtimeManifest.index.schemaVersion,
-      indexFormatVersion: runtimeManifest.index.formatVersion,
-    },
-    corpus: {
-      file: 'corpus.json',
-      sha256: sha256(corpus),
-      documentCount: parsedCorpus.documents.length,
-      documents: [...parsedCorpus.documents]
-        .sort((left, right) =>
-          compareStrings(left.source.path, right.source.path),
-        )
-        .map((document) => ({
-          id: document.id,
-          path: document.source.path,
-          sourceContentHash: document.source.contentHash,
-          normalizedContentHash: document.contentHash,
-        })),
-    },
-    index: {
-      ...runtimeManifest.index,
-      file: 'index.sqlite',
-      sha256: sha256(database),
-    },
-  };
-  await writeFile(
-    join(snapshotDirectory, 'manifest.json'),
-    `${JSON.stringify(buildManifest, null, 2)}\n`,
-  );
-}
-
 async function verifyCatalogServer(project, temporaryDirectory) {
   const binary = join(project, 'node_modules', '.bin', 'nekosearch');
   const guardPath = join(project, 'network-guard.mjs');
@@ -173,7 +82,6 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     temporaryDirectory,
     'minha-api-snapshot',
   );
-  const snapshotDirectory = join(temporaryDirectory, 'local-nest-v12');
   await mkdir(xdgDataHome);
   await mkdir(fixtureDirectory);
   await writeFile(
@@ -232,6 +140,25 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
   await assert.rejects(readFile(mdxExecutionMarker), { code: 'ENOENT' });
 
+  const initialCatalog = run(binary, ['list'], {
+    cwd: project,
+    env: guardedEnvironment,
+  });
+  assert.match(initialCatalog, /^SOURCE\tVERSION\tREVISION\tSTATUS\n/u);
+  assert.match(initialCatalog, /^mcp\t2025-11-25\t2025-11-25\tbundled$/mu);
+  assert.doesNotMatch(initialCatalog, /nestjs/iu);
+
+  const mockRevision = 'a'.repeat(40);
+  const remoteAdded = run(binary, ['add', 'nestjs@12'], {
+    cwd: project,
+    env: { ...guardedEnvironment, NEKOSEARCH_MOCK_NEST_SOURCE: '1' },
+  });
+  assert.match(
+    remoteAdded,
+    new RegExp(`Added nestjs@12 revision ${mockRevision} \\(installed\\)`),
+  );
+  await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
+
   const fixtureAdded = run(
     binary,
     ['add', '--from', fixtureSnapshotDirectory],
@@ -239,24 +166,32 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   );
   assert.match(fixtureAdded, /Added minha-api@1 revision /u);
 
-  await createLocalNestSnapshot(snapshotDirectory);
-  const added = run(binary, ['add', '--from', snapshotDirectory], {
-    cwd: project,
-    env: guardedEnvironment,
-  });
-  assert.match(added, /Added nestjs@12 revision /u);
   const codexStateAfterConfigure = await verifyCodexConfiguration(
     binary,
     project,
     temporaryDirectory,
     guardedEnvironment,
   );
-  const updatedRevision = 'f'.repeat(40);
   const updatedSnapshotDirectory = join(
     temporaryDirectory,
-    'local-nest-v12-updated',
+    'minha-api-snapshot-updated',
   );
-  await createLocalNestSnapshot(updatedSnapshotDirectory, updatedRevision);
+  await writeFile(
+    join(fixtureDirectory, 'index.md'),
+    '# Minha API\n\nA busca local agora preserva os tokens de mandacaru atualizados.\n',
+  );
+  run(
+    binary,
+    [
+      'build',
+      fixtureDirectory,
+      '--id',
+      'minha-api@1',
+      '--output',
+      updatedSnapshotDirectory,
+    ],
+    { cwd: project, env: guardedEnvironment },
+  );
   const { updateSnapshot } = await import(
     pathToFileURL(join(root, 'dist/apps/nekosearch/catalog.js')).href
   );
@@ -264,7 +199,8 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     catalogRoot: join(xdgDataHome, 'nekosearch'),
   });
   assert.equal(update.changed, true);
-  assert.equal(update.entry.revision, updatedRevision);
+  const updatedRevision = update.entry.revision;
+  assert.match(updatedRevision, /^[a-f0-9]{64}$/u);
   const codexStateAfterSnapshotUpdate = JSON.parse(
     await readFile(codexStateAfterConfigure.stateFile, 'utf8'),
   );
@@ -298,17 +234,14 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     revision: '2025-11-25',
     status: 'bundled',
   });
-  assert.equal(rows.get(`${officialNestSource}@11`)?.status, 'bundled');
-  assert.equal(rows.get(`${officialNestSource}@12`)?.status, 'bundled');
-  assert.match(rows.get('nestjs@12')?.revision ?? '', /^[a-f0-9]{40}$/u);
+  assert.equal(rows.get('nestjs@12')?.revision, mockRevision);
   assert.equal(rows.get('nestjs@12')?.status, 'installed');
-  assert.equal(rows.get('nestjs@12')?.revision, updatedRevision);
   assert.match(rows.get('minha-api@1')?.revision ?? '', /^[a-f0-9]{64}$/u);
   assert.equal(rows.get('minha-api@1')?.status, 'installed');
   assert.equal(
     rows.size,
-    5,
-    'the catalog should show all bundled and installed indexes',
+    3,
+    'the catalog should show the protocol reference and the two installed snapshots',
   );
 
   const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
@@ -325,8 +258,6 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   assert.match(fixtureSnapshotKey ?? '', /^[a-f0-9]{64}$/u);
   const indexPaths = [
     join(installedPackage, 'data', 'mcp-protocol', 'index.sqlite'),
-    join(installedPackage, 'data', 'documentation-v11.sqlite'),
-    join(installedPackage, 'data', 'documentation-v12.sqlite'),
     join(
       xdgDataHome,
       'nekosearch',
@@ -433,26 +364,23 @@ async function verifyCatalogServer(project, temporaryDirectory) {
         arguments: {
           source: 'nestjs',
           version: '12',
-          query: 'ExecutionContext',
+          query: 'dependency injection providers',
           limit: 3,
         },
       }),
       'installed NestJS search_docs',
     );
-    assert.ok(
-      !localNestSearch.isError,
-      'installed NestJS search should succeed',
-    );
+    assert.ok(!localNestSearch.isError);
     const localNestData = localNestSearch.structuredContent;
     assert.equal(localNestData.source, 'nestjs');
     assert.equal(localNestData.version, '12');
-    assert.equal(localNestData.revision, rows.get('nestjs@12')?.revision);
+    assert.equal(localNestData.revision, mockRevision);
     assert.ok(localNestData.results.length > 0);
     const localNestHit = localNestData.results[0];
-    assert.match(localNestHit.documentId, /^nestjs-doc:v12:/u);
     assert.equal(localNestHit.source, 'nestjs');
     assert.equal(localNestHit.version, '12');
-    assert.match(localNestHit.canonicalUrl, /^https:\/\/docs\.nestjs\.com\//u);
+    assert.match(localNestHit.documentId, /^nestjs-doc:v12:/u);
+    assert.match(localNestHit.canonicalUrl, /^https:\/\/docs\.nestjs\.com/u);
 
     const localFixtureSearch = await withTimeout(
       client.callTool({
@@ -523,22 +451,6 @@ async function verifyCatalogServer(project, temporaryDirectory) {
       assert.equal(document.sourceRevision, hit.sourceRevision);
       assert.ok(document.sections.length > 0);
     }
-
-    const bundledNestSearch = await withTimeout(
-      client.callTool({
-        name: 'search_docs',
-        arguments: {
-          source: officialNestSource,
-          version: '11',
-          query: 'ExecutionContext',
-          limit: 1,
-        },
-      }),
-      'bundled NestJS v11 search_docs',
-    );
-    assert.ok(!bundledNestSearch.isError);
-    assert.equal(bundledNestSearch.structuredContent.version, '11');
-    assert.ok(bundledNestSearch.structuredContent.results.length > 0);
 
     assert.deepEqual(
       transportErrors,
@@ -729,10 +641,6 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function compareStrings(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 async function main() {
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), 'nestjs-docs-packed-package-'),
@@ -762,11 +670,6 @@ async function main() {
     assert.equal(packed.length, 1, 'npm pack should produce one tarball');
     const files = new Set(packed[0].files.map((file) => file.path));
     for (const path of [
-      'data/documentation-v11.sqlite',
-      'data/documentation-v11.manifest.json',
-      'data/documentation-v12.sqlite',
-      'data/documentation-v12.manifest.json',
-      'data/manifest.json',
       'data/mcp-protocol/corpus.json',
       'data/mcp-protocol/index.sqlite',
       'data/mcp-protocol/manifest.json',
@@ -782,6 +685,11 @@ async function main() {
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
       'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
       'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
       'dist/apps/nekosearch/catalog.js',
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/catalog-contract.js',
@@ -802,16 +710,23 @@ async function main() {
     ]) {
       assert.ok(files.has(path), `the npm tarball must include ${path}`);
     }
-    for (const version of versions) {
-      assert.ok(
-        !files.has(`data/documentation-v${version}.json`),
-        'the npm tarball should omit NestJS corpus files after package validation',
-      );
-    }
+    assert.ok(
+      [...files].every(
+        (path) =>
+          !/^data\/documentation-v(?:11|12)\./u.test(path) &&
+          path !== 'data/manifest.json',
+      ),
+      'the npm tarball must not contain NestJS indexes, corpus files, or bundle manifests',
+    );
     const buildRuntimeFiles = new Set([
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
       'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
       'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
+      'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
     ]);
     const buildEngineFiles = new Set([
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
@@ -877,10 +792,28 @@ net.Server.prototype.listen = function () { return block('net.Server.listen'); }
 net.Socket.prototype.connect = function () { return block('net.Socket.connect'); };
 tls.connect = function () { return block('tls.connect'); };
 dgram.Socket.prototype.bind = function () { return block('dgram.Socket.bind'); };
-globalThis.fetch = function () {
+globalThis.fetch = async function (input) {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (process.env.NEKOSEARCH_MOCK_NEST_SOURCE === '1') {
+    if (url === 'https://api.github.com/repos/nestjs/docs.nestjs.com/commits/master') {
+      return Response.json({ sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    }
+    const rawPrefix = 'https://raw.githubusercontent.com/nestjs/docs.nestjs.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/';
+    if (url.startsWith(rawPrefix)) {
+      const path = url.slice(rawPrefix.length);
+      const files = new Map([
+        ['src/app/shared/nav/nav-items.ts', "export const NAV_ITEMS: NavItem[] = [{ path: '/' }];"],
+        ['tools/generate-llms-txt.ts', "const CONTENT_ALIASES: Record<string, string> = {\\n  '/': 'introduction',\\n};"],
+        ['content/migration.md', '# Migration guide\\n\\nThis article walks you through migrating from NestJS version 11 to version 12.'],
+        ['content/introduction.md', '# NestJS package smoke\\n\\nA modular framework uses dependency injection and providers.'],
+      ]);
+      const body = files.get(path);
+      return new Response(body ?? 'Not Found', { status: body ? 200 : 404 });
+    }
+  }
   const marker = process.env.NEKOSEARCH_NETWORK_GUARD_MARKER;
   if (marker) writeFileSync(marker, 'fetch');
-  return Promise.reject(new Error('NETWORK_BLOCKED: fetch'));
+  throw new Error('NETWORK_BLOCKED: fetch ' + url);
 };
 process.once('exit', () => {
   const marker = process.env.NEKOSEARCH_MDX_EXECUTION_MARKER;
@@ -980,7 +913,6 @@ process.once('exit', () => {
       'eventsource',
       'eventsource-parser',
       'express',
-      'json5',
       'jest',
       'typescript',
       '@nestjs/cli',
@@ -997,6 +929,10 @@ process.once('exit', () => {
         `${requiredBuildDependency} must be installed for the offline build command`,
       );
     }
+    assert.ok(
+      installedDependencyNames.has('json5'),
+      'the curated source parser must be available to the on-demand builder',
+    );
     for (const developmentOnlyPackage of [
       'typescript',
       'jest',

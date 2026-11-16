@@ -29,7 +29,6 @@ const SNAPSHOT_FILES = [
   'index.sqlite',
   'manifest.json',
 ] as const;
-const BUNDLED_NEST_VERSIONS = ['11', '12'] as const;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MAX_CORPUS_BYTES = 512 * 1024 * 1024;
 const MAX_INDEX_BYTES = 512 * 1024 * 1024;
@@ -95,7 +94,6 @@ export async function listCatalogIndexes(
   const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
   const entries = [
     ...(await loadBundledProtocolSnapshot(packageDataDirectory)),
-    ...(await loadBundledNestIndexes(packageDataDirectory)),
     ...(await loadInstalledSnapshots(catalogRoot)),
   ];
   entries.sort(
@@ -335,44 +333,6 @@ async function loadBundledProtocolSnapshot(
   const directory = join(packageDataDirectory, 'mcp-protocol');
   const snapshot = await validateSnapshotDirectory(directory);
   return [catalogEntry(snapshot, 'bundled')];
-}
-
-async function loadBundledNestIndexes(
-  packageDataDirectory: string,
-): Promise<DocumentationCatalogEntry[]> {
-  const entries: DocumentationCatalogEntry[] = [];
-  for (const version of BUNDLED_NEST_VERSIONS) {
-    const databasePath = join(
-      packageDataDirectory,
-      `documentation-v${version}.sqlite`,
-    );
-    const manifestPath = join(
-      packageDataDirectory,
-      `documentation-v${version}.manifest.json`,
-    );
-    const [database, manifestBytes] = await Promise.all([
-      readRegularFile(databasePath, MAX_INDEX_BYTES),
-      readRegularFile(manifestPath, MAX_MANIFEST_BYTES),
-    ]);
-    const manifest = parseRuntimeManifest(manifestBytes);
-    if (
-      manifest.index.file !== basename(databasePath) ||
-      manifest.documentation.version !== version ||
-      sha256(database) !== manifest.index.sha256
-    ) {
-      throw new Error(`Bundled documentation v${version} manifest is invalid`);
-    }
-    validateRuntimeDatabase(databasePath, manifest);
-    entries.push({
-      source: manifest.documentation.id,
-      version: manifest.documentation.version,
-      revision: manifest.source.revision,
-      status: 'bundled',
-      databasePath,
-      manifest,
-    });
-  }
-  return entries;
 }
 
 async function loadInstalledSnapshots(
@@ -811,26 +771,6 @@ function catalogEntry(
     databasePath: snapshot.databasePath,
     manifest: snapshot.manifest,
   };
-}
-
-function parseRuntimeManifest(
-  bytes: Buffer,
-): DocumentationIndexRuntimeManifest {
-  let value: unknown;
-  try {
-    value = JSON.parse(bytes.toString('utf8')) as unknown;
-  } catch (cause) {
-    throw new Error('Bundled documentation manifest is not valid JSON', {
-      cause,
-    });
-  }
-  const parsed = DocumentationIndexRuntimeManifestSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error('Bundled documentation manifest is invalid', {
-      cause: parsed.error,
-    });
-  }
-  return parsed.data;
 }
 
 function assertCatalogIdentity(entry: DocumentationCatalogEntry): void {

@@ -3,16 +3,19 @@ import { basename, dirname, join } from 'node:path';
 import type {
   DocumentationCorpus,
   DocumentationSnapshot,
+  GitDocumentationSource,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { ingestSnapshot } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
 import {
   downloadDocumentation,
   REPOSITORY,
 } from './github/documentation-source.js';
+export { resolveDocumentationSource } from './github/documentation-source.js';
 import {
   NESTJS_DOCUMENTATION_TRANSFORMER_VERSION,
   transformNestJsDocument,
 } from './nestjs-documentation-transformer.js';
+import { getNestJsDocumentationRecipe } from './source-recipes.js';
 import {
   DEFAULT_DOCUMENTATION_VERSION,
   SUPPORTED_DOCUMENTATION_VERSIONS,
@@ -54,6 +57,29 @@ export async function ingestNestJsDocumentation(
     maxChunkChars,
   );
   return { snapshot, corpus };
+}
+
+/** Build one curated major into a local snapshot directory. */
+export async function buildNestJsDocumentationSnapshot(
+  version: NestJsDocumentationVersion,
+  outputDirectory: string,
+  fetcher: typeof fetch = fetch,
+  resolvedSource?: GitDocumentationSource,
+): Promise<DocumentationBuildSummary> {
+  const recipe = getNestJsDocumentationRecipe(version);
+  const snapshot = await downloadDocumentation(
+    version,
+    fetcher,
+    resolvedSource,
+  );
+  return buildDocumentationSnapshot({
+    identity: { id: 'nestjs', version },
+    snapshot,
+    transformerVersion: recipe.transformerVersion,
+    transformDocument: recipe.transformDocument,
+    outputDirectory,
+    mode: 'clean',
+  });
 }
 
 /** Build both official majors in one validated directory promotion. */

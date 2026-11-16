@@ -25,6 +25,10 @@ describe('source download', () => {
     const bodies = new Map([
       ['src/app/shared/nav/nav-items.ts', index],
       ['tools/generate-llms-txt.ts', aliases],
+      [
+        'content/migration.md',
+        'This article walks you through migrating from NestJS version 11 to version 12.',
+      ],
       ...snapshot.documents.map((file): [string, string] => [
         file.path,
         file.markdown,
@@ -86,6 +90,12 @@ describe('source download', () => {
         return Promise.resolve(new Response(index));
       if (url.endsWith('/tools/generate-llms-txt.ts'))
         return Promise.resolve(new Response(aliases));
+      if (url.endsWith('/content/migration.md'))
+        return Promise.resolve(
+          new Response(
+            'This article walks you through migrating from NestJS version 11 to version 12.',
+          ),
+        );
       return Promise.reject(failures[failedDocuments++]!);
     };
     try {
@@ -113,6 +123,12 @@ describe('source download', () => {
         return Promise.resolve(new Response(index));
       if (url.endsWith('/tools/generate-llms-txt.ts'))
         return Promise.resolve(new Response(aliases));
+      if (url.endsWith('/content/migration.md'))
+        return Promise.resolve(
+          new Response(
+            'This article walks you through migrating from NestJS version 11 to version 12.',
+          ),
+        );
       if (!failed) {
         failed = true;
         // The fetch contract can be violated by an external implementation.
@@ -182,10 +198,67 @@ describe('source download', () => {
       'https://docs.nestjs.com/v11',
     ]);
     expect(requests.some((url) => url.includes('/commits/master'))).toBe(false);
-    expect(DOCUMENTATION_SOURCES['11'].ref).toBe('11.0.0');
+    expect(DOCUMENTATION_SOURCES['11'].ref).toEqual({
+      kind: 'tag',
+      name: '11.0.0',
+    });
+    expect(DOCUMENTATION_SOURCES['11']).toMatchObject({
+      repository: REPOSITORY,
+      contentDirectory: 'content',
+      selection: { kind: 'tracked-markdown' },
+    });
     expect(
       requests.filter((url) => url.startsWith(sourceUrl(revision11, ''))),
     ).toHaveLength(2);
+  });
+
+  it('fails explicitly for a missing curated ref without trying the default branch', async () => {
+    const requests: string[] = [];
+    const fetcher: typeof fetch = (input) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      requests.push(url);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    };
+
+    await expect(downloadDocumentation('11', fetcher)).rejects.toThrow(
+      /NestJS v11 tag ref "11\.0\.0".*no default-branch fallback/iu,
+    );
+    expect(requests).toEqual([
+      'https://api.github.com/repos/nestjs/docs.nestjs.com/commits/11.0.0',
+    ]);
+  });
+
+  it('rejects a v12 ref after its migration guide moves to another major', async () => {
+    const fetcher: typeof fetch = (input) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.endsWith('/commits/master'))
+        return Promise.resolve(Response.json({ sha: revision }));
+      if (url.endsWith('/nav-items.ts'))
+        return Promise.resolve(new Response(index));
+      if (url.endsWith('/generate-llms-txt.ts'))
+        return Promise.resolve(new Response(aliases));
+      if (url.endsWith('/content/migration.md'))
+        return Promise.resolve(
+          new Response(
+            'This article walks you through migrating from NestJS version 12 to version 13.',
+          ),
+        );
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    };
+
+    await expect(downloadDocumentation('12', fetcher)).rejects.toThrow(
+      /no longer identifies a v12 migration guide/iu,
+    );
   });
 
   it.each([404, 429, 500])(
@@ -219,6 +292,12 @@ describe('source download', () => {
         return Promise.resolve(new Response(index));
       if (url.endsWith('/generate-llms-txt.ts'))
         return Promise.resolve(new Response(aliases));
+      if (url.endsWith('/content/migration.md'))
+        return Promise.resolve(
+          new Response(
+            'This article walks you through migrating from NestJS version 11 to version 12.',
+          ),
+        );
       return Promise.resolve(new Response('Missing chapter', { status: 404 }));
     };
     await expect(downloadDocumentation('12', fetcher)).rejects.toThrow(

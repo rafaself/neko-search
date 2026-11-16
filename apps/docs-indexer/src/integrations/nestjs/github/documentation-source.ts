@@ -1,17 +1,21 @@
 import { z } from 'zod';
 import JSON5 from 'json5';
 import {
-  NESTJS_DOCUMENTATION_REPOSITORY,
   createNestJsDocumentationIdentity,
   type NestJsDocumentationVersion,
 } from '../version/documentation-version.js';
+import {
+  getNestJsDocumentationRecipe,
+  NESTJS_DOCUMENTATION_RECIPES,
+  type NestJsDocumentationRecipe,
+} from '../source-recipes.js';
 import type {
   DocumentationSnapshot,
   GitDocumentationSource,
   SourceDocument,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 
-export const REPOSITORY = NESTJS_DOCUMENTATION_REPOSITORY;
+export const REPOSITORY = 'https://github.com/nestjs/docs.nestjs.com';
 const API = 'https://api.github.com/repos/nestjs/docs.nestjs.com';
 const RAW = 'https://raw.githubusercontent.com/nestjs/docs.nestjs.com';
 const SITE = 'https://docs.nestjs.com';
@@ -19,24 +23,8 @@ const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENTS = 512;
 const routeSchema = z.string().regex(/^\/(?:[a-z0-9-]+(?:\/[a-z0-9-]+)*)?$/);
 
-interface DocumentationSourceConfig {
-  ref: string;
-  canonicalRoot: string;
-}
-
-/**
- * The official site serves v11 from the 11.0.0 branch and v12 from master.
- */
-export const DOCUMENTATION_SOURCES: Record<
-  NestJsDocumentationVersion,
-  DocumentationSourceConfig
-> = {
-  '11': {
-    ref: '11.0.0',
-    canonicalRoot: `${SITE}/v11`,
-  },
-  '12': { ref: 'master', canonicalRoot: SITE },
-};
+/** Backward-compatible alias for source recipe consumers. */
+export const DOCUMENTATION_SOURCES = NESTJS_DOCUMENTATION_RECIPES;
 
 type DocumentationSourceEntry = Pick<SourceDocument, 'path' | 'canonicalUrl'>;
 
@@ -90,6 +78,18 @@ const navigationItemSchema: z.ZodType<NavigationItem> = z.lazy(() =>
 
 export function sourceUrl(revision: string, path: string): string {
   return `${RAW}/${revision}/${path}`;
+}
+
+function recipeSourceUrl(
+  recipe: NestJsDocumentationRecipe,
+  revision: string,
+  path: string,
+): string {
+  const repositoryPath = recipe.repository.replace(
+    /^https:\/\/github\.com\//u,
+    '',
+  );
+  return `https://raw.githubusercontent.com/${repositoryPath}/${revision}/${path}`;
 }
 
 async function downloadText(
@@ -162,7 +162,11 @@ export function readSourceIndex(
   navigation: string,
   aliases: Map<string, string>,
   canonicalRoot = SITE,
+  contentDirectory = 'content',
 ): DocumentationSourceEntry[] {
+  if (!/^[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/u.test(contentDirectory)) {
+    throw new Error('Unsafe documentation content directory');
+  }
   const block = navigation.match(
     /export const NAV_ITEMS[^=]*=\s*(\[[\s\S]*\]);?\s*$/,
   );
@@ -182,7 +186,7 @@ export function readSourceIndex(
         if (!/^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(name)) {
           throw new Error(`Unsafe content path for route: ${route}`);
         }
-        const path = `content/${name}.md`;
+        const path = `${contentDirectory}/${name}.md`;
         if (documents.has(path))
           throw new Error(`Duplicate source document: ${path}`);
         documents.set(path, {
@@ -205,7 +209,11 @@ export function readSourceIndex(
 export function readHistoricalSourceIndex(
   treeSource: string,
   canonicalRoot = `${SITE}/v11`,
+  contentDirectory = 'content',
 ): DocumentationSourceEntry[] {
+  if (!/^[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/u.test(contentDirectory)) {
+    throw new Error('Unsafe historical content directory');
+  }
   const parsed: unknown = JSON.parse(treeSource);
   const tree = z
     .object({
@@ -215,7 +223,9 @@ export function readHistoricalSourceIndex(
   const markdownPaths = tree
     .filter(
       ({ path, type }) =>
-        type === 'blob' && path.startsWith('content/') && path.endsWith('.md'),
+        type === 'blob' &&
+        path.startsWith(`${contentDirectory}/`) &&
+        path.endsWith('.md'),
     )
     .map(({ path }) => path)
     .sort();
@@ -225,10 +235,11 @@ export function readHistoricalSourceIndex(
 
   const documents = new Map<string, DocumentationSourceEntry>();
   for (const path of markdownPaths) {
-    if (!/^content\/[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/u.test(path)) {
+    const contentPath = path.slice(contentDirectory.length + 1);
+    if (!/^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/u.test(contentPath)) {
       throw new Error(`Unsafe historical content path: ${path}`);
     }
-    const fileRoute = `/${path.slice('content/'.length, -'.md'.length)}`;
+    const fileRoute = `/${path.slice(contentDirectory.length + 1, -'.md'.length)}`;
     const route = V11_CANONICAL_ROUTES.get(path) ?? fileRoute;
     const safeRoute = routeSchema.parse(route);
     if (documents.has(path)) {
@@ -246,16 +257,26 @@ export async function resolveDocumentationSource(
   version: NestJsDocumentationVersion,
   fetcher: typeof fetch = fetch,
 ): Promise<GitDocumentationSource> {
-  const source = DOCUMENTATION_SOURCES[version];
+  const recipe = getNestJsDocumentationRecipe(version);
+  let responseBody: string;
+  try {
+    responseBody = await downloadText(
+      `${API}/commits/${encodeURIComponent(recipe.ref.name)}`,
+      fetcher,
+    );
+  } catch (cause) {
+    throw new Error(
+      `Could not resolve the curated NestJS v${version} ${recipe.ref.kind} ref "${recipe.ref.name}" in ${recipe.repository}; no default-branch fallback is used: ${formatError(cause)}`,
+      { cause },
+    );
+  }
   const revision = z
     .object({ sha: z.string().regex(/^[a-f0-9]{40}$/u) })
-    .parse(
-      JSON.parse(await downloadText(`${API}/commits/${source.ref}`, fetcher)),
-    ).sha;
+    .parse(JSON.parse(responseBody)).sha;
   return {
     kind: 'git',
     repository: REPOSITORY,
-    ref: source.ref,
+    ref: recipe.ref.name,
     revision,
   };
 }
@@ -279,11 +300,22 @@ async function resolveTreeRevision(
 export async function downloadDocumentation(
   version: NestJsDocumentationVersion = '12',
   fetcher: typeof fetch = fetch,
+  resolvedSource?: GitDocumentationSource,
 ): Promise<DocumentationSnapshot> {
-  const source = DOCUMENTATION_SOURCES[version];
-  const provenance = await resolveDocumentationSource(version, fetcher);
+  const recipe = getNestJsDocumentationRecipe(version);
+  const provenance =
+    resolvedSource ?? (await resolveDocumentationSource(version, fetcher));
+  if (
+    provenance.repository !== recipe.repository ||
+    provenance.ref !== recipe.ref.name ||
+    !/^[a-f0-9]{40}$/u.test(provenance.revision)
+  ) {
+    throw new Error(
+      `Resolved source does not match the NestJS v${version} recipe`,
+    );
+  }
   let entries: DocumentationSourceEntry[];
-  if (version === '11') {
+  if (recipe.selection.kind === 'tracked-markdown') {
     const treeRevision = await resolveTreeRevision(
       provenance.revision,
       fetcher,
@@ -292,22 +324,49 @@ export async function downloadDocumentation(
       `${API}/git/trees/${treeRevision}?recursive=1`,
       fetcher,
     );
-    entries = readHistoricalSourceIndex(tree, source.canonicalRoot);
+    entries = readHistoricalSourceIndex(
+      tree,
+      recipe.canonicalRoot,
+      recipe.contentDirectory,
+    );
   } else {
-    const [index, generator] = await Promise.all([
+    const [index, generator, majorCheck] = await Promise.all([
       downloadText(
-        sourceUrl(provenance.revision, 'src/app/shared/nav/nav-items.ts'),
+        recipeSourceUrl(
+          recipe,
+          provenance.revision,
+          recipe.selection.navigationPath,
+        ),
         fetcher,
       ),
       downloadText(
-        sourceUrl(provenance.revision, 'tools/generate-llms-txt.ts'),
+        recipeSourceUrl(
+          recipe,
+          provenance.revision,
+          recipe.selection.aliasesPath,
+        ),
+        fetcher,
+      ),
+      downloadText(
+        recipeSourceUrl(
+          recipe,
+          provenance.revision,
+          recipe.selection.majorCheck.path,
+        ),
         fetcher,
       ),
     ]);
+    assertMigrationMajor(
+      version,
+      majorCheck,
+      recipe.selection.majorCheck.from,
+      recipe.selection.majorCheck.to,
+    );
     entries = readSourceIndex(
       index,
       readContentAliases(generator),
-      source.canonicalRoot,
+      recipe.canonicalRoot,
+      recipe.contentDirectory,
     );
   }
   const documents = new Array<SourceDocument>(entries.length);
@@ -321,9 +380,13 @@ export async function downloadDocumentation(
         documents[index] = {
           ...createNestJsDocumentationIdentity(version, entry.path),
           ...entry,
-          sourceLocation: sourceUrl(provenance.revision, entry.path),
+          sourceLocation: recipeSourceUrl(
+            recipe,
+            provenance.revision,
+            entry.path,
+          ),
           markdown: await downloadText(
-            sourceUrl(provenance.revision, entry.path),
+            recipeSourceUrl(recipe, provenance.revision, entry.path),
             fetcher,
           ),
         };
@@ -344,4 +407,26 @@ export async function downloadDocumentation(
       `Multiple documentation downloads failed: ${failures[0]!.message}`,
     );
   return { version, source: provenance, documents };
+}
+
+function assertMigrationMajor(
+  version: NestJsDocumentationVersion,
+  migrationGuide: string,
+  fromMajor: number,
+  toMajor: number,
+): void {
+  const introduction = migrationGuide.split(/^##\s/mu)[0] ?? '';
+  const matchesExpectedMajor = new RegExp(
+    `This article walks you through migrating from NestJS version ${fromMajor} to version ${toMajor}`,
+    'iu',
+  ).test(introduction);
+  if (!matchesExpectedMajor || toMajor !== Number(version)) {
+    throw new Error(
+      `The curated upstream ref for NestJS v${version} no longer identifies a v${version} migration guide`,
+    );
+  }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

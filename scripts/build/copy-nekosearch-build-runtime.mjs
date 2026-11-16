@@ -7,6 +7,11 @@ const sourceRoot = resolve(root, 'apps/docs-indexer/dist');
 const targetRoot = resolve(root, 'dist/apps/nekosearch/build-runtime');
 const runtimeFiles = [
   'config/documentation-build-config.js',
+  'integrations/nestjs/documentation.integration.js',
+  'integrations/nestjs/github/documentation-source.js',
+  'integrations/nestjs/nestjs-documentation-transformer.js',
+  'integrations/nestjs/source-recipes.js',
+  'integrations/nestjs/version/documentation-version.js',
   'services/build-documentation-snapshot.js',
   'services/build-local-documentation.js',
 ];

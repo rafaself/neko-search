@@ -31,7 +31,7 @@ export function makeNestJsSnapshot(
     source: {
       kind: 'git',
       repository: NESTJS_DOCUMENTATION_REPOSITORY,
-      ref: DOCUMENTATION_SOURCES[version].ref,
+      ref: DOCUMENTATION_SOURCES[version].ref.name,
       revision: sourceRevision,
     },
     documents: sourceDocuments.map((document) => ({

@@ -69,6 +69,13 @@ describe('NestJS documentation source integration', () => {
       if (url === sourceUrl(revision12, 'tools/generate-llms-txt.ts')) {
         return Promise.resolve(new Response(fixtureData.aliases));
       }
+      if (url === sourceUrl(revision12, 'content/migration.md')) {
+        return Promise.resolve(
+          new Response(
+            'This article walks you through migrating from NestJS version 11 to version 12.',
+          ),
+        );
+      }
       for (const revision of revisions) {
         const prefix = sourceUrl(revision, '');
         if (url.startsWith(prefix)) {

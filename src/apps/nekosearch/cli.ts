@@ -151,14 +151,22 @@ function runCodexConfigureCommand(force: boolean): void {
 
 function usage(): string {
   return [
+    'NekoSearch is a local, read-only MCP server for documentation snapshots.',
+    '',
     'Usage:',
     '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
     '  nekosearch serve',
     '  nekosearch list',
     '  nekosearch add --from <snapshot-dir>',
-    '  nekosearch add nestjs@<major>',
-    '  nekosearch update nestjs@<major>',
+    '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
+    '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
     '  nekosearch mcp configure codex [--force]',
+    '',
+    'Network access:',
+    '  build, list, add --from, serve, and mcp configure codex use local files.',
+    '  add/update nestjs@<major> fetch official documentation over HTTPS.',
+    '  serve is stdio-only, offline, and read-only.',
+    '  add/update store validated SQLite snapshots in the user data directory.',
     '',
   ].join('\n');
 }

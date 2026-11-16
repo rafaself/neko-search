@@ -3,128 +3,90 @@
 </p>
 
 <h3 align="center">NekoSearch</h3>
-<p align="center">A local, read-only MCP server for searching versioned documentation.</p>
+<p align="center">A local, read-only MCP server for searching documentation snapshots.</p>
 
 ---
 
-### Description
+NekoSearch builds and serves local documentation indexes. Bring your own Markdown or MDX files, install a curated source such as NestJS, then search and fetch from one source and version at a time. The server runs over stdio, opens SQLite indexes read-only, and does not fetch documentation while serving.
 
-NekoSearch gives AI assistants local stdio access to versioned documentation. It ships validated indexes for NestJS 11 and 12 and a pinned Model Context Protocol specification snapshot. You can add other validated snapshots to a local catalog. Searches select one source and version at a time, return canonical source URLs and revisions, and never combine rankings across indexes. The indexes are read-only while serving, and the server does not download documentation at runtime. NekoSearch is independently maintained and is not affiliated with NestJS or the Model Context Protocol maintainers.
+NekoSearch is a generic documentation server. NestJS is an optional curated example; no NestJS index is bundled or required. The package includes a small summary of the MCP protocol specification as a documentation source. That reference content is separate from NekoSearch itself, which is an MCP server.
 
-The reusable engine handles document discovery, parsing, indexing, and retrieval independently of any documentation source. Separate integrations build the NestJS and MCP protocol indexes. The distributable package bundles the retrieval engine with validated indexes for offline use.
+## Install
 
----
-
-### Installation
-
-Prerequisites:
-
-- Node.js 24.15 or newer
-- npm
-
-Install the published package to use the `nekosearch` command:
+Requirements: Node.js 24.15 or newer and npm.
 
 ```sh
 npm install --global nestjs-docs-mcp
+nekosearch --help
 ```
 
-To work on the project from its directory:
+Installing the npm package does not download or build NestJS documentation. Use `nekosearch list` to see the sources available locally; a new catalog contains the bundled MCP protocol summary and no NestJS source.
+
+## Build and install your documentation
+
+Build a snapshot from a local Markdown or MDX directory, then install it into your catalog:
 
 ```sh
-nvm use
-npm ci
-```
-
-Prepare the documentation indexes from the current upstream revisions:
-
-```sh
-npm run package:verify -- --regenerate
-```
-
-This validates and stages the v11 and v12 indexes in `data/`. You can also pass an extracted GitHub index bundle with `--bundle-dir <directory>`. Index generation needs network access; the MCP server itself does not download documentation or update indexes.
-
----
-
-### Quick Start
-
-Inspect the bundled indexes:
-
-```sh
-nekosearch list
-```
-
-The catalog displays each documentation source, version, source revision, and whether it is bundled or installed. Add a validated local snapshot directory produced by the documentation indexer with `corpus.json`, `index.sqlite`, and `manifest.json`:
-
-```sh
-nekosearch build ./docs --id minha-api@1 --output ./snapshots/minha-api
-nekosearch add --from ./snapshots/minha-api
+nekosearch build ./docs --id my-api@1 --output ./snapshots/my-api
+nekosearch add --from ./snapshots/my-api
 nekosearch list
 nekosearch serve
 ```
 
-`build` scans local Markdown and MDX files and writes a validated snapshot directory without installing it or changing the catalog. It makes no network requests; MDX is parsed as static documentation and is never compiled or executed. Use the output directory with `add --from` when you are ready to install the snapshot.
+`build` scans local Markdown and MDX files and writes `corpus.json`, `index.sqlite`, and `manifest.json` to the output directory you choose. It does not install the snapshot or make network requests. MDX is parsed as static documentation; it is never compiled or executed.
 
-Install or update a prebuilt NestJS major from the official project release:
+`add --from` validates and installs an existing snapshot directory. It also works with snapshots built by another tool, provided they contain the same three files and a supported manifest. The installed SQLite database is stored under the user catalog:
+
+- Linux and macOS: `$XDG_DATA_HOME/nekosearch/snapshots/` or `~/.local/share/nekosearch/snapshots/` when `XDG_DATA_HOME` is unset.
+- Windows: `%LOCALAPPDATA%\nekosearch\snapshots\`.
+
+## Optional curated source: NestJS
+
+NestJS 11 and 12 can be installed on demand:
 
 ```sh
 nekosearch add nestjs@12
 nekosearch update nestjs@12
 ```
 
-Remote installs are limited to the requested NestJS major (11 or 12); updates never switch majors. The CLI trusts release metadata from the TLS authenticated GitHub API for the pinned `rafaself/neko-search` repository (ID `1455942811`). It checks GitHub's API provided SHA-256 digest and asset size before reading the archive; an archive sidecar checksum is not a trust source. The CLI then checks the release revision, official NestJS source, requested version, bundle and SQLite format compatibility, corpus hashes, and database contents before atomically activating a new catalog revision. A failed or interrupted download leaves the active revision intact.
+These commands require network access to GitHub over HTTPS. NekoSearch resolves the curated official source ref to a concrete commit, downloads supported documentation files from that commit without Git, applies the NestJS-specific Markdown transformation, and builds and validates the SQLite snapshot locally. The resolved commit and ref are recorded in its manifest. Updates stay within the requested major and activate only after the replacement snapshot passes validation; a failed update leaves the active snapshot in place.
 
-Only `add` and `update` download snapshots. `serve` loads the active catalog once at startup, remains offline, and does not hot reload; start a new serve process to use an updated revision.
+The current recipes use the official `nestjs/docs.nestjs.com` repository: the `11.0.0` tag for NestJS 11 and the `master` branch for NestJS 12. The NestJS 12 recipe checks its migration guide to ensure that `master` still describes the v11-to-v12 migration. If a configured ref cannot be resolved, installation fails instead of selecting another ref.
 
-When running from the repository after building, use:
+## Network access and serving
 
-```sh
-npm run start:nekosearch -- serve
-```
+| Command                                     | Network access | What it does                                                                 |
+| ------------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| `nekosearch build ...`                      | No             | Builds a snapshot from local files at the chosen output path.                |
+| `nekosearch add --from ...`                 | No             | Validates and installs a local snapshot.                                     |
+| `nekosearch list`                           | No             | Lists bundled and installed snapshots.                                       |
+| `nekosearch add nestjs@11` / `nestjs@12`    | Yes            | Fetches the selected curated source over HTTPS and builds it locally.        |
+| `nekosearch update nestjs@11` / `nestjs@12` | Yes            | Resolves and builds the requested major's latest curated commit.             |
+| `nekosearch serve`                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections. |
+| `nekosearch mcp configure codex`            | No             | Registers the local executable with the installed Codex CLI.                 |
 
-`nekosearch serve` opens bundled and installed indexes read-only. It needs no index path settings and does not open a network listener. Set `DEBUG=1` to log MCP tool timing to stderr.
+`serve` does not open a network listener, fetch docs, or modify indexes. Restart it after installing or updating a snapshot to load the new catalog. Search results include their source, version, URL, and revision; use those selectors with `fetch_docs` to read the matching document.
 
-Codex registration is opt-in and uses the installed Codex CLI:
+## MCP tools
 
-```sh
-nekosearch mcp configure codex
-```
+| Tool          | Arguments                                                            | Behavior                                                |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------- |
+| `search_docs` | `query`, `source`, `version`, optional `limit` (1–10)                | Searches exactly one source and version.                |
+| `fetch_docs`  | `source`, `version`, `documentId`, optional `sectionId` and `cursor` | Fetches bounded Markdown from the matching local index. |
 
-This registers the current absolute NekoSearch executable with `serve` as its argument. A matching registration is left unchanged; a different registration named `nekosearch` requires `--force` to replace. Snapshot installs and updates change the catalog used by the next serve session, so they do not require reconfiguring Codex.
+Use the `source` and `version` returned by `search_docs` when calling `fetch_docs`. MCP tools accept documentation selectors and result IDs; filesystem paths are accepted only by the local CLI.
 
----
-
-### MCP Tools
-
-| Tool          | Arguments                                                            | Behavior                                                                                      |
-| ------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `search_docs` | `query`, `source`, `version`, optional `limit` (1–10)                | Returns ranked sections from exactly one index with source, version, IDs, URLs, and revision. |
-| `fetch_docs`  | `source`, `version`, `documentId`, optional `sectionId` and `cursor` | Fetches from the exact index identified by search results; returns bounded Markdown.          |
-
-Use the `source` and `version` from `search_docs` when calling `fetch_docs`. MCP tools accept documentation selectors and result IDs; filesystem paths are only accepted by the local CLI `add` command.
-
----
-
-### Development
-
-Run formatting, lint, type checks, and tests:
+## Development
 
 ```sh
-npm run check
+nvm use
+npm ci
 npm run build
+npm test
 ```
 
-Verify the npm tarball from an extracted index bundle, or regenerate indexes and verify them:
+The build compiles NekoSearch and its local snapshot builder. It does not fetch NestJS docs. The source-specific NestJS ingestion code is used only when the optional `add` or `update` command runs.
 
-```sh
-npm run package:verify -- --bundle-dir /path/to/extracted/documentation-indexes
-npm run package:verify -- --regenerate
-npm run docs:build:mcp
-```
-
-The published package contains the stdio MCP server, the retrieval portion of the documentation engine, the bundled snapshots, and license notices. Build and test tools, the indexer, Markdown parser, and HTTP development server remain repository-only. GitHub Actions validates and releases changed NestJS index bundles; it does not publish npm packages. A published npm package contains fixed bundled snapshots; newer snapshots can be installed locally with `nekosearch add`.
-
----
-
-### License
+## License
 
 [MIT](LICENSE)

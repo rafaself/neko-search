@@ -1,7 +1,7 @@
 {
   "name": "nestjs-docs-mcp",
   "version": "0.0.1",
-  "description": "A local stdio MCP server for versioned documentation indexes.",
+  "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
   "type": "module",
   "workspaces": [
     "apps/docs-indexer",
@@ -20,12 +20,13 @@
     "url": "https://github.com/rafaself/neko-search/issues"
   },
   "keywords": [
-    "nestjs",
+    "documentation",
+    "local",
     "mcp",
     "model-context-protocol",
-    "documentation",
     "stdio",
-    "offline"
+    "offline",
+    "search"
   ],
   "files": [
     "dist/apps/nekosearch/**",
@@ -36,11 +37,6 @@
     "dist/modules/documentation/mcp/documentation-tool-handlers.js",
     "dist/modules/documentation/mcp/presenters/documentation.presenter.js",
     "dist/shared/config/package-metadata.js",
-    "data/documentation-v11.sqlite",
-    "data/documentation-v11.manifest.json",
-    "data/documentation-v12.sqlite",
-    "data/documentation-v12.manifest.json",
-    "data/manifest.json",
     "data/mcp-protocol/**",
     "README.md",
     "LICENSE",
@@ -53,6 +49,7 @@
     "@nestjs-docs/documentation-engine": "0.1.0",
     "@nestjs/common": "^12.5.0",
     "@modelcontextprotocol/server": "^2.4.0",
+    "json5": "^2.2.3",
     "reflect-metadata": "^0.2.2",
     "remark-gfm": "^4.0.1",
     "rxjs": "^7.8.2",
@@ -78,7 +75,6 @@
     "docs:build": "npm run build && node apps/docs-indexer/dist/cli.js build",
     "docs:ingest": "npm run build && node apps/docs-indexer/dist/cli.js ingest",
     "docs:build:mcp": "npm run build && node scripts/release/build-mcp-protocol-snapshot.mjs",
-    "package:verify": "node scripts/release/verify-npm-package.mjs",
     "search:index": "npm run build && node apps/docs-indexer/dist/cli.js index",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
