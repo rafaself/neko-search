@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -85,6 +86,7 @@ describe('package index verification', () => {
     root = mkdtempSync(join(tmpdir(), 'nestjs-docs-package-'));
     for (const path of [
       'data',
+      'data/mcp-protocol',
       'dist/apps/nekosearch',
       'dist/modules/documentation/mcp/contracts',
       'dist/modules/documentation/mcp/presenters',
@@ -93,6 +95,11 @@ describe('package index verification', () => {
       'packages/documentation-engine',
     ])
       mkdirSync(join(root, path), { recursive: true });
+    cpSync(
+      join(repositoryRoot, 'data/mcp-protocol'),
+      join(root, 'data/mcp-protocol'),
+      { recursive: true },
+    );
     copyFileSync(
       join(repositoryRoot, 'package.json'),
       join(root, 'package.json'),

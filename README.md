@@ -3,15 +3,15 @@
 </p>
 
 <h3 align="center">NekoSearch</h3>
-<p align="center">A local, read-only MCP server for searching and fetching NestJS documentation.</p>
+<p align="center">A local, read-only MCP server for searching versioned documentation.</p>
 
 ---
 
 ### Description
 
-NekoSearch gives AI assistants local stdio access to versioned NestJS documentation. It ships validated indexes for NestJS 11 and 12 and returns relevant sections with canonical source URLs and upstream revisions. The selected index is read-only, and the server does not download documentation at runtime. NekoSearch is independently maintained and is not affiliated with NestJS.
+NekoSearch gives AI assistants local stdio access to versioned documentation. It ships validated indexes for NestJS 11 and 12 and a pinned Model Context Protocol specification snapshot. You can add other validated snapshots to a local catalog. Searches select one source and version at a time, return canonical source URLs and revisions, and never combine rankings across indexes. The indexes are read-only while serving, and the server does not download documentation at runtime. NekoSearch is independently maintained and is not affiliated with NestJS or the Model Context Protocol maintainers.
 
-The reusable engine handles document discovery, parsing, indexing, and retrieval independently of any documentation source. A separate NestJS integration builds the v11 and v12 indexes. The distributable package bundles the engine with those indexes for offline use.
+The reusable engine handles document discovery, parsing, indexing, and retrieval independently of any documentation source. Separate integrations build the NestJS and MCP protocol indexes. The distributable package bundles the retrieval engine with validated indexes for offline use.
 
 ---
 
@@ -47,11 +47,17 @@ This validates and stages the v11 and v12 indexes in `data/`. You can also pass 
 
 ### Quick Start
 
-Select the SQLite index and matching manifest to serve. This example uses NestJS 12; use the corresponding v11 paths to serve NestJS 11:
+Inspect the bundled indexes:
 
 ```sh
-export DOCUMENTATION_INDEX_PATH="$PWD/data/documentation-v12.sqlite"
-export DOCUMENTATION_INDEX_MANIFEST_PATH="$PWD/data/documentation-v12.manifest.json"
+nekosearch list
+```
+
+The catalog displays each documentation source, version, source revision, and whether it is bundled or installed. Add a validated snapshot directory produced by the documentation indexer with `corpus.json`, `index.sqlite`, and `manifest.json`:
+
+```sh
+nekosearch add --from /path/to/snapshot-directory
+nekosearch list
 nekosearch serve
 ```
 
@@ -61,18 +67,18 @@ When running from the repository after building, use:
 npm run start:nekosearch -- serve
 ```
 
-Set `DEBUG=1` to log MCP tool timing to stderr. The command reads one index selected at startup and does not open a network listener.
+`nekosearch serve` opens bundled and installed indexes read-only. It needs no index path settings and does not open a network listener. Set `DEBUG=1` to log MCP tool timing to stderr.
 
 ---
 
 ### MCP Tools
 
-| Tool          | Arguments                                       | Behavior                                                                                    |
-| ------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `search_docs` | `query`, optional `limit` (1–10)                | Returns ranked sections with document IDs, source URLs, and revisions.                      |
-| `fetch_docs`  | `documentId`, optional `sectionId` and `cursor` | Returns bounded Markdown for a document or section. Use IDs and cursors returned by search. |
+| Tool          | Arguments                                                            | Behavior                                                                                      |
+| ------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `search_docs` | `query`, `source`, `version`, optional `limit` (1–10)                | Returns ranked sections from exactly one index with source, version, IDs, URLs, and revision. |
+| `fetch_docs`  | `source`, `version`, `documentId`, optional `sectionId` and `cursor` | Fetches from the exact index identified by search results; returns bounded Markdown.          |
 
-The selected index determines the documentation version; tool arguments cannot change it. Both tools are read-only.
+Use the `source` and `version` from `search_docs` when calling `fetch_docs`. MCP tools accept documentation selectors and result IDs; filesystem paths are only accepted by the local CLI `add` command.
 
 ---
 
@@ -90,9 +96,10 @@ Verify the npm tarball from an extracted index bundle, or regenerate indexes and
 ```sh
 npm run package:verify -- --bundle-dir /path/to/extracted/documentation-indexes
 npm run package:verify -- --regenerate
+npm run docs:build:mcp
 ```
 
-The published package contains the stdio MCP server, the retrieval portion of the documentation engine, v11/v12 indexes, and license notices. Build and test tools, the indexer, Markdown parser, and HTTP development server remain repository-only. GitHub Actions validates and releases changed index bundles; it does not publish npm packages. A published npm package contains a fixed index snapshot, so newer bundles reach users through a later npm release.
+The published package contains the stdio MCP server, the retrieval portion of the documentation engine, the bundled snapshots, and license notices. Build and test tools, the indexer, Markdown parser, and HTTP development server remain repository-only. GitHub Actions validates and releases changed NestJS index bundles; it does not publish npm packages. A published npm package contains fixed bundled snapshots; newer snapshots can be installed locally with `nekosearch add`.
 
 ---
 

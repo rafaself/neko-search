@@ -11,5 +11,12 @@ upstream license texts and copyright notices are included below.
 - NestJS v12 is covered by the license and copyright notice in
   [`licenses/nestjs-docs-v12-LICENSE`](licenses/nestjs-docs-v12-LICENSE).
 
+The bundled MCP protocol snapshot is an original, concise summary of the
+[Model Context Protocol Specification, revision 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25),
+maintained by the Model Context Protocol project. The upstream documentation is
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The
+summary pages in `docs/mcp-protocol/` are not official MCP documentation and
+were written for this package.
+
 This project is independent and is not affiliated with or endorsed by NestJS or
-its maintainers.
+the Model Context Protocol project or its maintainers.

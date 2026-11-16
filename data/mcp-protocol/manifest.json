@@ -1,0 +1,69 @@
+{
+  "manifestVersion": 2,
+  "documentation": {
+    "id": "mcp",
+    "version": "2025-11-25"
+  },
+  "source": {
+    "kind": "git",
+    "repository": "https://github.com/modelcontextprotocol/modelcontextprotocol",
+    "ref": "2025-11-25",
+    "revision": "2025-11-25"
+  },
+  "index": {
+    "file": "index.sqlite",
+    "sha256": "aab37499fa1e12187e3dde934f9c1d1933d4bf0ea4ca28ec16abc3063586db34",
+    "documentationVersion": "2025-11-25",
+    "sourceRevision": "2025-11-25",
+    "schemaVersion": 1,
+    "formatVersion": 1,
+    "documentCount": 5,
+    "chunkCount": 12
+  },
+  "pipeline": {
+    "parserVersion": 1,
+    "transformerVersion": 1,
+    "normalizationAlgorithmVersion": 1,
+    "chunkingAlgorithmVersion": 1,
+    "maxChunkChars": 4000,
+    "indexSchemaVersion": 1,
+    "indexFormatVersion": 1
+  },
+  "corpus": {
+    "file": "corpus.json",
+    "sha256": "ff640acfff3de610089d888062543d0ebc7f57a034bcfb78c729edb60b7cb0a9",
+    "documentCount": 5,
+    "documents": [
+      {
+        "id": "mcp-spec:v2025-11-25:a4de0d8c161e3170b636db4a1271623fe1413a28e6708fc2d39fa5a5cc291dd4",
+        "path": "architecture.md",
+        "sourceContentHash": "5d46214bc861809e014c319ca553a399d1992bb16c8673bfd89171a2d401fa42",
+        "normalizedContentHash": "5d46214bc861809e014c319ca553a399d1992bb16c8673bfd89171a2d401fa42"
+      },
+      {
+        "id": "mcp-spec:v2025-11-25:183bf3b185f1b41530bdc04967fbf5862f0ceeed25a2566d01d221976fdc0332",
+        "path": "lifecycle.md",
+        "sourceContentHash": "694fea32cb8443621a14d5e8b72e8084173e5fcf6d39ac8d949a0b4a39936424",
+        "normalizedContentHash": "694fea32cb8443621a14d5e8b72e8084173e5fcf6d39ac8d949a0b4a39936424"
+      },
+      {
+        "id": "mcp-spec:v2025-11-25:adf4c69ca0d5b138eca276372c446a1f2ccc672cb0674d7dc1b6bc4f7b66e979",
+        "path": "overview.md",
+        "sourceContentHash": "d63a475dc64662247222f2a14697395e1e4ae1e5d3086956e540e12991d12788",
+        "normalizedContentHash": "d63a475dc64662247222f2a14697395e1e4ae1e5d3086956e540e12991d12788"
+      },
+      {
+        "id": "mcp-spec:v2025-11-25:889600b9b333133bec391930b51ef705e6ccbc4f5db3be7c685fa92a971f92ec",
+        "path": "tools-resources-prompts.md",
+        "sourceContentHash": "8be41c56f71eb9c32086ab5a81334ed70fcbc861d37856562c0777b23b8a66b3",
+        "normalizedContentHash": "8be41c56f71eb9c32086ab5a81334ed70fcbc861d37856562c0777b23b8a66b3"
+      },
+      {
+        "id": "mcp-spec:v2025-11-25:2e16f531c762b6be1169a1b20b73fa8ed34dfee9eef87ab3a8f1be797df8cb62",
+        "path": "transports.md",
+        "sourceContentHash": "79e5271fff18444e932dec0a2afab20402c1eb9a0aa43e804bd8cf624ba17dce",
+        "normalizedContentHash": "79e5271fff18444e932dec0a2afab20402c1eb9a0aa43e804bd8cf624ba17dce"
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const versions = ['11', '12'];
+const officialNestSource = 'https://github.com/nestjs/docs.nestjs.com';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -33,6 +35,13 @@ function withoutNpmDryRun(environment) {
   return clean;
 }
 
+function withoutIndexPathOverrides(environment) {
+  const clean = { ...environment };
+  delete clean.DOCUMENTATION_INDEX_PATH;
+  delete clean.DOCUMENTATION_INDEX_MANIFEST_PATH;
+  return clean;
+}
+
 async function withTimeout(promise, label, milliseconds = 30_000) {
   let timeout;
   try {
@@ -51,36 +60,136 @@ async function withTimeout(promise, label, milliseconds = 30_000) {
   }
 }
 
-async function verifyVersion(project, version) {
+async function createLocalNestSnapshot(snapshotDirectory) {
+  await mkdir(snapshotDirectory, { recursive: true });
+  const sourceData = join(root, 'data');
+  const database = await readFile(join(sourceData, 'documentation-v12.sqlite'));
+  const corpus = await readFile(join(sourceData, 'documentation-v12.json'));
+  const runtimeManifest = JSON.parse(
+    await readFile(join(sourceData, 'documentation-v12.manifest.json'), 'utf8'),
+  );
+  const parsedCorpus = JSON.parse(corpus.toString('utf8'));
+  await Promise.all([
+    writeFile(join(snapshotDirectory, 'index.sqlite'), database),
+    writeFile(join(snapshotDirectory, 'corpus.json'), corpus),
+  ]);
+
+  const buildManifest = {
+    manifestVersion: 2,
+    documentation: { id: 'nestjs', version: '12' },
+    source: runtimeManifest.source,
+    pipeline: {
+      parserVersion: 1,
+      transformerVersion: 1,
+      normalizationAlgorithmVersion: 1,
+      chunkingAlgorithmVersion: 1,
+      maxChunkChars: 4000,
+      indexSchemaVersion: runtimeManifest.index.schemaVersion,
+      indexFormatVersion: runtimeManifest.index.formatVersion,
+    },
+    corpus: {
+      file: 'corpus.json',
+      sha256: sha256(corpus),
+      documentCount: parsedCorpus.documents.length,
+      documents: [...parsedCorpus.documents]
+        .sort((left, right) =>
+          compareStrings(left.source.path, right.source.path),
+        )
+        .map((document) => ({
+          id: document.id,
+          path: document.source.path,
+          sourceContentHash: document.source.contentHash,
+          normalizedContentHash: document.contentHash,
+        })),
+    },
+    index: {
+      ...runtimeManifest.index,
+      file: 'index.sqlite',
+      sha256: sha256(database),
+    },
+  };
+  await writeFile(
+    join(snapshotDirectory, 'manifest.json'),
+    `${JSON.stringify(buildManifest, null, 2)}\n`,
+  );
+}
+
+async function verifyCatalogServer(project, temporaryDirectory) {
   const binary = join(project, 'node_modules', '.bin', 'nekosearch');
   const guardPath = join(project, 'network-guard.mjs');
-  const networkMarker = join(project, `network-blocked-v${version}`);
-  const installedData = join(
-    project,
-    'node_modules',
-    'nestjs-docs-mcp',
-    'data',
+  const networkMarker = join(project, 'network-blocked');
+  const xdgDataHome = join(project, 'xdg-data');
+  const snapshotDirectory = join(temporaryDirectory, 'local-nest-v12');
+  await mkdir(xdgDataHome);
+  await createLocalNestSnapshot(snapshotDirectory);
+  const guardedEnvironment = withoutIndexPathOverrides({
+    ...process.env,
+    PATH: process.env.PATH ?? '',
+    NODE_OPTIONS: `--import=${pathToFileURL(guardPath).href}`,
+    NEKOSEARCH_NETWORK_GUARD_MARKER: networkMarker,
+    XDG_DATA_HOME: xdgDataHome,
+  });
+
+  const added = run(binary, ['add', '--from', snapshotDirectory], {
+    cwd: project,
+    env: guardedEnvironment,
+  });
+  assert.match(added, /Added nestjs@12 revision /u);
+  const catalogOutput = run(binary, ['list'], {
+    cwd: project,
+    env: guardedEnvironment,
+  });
+  const rows = new Map(
+    catalogOutput
+      .trim()
+      .split('\n')
+      .slice(1)
+      .map((line) => {
+        const [source, version, revision, status] = line.split('\t');
+        return [`${source}@${version}`, { source, version, revision, status }];
+      }),
   );
-  const indexPath = join(installedData, `documentation-v${version}.sqlite`);
-  const indexManifestPath = join(
-    installedData,
-    `documentation-v${version}.manifest.json`,
+  assert.deepEqual(rows.get('mcp@2025-11-25'), {
+    source: 'mcp',
+    version: '2025-11-25',
+    revision: '2025-11-25',
+    status: 'bundled',
+  });
+  assert.equal(rows.get(`${officialNestSource}@11`)?.status, 'bundled');
+  assert.equal(rows.get(`${officialNestSource}@12`)?.status, 'bundled');
+  assert.match(rows.get('nestjs@12')?.revision ?? '', /^[a-f0-9]{40}$/u);
+  assert.equal(rows.get('nestjs@12')?.status, 'installed');
+  assert.equal(
+    rows.size,
+    4,
+    'the catalog should show all bundled and installed indexes',
   );
-  const indexManifest = JSON.parse(await readFile(indexManifestPath, 'utf8'));
+
+  const installedPackage = join(project, 'node_modules', 'nestjs-docs-mcp');
+  const installedSnapshotKey = sha256(
+    Buffer.from(`nestjs${String.fromCharCode(0)}12`),
+  );
+  const indexPaths = [
+    join(installedPackage, 'data', 'mcp-protocol', 'index.sqlite'),
+    join(installedPackage, 'data', 'documentation-v11.sqlite'),
+    join(installedPackage, 'data', 'documentation-v12.sqlite'),
+    join(
+      xdgDataHome,
+      'nekosearch',
+      'snapshots',
+      installedSnapshotKey,
+      'index.sqlite',
+    ),
+  ];
+  const indexHashes = await Promise.all(
+    indexPaths.map(async (path) => sha256(await readFile(path))),
+  );
+
   const transport = new StdioClientTransport({
     command: binary,
     args: ['serve'],
     cwd: project,
-    env: {
-      PATH: process.env.PATH ?? '',
-      NODE_OPTIONS: `--import=${pathToFileURL(guardPath).href}`,
-      NEKOSEARCH_NETWORK_GUARD_MARKER: networkMarker,
-      DOCUMENTATION_INDEX_PATH: indexPath,
-      DOCUMENTATION_INDEX_MANIFEST_PATH: indexManifestPath,
-      ...(process.platform === 'win32' && process.env.SystemRoot
-        ? { SystemRoot: process.env.SystemRoot }
-        : {}),
-    },
+    env: guardedEnvironment,
     stderr: 'pipe',
   });
   const transportErrors = [];
@@ -96,105 +205,170 @@ async function verifyVersion(project, version) {
   transport.onerror = (error) => transportErrors.push(error);
   transport.stderr?.on('data', (chunk) => stderr.push(chunk.toString()));
   const client = new Client({
-    name: 'nestjs-docs-package-smoke',
+    name: 'nekosearch-package-smoke',
     version: '1.0.0',
   });
   let child;
   try {
-    await withTimeout(
-      client.connect(transport),
-      `NekoSearch v${version} initialize`,
-    ).catch((error) => {
-      throw new Error(
-        `NekoSearch v${version} initialize failed; stderr: ${stderr.join('')}; exit code: ${transport._process?.exitCode}`,
-        { cause: error },
-      );
-    });
-    child = transport._process;
-    assert.ok(transport.pid, `NestJS v${version} executable did not start`);
-
-    const tools = await withTimeout(
-      client.listTools(),
-      `NestJS v${version} listTools`,
+    await withTimeout(client.connect(transport), 'NekoSearch initialize').catch(
+      (error) => {
+        throw new Error(
+          `NekoSearch initialize failed; stderr: ${stderr.join('')}; exit code: ${transport._process?.exitCode}`,
+          { cause: error },
+        );
+      },
     );
+    child = transport._process;
+    assert.ok(transport.pid, 'the installed executable did not start');
+
+    const tools = await withTimeout(client.listTools(), 'NekoSearch listTools');
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
       ['fetch_docs', 'search_docs'],
-      'the installed server must expose both documentation tools',
+      'the server must expose search_docs and fetch_docs',
+    );
+    const searchTool = tools.tools.find((tool) => tool.name === 'search_docs');
+    const fetchTool = tools.tools.find((tool) => tool.name === 'fetch_docs');
+    assert.deepEqual(
+      Object.keys(searchTool.inputSchema.properties).sort(),
+      ['limit', 'query', 'source', 'version'],
+      'search_docs must expose selectors and no filesystem paths',
+    );
+    assert.deepEqual(
+      Object.keys(fetchTool.inputSchema.properties).sort(),
+      ['cursor', 'documentId', 'sectionId', 'source', 'version'],
+      'fetch_docs must expose selectors and no filesystem paths',
     );
 
-    const search = await withTimeout(
+    const protocolSearch = await withTimeout(
       client.callTool({
         name: 'search_docs',
-        arguments: { query: 'ExecutionContext', limit: 3 },
+        arguments: {
+          source: 'mcp',
+          version: '2025-11-25',
+          query: 'JSON-RPC messages',
+          limit: 3,
+        },
       }),
-      `NestJS v${version} search_docs`,
+      'MCP protocol search_docs',
     );
-    assert.ok(!search.isError, 'search_docs should succeed');
-    const searchData = search.structuredContent;
-    assert.equal(searchData.documentationId, indexManifest.documentation.id);
-    assert.equal(searchData.documentationVersion, version);
-    assert.ok(
-      searchData.results.length > 0,
-      'the packaged index should return documentation',
+    assert.ok(!protocolSearch.isError, 'MCP protocol search should succeed');
+    const protocolData = protocolSearch.structuredContent;
+    assert.equal(protocolData.source, 'mcp');
+    assert.equal(protocolData.version, '2025-11-25');
+    assert.equal(protocolData.revision, '2025-11-25');
+    assert.ok(protocolData.results.length > 0);
+    const protocolHit = protocolData.results[0];
+    assert.equal(protocolHit.source, protocolData.source);
+    assert.equal(protocolHit.version, protocolData.version);
+    assert.match(
+      protocolHit.canonicalUrl,
+      /^https:\/\/modelcontextprotocol\.io\//u,
     );
-    const hit = searchData.results[0];
-    assert.match(hit.documentId, new RegExp(`^nestjs-doc:v${version}:`));
-    assert.match(hit.sourceRevision, /^[a-f0-9]{40}$/u);
-    assert.match(hit.canonicalUrl, /^https:\/\/docs\.nestjs\.com\//u);
-    if (version === '11')
-      assert.match(hit.canonicalUrl, /^https:\/\/docs\.nestjs\.com\/v11\//u);
-    else assert.doesNotMatch(hit.canonicalUrl, /\/v11(?:\/|#|$)/u);
 
-    const fetched = await withTimeout(
+    const localNestSearch = await withTimeout(
       client.callTool({
-        name: 'fetch_docs',
-        arguments: { documentId: hit.documentId, sectionId: hit.chunkId },
+        name: 'search_docs',
+        arguments: {
+          source: 'nestjs',
+          version: '12',
+          query: 'ExecutionContext',
+          limit: 3,
+        },
       }),
-      `NestJS v${version} fetch_docs`,
-    );
-    assert.ok(!fetched.isError, 'fetch_docs should succeed');
-    const document = fetched.structuredContent;
-    assert.equal(document.documentationId, indexManifest.documentation.id);
-    assert.equal(document.documentationVersion, version);
-    assert.equal(document.found, true);
-    assert.equal(document.sourceRevision, hit.sourceRevision);
-    assert.ok(
-      document.sections.some((section) =>
-        section.markdown.includes('ExecutionContext'),
-      ),
+      'installed NestJS search_docs',
     );
     assert.ok(
-      document.sections.every((section) =>
-        section.canonicalUrl.startsWith('https://docs.nestjs.com/'),
-      ),
+      !localNestSearch.isError,
+      'installed NestJS search should succeed',
     );
+    const localNestData = localNestSearch.structuredContent;
+    assert.equal(localNestData.source, 'nestjs');
+    assert.equal(localNestData.version, '12');
+    assert.equal(localNestData.revision, rows.get('nestjs@12')?.revision);
+    assert.ok(localNestData.results.length > 0);
+    const localNestHit = localNestData.results[0];
+    assert.match(localNestHit.documentId, /^nestjs-doc:v12:/u);
+    assert.equal(localNestHit.source, 'nestjs');
+    assert.equal(localNestHit.version, '12');
+    assert.match(localNestHit.canonicalUrl, /^https:\/\/docs\.nestjs\.com\//u);
+
+    for (const [sourceData, hit] of [
+      [protocolData, protocolHit],
+      [localNestData, localNestHit],
+    ]) {
+      assert.ok(
+        sourceData.results.every(
+          (result) =>
+            result.source === sourceData.source &&
+            result.version === sourceData.version,
+        ),
+        'each search response must contain results from only the selected index',
+      );
+      const fetched = await withTimeout(
+        client.callTool({
+          name: 'fetch_docs',
+          arguments: {
+            source: hit.source,
+            version: hit.version,
+            documentId: hit.documentId,
+            sectionId: hit.chunkId,
+          },
+        }),
+        `${sourceData.source}@${sourceData.version} fetch_docs`,
+      );
+      assert.ok(!fetched.isError, 'fetch_docs should succeed');
+      const document = fetched.structuredContent;
+      assert.equal(document.source, sourceData.source);
+      assert.equal(document.version, sourceData.version);
+      assert.equal(document.revision, sourceData.revision);
+      assert.equal(document.documentationId, sourceData.documentationId);
+      assert.equal(
+        document.documentationVersion,
+        sourceData.documentationVersion,
+      );
+      assert.equal(document.found, true);
+      assert.equal(document.sourceRevision, hit.sourceRevision);
+      assert.ok(document.sections.length > 0);
+    }
+
+    const bundledNestSearch = await withTimeout(
+      client.callTool({
+        name: 'search_docs',
+        arguments: {
+          source: officialNestSource,
+          version: '11',
+          query: 'ExecutionContext',
+          limit: 1,
+        },
+      }),
+      'bundled NestJS v11 search_docs',
+    );
+    assert.ok(!bundledNestSearch.isError);
+    assert.equal(bundledNestSearch.structuredContent.version, '11');
+    assert.ok(bundledNestSearch.structuredContent.results.length > 0);
 
     assert.deepEqual(
       transportErrors,
       [],
-      'stdout must contain only valid MCP protocol messages',
+      'stdout must remain valid MCP protocol',
     );
     await client.close();
-    await withTimeout(
-      waitForClose(child),
-      `NestJS v${version} graceful shutdown`,
-    );
-    assert.equal(
-      child.exitCode,
-      0,
-      'the installed process should exit cleanly after stdin closes',
-    );
+    await withTimeout(waitForClose(child), 'NekoSearch graceful shutdown');
+    assert.equal(child.exitCode, 0, 'the server should exit cleanly');
     assert.equal(child.signalCode, null);
-    assert.match(
-      stderr.join(''),
-      /NekoSearch MCP server ready on stdio/u,
-      'startup logs should be written to stderr',
-    );
+    assert.match(stderr.join(''), /NekoSearch MCP server ready on stdio/u);
     assertProtocolStdout(stdout);
     assert.doesNotMatch(stderr.join(''), /NETWORK_BLOCKED/u);
     await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
-    console.log(`Verified installed NekoSearch v${version} MCP server`);
+    assert.deepEqual(
+      await Promise.all(
+        indexPaths.map(async (path) => sha256(await readFile(path))),
+      ),
+      indexHashes,
+      'serving the catalog must leave bundled and installed SQLite indexes unchanged',
+    );
+    console.log('Verified installed NekoSearch catalog and stdio server');
   } finally {
     child ??= transport._process;
     if (child && child.exitCode === null && child.signalCode === null) {
@@ -227,6 +401,14 @@ function waitForClose(child) {
   if (child.exitCode !== null || child.signalCode !== null)
     return Promise.resolve();
   return new Promise((resolveClose) => child.once('close', resolveClose));
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function compareStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 async function main() {
@@ -263,6 +445,9 @@ async function main() {
       'data/documentation-v12.sqlite',
       'data/documentation-v12.manifest.json',
       'data/manifest.json',
+      'data/mcp-protocol/corpus.json',
+      'data/mcp-protocol/index.sqlite',
+      'data/mcp-protocol/manifest.json',
       'README.md',
       'LICENSE',
       'THIRD-PARTY-NOTICES.md',
@@ -270,19 +455,22 @@ async function main() {
       'licenses/nestjs-docs-v12-LICENSE',
       'dist/apps/nekosearch/cli.js',
       'dist/apps/nekosearch/serve.js',
+      'dist/apps/nekosearch/catalog.js',
+      'dist/apps/nekosearch/catalog-contract.js',
       'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
       'dist/modules/documentation/mcp/documentation-tool-handlers.js',
       'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
       'dist/shared/config/package-metadata.js',
       'node_modules/@nestjs-docs/documentation-engine/package.json',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/sqlite-documentation-store.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/runtime-index.js',
     ]) {
       assert.ok(files.has(path), `the npm tarball must include ${path}`);
     }
     for (const version of versions) {
       assert.ok(
         !files.has(`data/documentation-v${version}.json`),
-        'the npm tarball should omit corpus files after validating them during prepack',
+        'the npm tarball should omit NestJS corpus files after package validation',
       );
     }
     for (const path of files) {
@@ -364,15 +552,13 @@ globalThis.fetch = function () {
       'documentation-engine',
     );
     await readFile(join(installedEngine, 'package.json'));
-    await readFile(
-      join(
-        installedEngine,
-        'dist',
-        'infrastructure',
-        'sqlite',
-        'sqlite-documentation-store.js',
-      ),
-    );
+    for (const runtimePath of [
+      'dist/infrastructure/sqlite/sqlite-documentation-store.js',
+      'dist/infrastructure/sqlite/runtime-index.js',
+      'dist/domain/documentation.schemas.js',
+    ]) {
+      await readFile(join(installedEngine, runtimePath));
+    }
     for (const buildOnlyPath of [
       'infrastructure/markdown/markdown-parser.js',
       'infrastructure/filesystem/documentation-discovery.js',
@@ -381,21 +567,6 @@ globalThis.fetch = function () {
       await assert.rejects(
         readFile(join(installedEngine, 'dist', buildOnlyPath)),
         { code: 'ENOENT' },
-      );
-    }
-    for (const version of versions) {
-      const index = join(
-        installedPackage,
-        'data',
-        `documentation-v${version}.sqlite`,
-      );
-      await readFile(index);
-      await readFile(
-        join(
-          installedPackage,
-          'data',
-          `documentation-v${version}.manifest.json`,
-        ),
       );
     }
     const dependencyTree = JSON.parse(
@@ -444,7 +615,7 @@ globalThis.fetch = function () {
       }
     }
 
-    for (const version of versions) await verifyVersion(project, version);
+    await verifyCatalogServer(project, temporaryDirectory);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

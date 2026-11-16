@@ -19,6 +19,7 @@ import {
   validateIndexIntegrity,
 } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-integrity.js';
 import { DocumentationIndexRuntimeManifestSchema } from '@nestjs-docs/documentation-engine/domain/documentation-index-manifest.schemas.js';
+import { validateSnapshotDirectory } from '../../dist/apps/nekosearch/catalog.js';
 
 const rootDirectory = fileURLToPath(new URL('../../', import.meta.url));
 export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
@@ -55,6 +56,7 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
       (version) => `data/documentation-v${version}.manifest.json`,
     ),
     'data/manifest.json',
+    'data/mcp-protocol/**',
     'README.md',
     'LICENSE',
     'THIRD-PARTY-NOTICES.md',
@@ -130,6 +132,17 @@ export async function verifyPackage(root = rootDirectory, dataDirectoryPath) {
     )
   ) {
     throw new Error('Documentation index manifest metadata is invalid');
+  }
+
+  const protocolSnapshot = await validateSnapshotDirectory(
+    resolve(root, 'data/mcp-protocol'),
+  );
+  if (
+    protocolSnapshot.source !== 'mcp' ||
+    protocolSnapshot.version !== '2025-11-25' ||
+    protocolSnapshot.revision !== '2025-11-25'
+  ) {
+    throw new Error('Bundled MCP protocol snapshot identity is invalid');
   }
 
   for (const version of SUPPORTED_DOCUMENTATION_VERSIONS) {

@@ -1,15 +1,7 @@
-import { accessSync, constants, statSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { DocumentationSearchService } from '@nestjs-docs/documentation-engine/application/services/documentation-search.service.js';
-import { loadDocumentationIndexManifest } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/documentation-index-manifest.js';
 import { SQLiteDocumentationStore } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/sqlite-documentation-store.js';
-import {
-  fetchDocsInputSchema,
-  fetchDocsOutputSchema,
-  searchDocsInputSchema,
-  searchDocsOutputSchema,
-} from '../../modules/documentation/mcp/contracts/documentation-tools.contract.js';
 import {
   fetchDocumentation,
   searchDocumentation,
@@ -18,26 +10,46 @@ import {
   PACKAGE_NAME,
   PACKAGE_VERSION,
 } from '../../shared/config/package-metadata.js';
+import {
+  catalogFetchDocsInputSchema,
+  catalogFetchDocsOutputSchema,
+  catalogSearchDocsInputSchema,
+  catalogSearchDocsOutputSchema,
+} from './catalog-contract.js';
+import {
+  listCatalogIndexes,
+  type DocumentationCatalogEntry,
+} from './catalog.js';
 
 const serverInstructions =
-  'This server reads one validated documentation index, fixed at startup. Use search_docs, then fetch_docs with a returned document ID for more detail. Continue truncated results with the same ID and cursor. Ground answers in returned content and cite its source URL and revision.';
+  'Use nekosearch list to see available documentation sources and versions. Search one source and version at a time with search_docs, then pass the returned source and version with a document ID to fetch_docs. Results from different indexes are never combined. Cite the returned source URL and revision.';
+
+interface CatalogSearchRuntime {
+  entry: DocumentationCatalogEntry;
+  documentation: DocumentationSearchService;
+  store: SQLiteDocumentationStore;
+}
 
 export async function serve(): Promise<void> {
-  const databasePath = process.env.DOCUMENTATION_INDEX_PATH;
-  if (!databasePath) {
-    throw new Error(
-      'DOCUMENTATION_INDEX_PATH is required and must name an existing SQLite index',
-    );
+  const entries = await listCatalogIndexes();
+  const runtimes: CatalogSearchRuntime[] = [];
+  try {
+    for (const entry of entries) {
+      const store = new SQLiteDocumentationStore(
+        entry.databasePath,
+        entry.manifest,
+      );
+      runtimes.push({
+        entry,
+        store,
+        documentation: new DocumentationSearchService(store, entry.manifest),
+      });
+    }
+  } catch (error) {
+    for (const runtime of runtimes) runtime.store.onModuleDestroy();
+    throw error;
   }
-  assertReadableIndexFile(databasePath);
 
-  const manifestPath = process.env.DOCUMENTATION_INDEX_MANIFEST_PATH;
-  const indexManifest = loadDocumentationIndexManifest(
-    databasePath,
-    manifestPath,
-  );
-  const store = new SQLiteDocumentationStore(databasePath, indexManifest);
-  const documentation = new DocumentationSearchService(store, indexManifest);
   const server = new McpServer(
     {
       name: PACKAGE_NAME,
@@ -47,14 +59,13 @@ export async function serve(): Promise<void> {
       instructions: serverInstructions,
     },
   );
-
   server.registerTool(
     'search_docs',
     {
       description:
-        'Searches the documentation index selected when this server starts. Returns ranked section excerpts, document IDs, and source URLs.',
-      inputSchema: searchDocsInputSchema,
-      outputSchema: searchDocsOutputSchema,
+        'Searches exactly one documentation source and version. Choose source and version from nekosearch list. Each result includes those selectors so fetch_docs can use the same index.',
+      inputSchema: catalogSearchDocsInputSchema,
+      outputSchema: catalogSearchDocsOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -63,15 +74,32 @@ export async function serve(): Promise<void> {
       },
     },
     (input) =>
-      runTool('search_docs', () => searchDocumentation(documentation, input)),
+      runTool('search_docs', () => {
+        const runtime = findRuntime(runtimes, input.source, input.version);
+        const result = searchDocumentation(runtime.documentation, input);
+        return {
+          ...result,
+          structuredContent: {
+            ...result.structuredContent,
+            source: runtime.entry.source,
+            version: runtime.entry.version,
+            revision: runtime.entry.revision,
+            results: result.structuredContent.results.map((hit) => ({
+              ...hit,
+              source: runtime.entry.source,
+              version: runtime.entry.version,
+            })),
+          },
+        };
+      }),
   );
   server.registerTool(
     'fetch_docs',
     {
       description:
-        'Fetch a document or a section identified by search_docs. Use the returned cursor with the same document and section to continue a truncated excerpt.',
-      inputSchema: fetchDocsInputSchema,
-      outputSchema: fetchDocsOutputSchema,
+        'Fetches a document from the exact source and version returned by search_docs. Pass its source, version, document ID, and optional section ID/cursor.',
+      inputSchema: catalogFetchDocsInputSchema,
+      outputSchema: catalogFetchDocsOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -80,29 +108,49 @@ export async function serve(): Promise<void> {
       },
     },
     (input) =>
-      runTool('fetch_docs', () => fetchDocumentation(documentation, input)),
+      runTool('fetch_docs', () => {
+        const runtime = findRuntime(runtimes, input.source, input.version);
+        const result = fetchDocumentation(runtime.documentation, {
+          documentId: input.documentId,
+          sectionId: input.sectionId,
+          cursor: input.cursor,
+        });
+        return {
+          ...result,
+          structuredContent: {
+            ...result.structuredContent,
+            source: runtime.entry.source,
+            version: runtime.entry.version,
+            revision: runtime.entry.revision,
+          },
+        };
+      }),
   );
 
-  process.once('exit', () => store.onModuleDestroy());
-  process.once('SIGINT', () => shutdown(server, store, 130));
-  process.once('SIGTERM', () => shutdown(server, store, 143));
+  const stores = runtimes.map((runtime) => runtime.store);
+  process.once('exit', () => closeStores(stores));
+  process.once('SIGINT', () => shutdown(server, stores, 130));
+  process.once('SIGTERM', () => shutdown(server, stores, 143));
 
   await server.connect(new StdioServerTransport());
   process.stderr.write('NekoSearch MCP server ready on stdio\n');
 }
 
-function assertReadableIndexFile(databasePath: string): void {
-  try {
-    if (!statSync(databasePath).isFile()) {
-      throw new Error('path is not a regular file');
-    }
-    accessSync(databasePath, constants.R_OK);
-  } catch (error) {
+function findRuntime(
+  runtimes: CatalogSearchRuntime[],
+  source: string,
+  version: string,
+): CatalogSearchRuntime {
+  const runtime = runtimes.find(
+    (candidate) =>
+      candidate.entry.source === source && candidate.entry.version === version,
+  );
+  if (!runtime) {
     throw new Error(
-      `Documentation index is missing or unreadable: "${databasePath}"`,
-      { cause: error },
+      `No documentation index is registered for ${source}@${version}`,
     );
   }
+  return runtime;
 }
 
 function runTool<T>(name: string, handler: () => T): T {
@@ -125,7 +173,7 @@ function runTool<T>(name: string, handler: () => T): T {
 
 function shutdown(
   server: McpServer,
-  store: SQLiteDocumentationStore,
+  stores: SQLiteDocumentationStore[],
   exitCode: number,
 ): void {
   process.exitCode = exitCode;
@@ -134,7 +182,11 @@ function shutdown(
     .catch((error: unknown) => {
       process.stderr.write(`MCP shutdown failed: ${formatError(error)}\n`);
     })
-    .finally(() => store.onModuleDestroy());
+    .finally(() => closeStores(stores));
+}
+
+function closeStores(stores: SQLiteDocumentationStore[]): void {
+  for (const store of stores) store.onModuleDestroy();
 }
 
 function formatError(error: unknown): string {
