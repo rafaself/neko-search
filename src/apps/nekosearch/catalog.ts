@@ -11,7 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { homedir } from 'node:os';
+import { hostname, homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
@@ -36,6 +36,11 @@ const CATALOG_DIRECTORY_NAME = 'nekosearch';
 const SNAPSHOTS_DIRECTORY_NAME = 'snapshots';
 const CATALOG_FILE_NAME = 'catalog.json';
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
+const CATALOG_LOCK_DIRECTORY_NAME = '.catalog.lock';
+const CATALOG_LOCK_OWNER_FILE_NAME = 'owner.json';
+const CATALOG_LOCK_WAIT_MS = 30_000;
+const CATALOG_LOCK_POLL_MS = 25;
+const CATALOG_LOCK_OWNER_GRACE_MS = 5_000;
 
 export type CatalogEntryStatus = 'bundled' | 'installed';
 
@@ -46,6 +51,7 @@ export interface DocumentationCatalogEntry {
   status: CatalogEntryStatus;
   databasePath: string;
   manifest: DocumentationIndexRuntimeManifest;
+  trackingRecipe?: string;
 }
 
 interface SnapshotFiles {
@@ -68,6 +74,7 @@ interface CatalogSnapshotPointer {
   version: string;
   revision: string;
   directoryKey: string;
+  trackingRecipe?: string;
 }
 
 interface CatalogRegistry {
@@ -78,6 +85,20 @@ interface CatalogRegistry {
 export interface SnapshotUpdateResult {
   entry: DocumentationCatalogEntry;
   changed: boolean;
+}
+
+export interface SnapshotIdentity {
+  source: string;
+  version: string;
+  revision: string;
+  directoryKey: string;
+}
+
+export interface SnapshotActivationOptions {
+  /** A curated recipe selector that authorizes checking future ref changes. */
+  trackingRecipe?: string | null;
+  /** The installed identity observed before an update was built. */
+  expectedCurrent?: SnapshotIdentity;
 }
 
 export interface CatalogOptions {
@@ -110,6 +131,7 @@ export async function listCatalogIndexes(
 export async function addSnapshot(
   snapshotDirectory: string,
   options: CatalogOptions = {},
+  activation: SnapshotActivationOptions = {},
 ): Promise<DocumentationCatalogEntry> {
   const snapshot = await validateSnapshotDirectory(snapshotDirectory);
   const existingEntries = await listCatalogIndexes(options);
@@ -124,10 +146,13 @@ export async function addSnapshot(
     );
   }
 
-  await activateSnapshot(snapshot, options, existingEntries);
+  await activateSnapshot(snapshot, options, existingEntries, 'add', activation);
   return catalogEntry(
     { ...snapshot, databasePath: installedDatabasePath(snapshot, options) },
     'installed',
+    typeof activation.trackingRecipe === 'string'
+      ? activation.trackingRecipe
+      : undefined,
   );
 }
 
@@ -135,6 +160,7 @@ export async function addSnapshot(
 export async function updateSnapshot(
   snapshotDirectory: string,
   options: CatalogOptions = {},
+  activation: SnapshotActivationOptions = {},
 ): Promise<SnapshotUpdateResult> {
   const snapshot = await validateSnapshotDirectory(snapshotDirectory);
   const existingEntries = await listCatalogIndexes(options);
@@ -149,20 +175,37 @@ export async function updateSnapshot(
       `No installed snapshot exists for ${snapshot.source}@${snapshot.version}`,
     );
   }
-  if (
-    current.revision === snapshot.revision &&
-    current.manifest.index.sha256 === snapshot.manifest.index.sha256
-  ) {
-    return { entry: current, changed: false };
-  }
-
-  await activateSnapshot(snapshot, options, existingEntries);
+  const expectedCurrent =
+    activation.expectedCurrent ?? snapshotIdentity(current);
+  const changed = await activateSnapshot(
+    snapshot,
+    options,
+    existingEntries,
+    'update',
+    { ...activation, expectedCurrent },
+  );
+  const trackingRecipe =
+    activation.trackingRecipe === null
+      ? undefined
+      : (activation.trackingRecipe ?? current.trackingRecipe);
   return {
-    entry: catalogEntry(
-      { ...snapshot, databasePath: installedDatabasePath(snapshot, options) },
-      'installed',
-    ),
-    changed: true,
+    entry:
+      changed || current.revision !== snapshot.revision
+        ? catalogEntry(
+            {
+              ...snapshot,
+              databasePath: installedDatabasePath(snapshot, options),
+            },
+            'installed',
+            trackingRecipe,
+          )
+        : ((await listCatalogIndexes(options)).find(
+            (entry) =>
+              entry.status === 'installed' &&
+              entry.source === snapshot.source &&
+              entry.version === snapshot.version,
+          ) ?? current),
+    changed: changed && current.revision !== snapshot.revision,
   };
 }
 
@@ -170,18 +213,18 @@ async function activateSnapshot(
   snapshot: ValidatedSnapshot,
   options: CatalogOptions,
   existingEntries: DocumentationCatalogEntry[],
-): Promise<void> {
+  operation: 'add' | 'update',
+  activation: SnapshotActivationOptions,
+): Promise<boolean> {
   const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
-
   const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
   await assertDirectoryIfPresent(catalogRoot, 'Catalog directory');
   await assertDirectoryIfPresent(snapshotsDirectory, 'Snapshots directory');
-
   const directoryKey = snapshotStorageKey(snapshot);
   const targetDirectory = join(snapshotsDirectory, directoryKey);
-
   await mkdir(snapshotsDirectory, { recursive: true, mode: 0o700 });
   await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+  let stagingDirectory: string | undefined;
   if (await pathExists(targetDirectory)) {
     await assertRealDirectory(targetDirectory, 'Installed snapshot directory');
     const existingSnapshot = await validateSnapshotDirectory(targetDirectory);
@@ -194,9 +237,7 @@ async function activateSnapshot(
       throw new Error('Snapshot storage key points to different contents');
     }
   } else {
-    const stagingDirectory = await mkdtemp(
-      join(snapshotsDirectory, '.pending-'),
-    );
+    stagingDirectory = await mkdtemp(join(snapshotsDirectory, '.pending-'));
     try {
       await writeFile(
         join(stagingDirectory, 'corpus.json'),
@@ -222,41 +263,277 @@ async function activateSnapshot(
       ) {
         throw new Error('Staged snapshot changed during installation');
       }
-      await rename(stagingDirectory, targetDirectory);
     } catch (error) {
       await rm(stagingDirectory, { recursive: true, force: true });
       throw error;
     }
   }
+  try {
+    return await withCatalogLock(catalogRoot, async () => {
+      const snapshots = await readRegistryForActivation(
+        catalogRoot,
+        existingEntries,
+      );
+      const currentIndex = snapshots.findIndex(
+        (entry) =>
+          entry.source === snapshot.source &&
+          entry.version === snapshot.version,
+      );
+      const current = currentIndex < 0 ? undefined : snapshots[currentIndex];
+      const candidateAlreadyActive = current?.directoryKey === directoryKey;
 
-  const snapshots = existingEntries
-    .filter(
-      (entry) =>
-        entry.status === 'installed' &&
-        (entry.source !== snapshot.source ||
-          entry.version !== snapshot.version),
-    )
+      if (operation === 'add' && current) {
+        throw new Error(
+          `Catalog already contains ${snapshot.source}@${snapshot.version}`,
+        );
+      }
+      if (operation === 'update') {
+        if (!current) {
+          throw new Error(
+            `No installed snapshot exists for ${snapshot.source}@${snapshot.version}`,
+          );
+        }
+        if (
+          activation.expectedCurrent &&
+          !sameSnapshotIdentity(current, activation.expectedCurrent) &&
+          !candidateAlreadyActive
+        ) {
+          throw new Error(
+            `Installed snapshot ${snapshot.source}@${snapshot.version} changed while the update was being built; retry the update`,
+          );
+        }
+      }
+
+      const trackingRecipe =
+        activation.trackingRecipe === null
+          ? undefined
+          : (activation.trackingRecipe ??
+            (operation === 'update' ? current?.trackingRecipe : undefined));
+      if (trackingRecipe) {
+        assertTrackingRecipe(snapshot.source, snapshot.version, trackingRecipe);
+      }
+      if (candidateAlreadyActive) {
+        if (current && trackingRecipe !== current.trackingRecipe) {
+          if (trackingRecipe) current.trackingRecipe = trackingRecipe;
+          else delete current.trackingRecipe;
+          await writeCatalogRegistry(catalogRoot, {
+            formatVersion: 1,
+            snapshots: sortPointers(snapshots),
+          });
+        }
+        return false;
+      }
+
+      if (stagingDirectory) {
+        await rename(stagingDirectory, targetDirectory);
+        stagingDirectory = undefined;
+      }
+      const replacement: CatalogSnapshotPointer = {
+        source: snapshot.source,
+        version: snapshot.version,
+        revision: snapshot.revision,
+        directoryKey,
+        ...(trackingRecipe ? { trackingRecipe } : {}),
+      };
+      const updatedSnapshots = snapshots.filter(
+        (entry) =>
+          entry.source !== snapshot.source ||
+          entry.version !== snapshot.version,
+      );
+      updatedSnapshots.push(replacement);
+      await writeCatalogRegistry(catalogRoot, {
+        formatVersion: 1,
+        snapshots: sortPointers(updatedSnapshots),
+      });
+      return true;
+    });
+  } finally {
+    if (stagingDirectory) {
+      await rm(stagingDirectory, { recursive: true, force: true });
+    }
+  }
+}
+
+async function readRegistryForActivation(
+  catalogRoot: string,
+  existingEntries: DocumentationCatalogEntry[],
+): Promise<CatalogSnapshotPointer[]> {
+  const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
+  if (await pathExists(registryPath)) {
+    const bytes = await readRegularFile(registryPath, MAX_CATALOG_BYTES);
+    return parseCatalogRegistry(bytes).snapshots;
+  }
+
+  // Older catalogs used identity-based directories without a registry. The
+  // process lock means this validated pre-lock view remains a safe baseline.
+  return existingEntries
+    .filter((entry) => entry.status === 'installed')
     .map((entry) => ({
       source: entry.source,
       version: entry.version,
       revision: entry.revision,
       directoryKey: basename(dirname(entry.databasePath)),
+      ...(entry.trackingRecipe ? { trackingRecipe: entry.trackingRecipe } : {}),
     }));
-  snapshots.push({
-    source: snapshot.source,
-    version: snapshot.version,
-    revision: snapshot.revision,
-    directoryKey,
-  });
-  snapshots.sort(
+}
+
+function sortPointers(
+  snapshots: CatalogSnapshotPointer[],
+): CatalogSnapshotPointer[] {
+  return snapshots.sort(
     (left, right) =>
       compareStrings(left.source, right.source) ||
       compareStrings(left.version, right.version),
   );
-  await writeCatalogRegistry(catalogRoot, {
+}
+
+function snapshotIdentity(entry: DocumentationCatalogEntry): SnapshotIdentity {
+  return {
+    source: entry.source,
+    version: entry.version,
+    revision: entry.revision,
+    directoryKey: basename(dirname(entry.databasePath)),
+  };
+}
+
+function sameSnapshotIdentity(
+  pointer: CatalogSnapshotPointer,
+  identity: SnapshotIdentity,
+): boolean {
+  return (
+    pointer.source === identity.source &&
+    pointer.version === identity.version &&
+    pointer.revision === identity.revision &&
+    pointer.directoryKey === identity.directoryKey
+  );
+}
+
+function assertTrackingRecipe(
+  source: string,
+  version: string,
+  trackingRecipe: string,
+): void {
+  if (trackingRecipe !== `${source}@${version}`) {
+    throw new Error(
+      `Tracking recipe must identify this snapshot as ${source}@${version}`,
+    );
+  }
+  validateCatalogText(trackingRecipe, 321, 'Tracking recipe');
+}
+
+interface CatalogLockOwner {
+  formatVersion: 1;
+  pid: number;
+  host: string;
+  token: string;
+}
+
+/** Serialize the short registry activation transaction between CLI processes. */
+async function withCatalogLock<T>(
+  catalogRoot: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await assertRealDirectory(catalogRoot, 'Catalog directory');
+  const lockPath = join(catalogRoot, CATALOG_LOCK_DIRECTORY_NAME);
+  const token = randomUUID();
+  const owner: CatalogLockOwner = {
     formatVersion: 1,
-    snapshots,
-  });
+    pid: process.pid,
+    host: hostname(),
+    token,
+  };
+  const deadline = Date.now() + CATALOG_LOCK_WAIT_MS;
+
+  while (true) {
+    try {
+      await mkdir(lockPath, { mode: 0o700 });
+      try {
+        await writeFile(
+          join(lockPath, CATALOG_LOCK_OWNER_FILE_NAME),
+          `${JSON.stringify(owner)}\n`,
+          { flag: 'wx', mode: 0o600 },
+        );
+      } catch (error) {
+        await rm(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      await assertRealDirectory(lockPath, 'Catalog lock');
+      const reclaimed = await reclaimStaleCatalogLock(lockPath);
+      if (!reclaimed && Date.now() >= deadline) {
+        throw new Error(
+          `Timed out waiting for the catalog lock at ${catalogRoot}`,
+          { cause: error },
+        );
+      }
+      if (!reclaimed) await delay(CATALOG_LOCK_POLL_MS);
+    }
+  }
+
+  try {
+    return await operation();
+  } finally {
+    const ownerPath = join(lockPath, CATALOG_LOCK_OWNER_FILE_NAME);
+    const current = await readLockOwner(ownerPath).catch(() => undefined);
+    if (current?.token === token) {
+      await rm(lockPath, { recursive: true, force: true });
+    }
+  }
+}
+
+async function reclaimStaleCatalogLock(lockPath: string): Promise<boolean> {
+  const owner = await readLockOwner(
+    join(lockPath, CATALOG_LOCK_OWNER_FILE_NAME),
+  ).catch(() => undefined);
+  let stale = false;
+  if (owner) {
+    if (owner.host === hostname()) {
+      try {
+        process.kill(owner.pid, 0);
+      } catch (error) {
+        stale = (error as NodeJS.ErrnoException).code === 'ESRCH';
+      }
+    }
+  } else {
+    const info = await lstat(lockPath);
+    stale = Date.now() - info.mtimeMs > CATALOG_LOCK_OWNER_GRACE_MS;
+  }
+  if (!stale) return false;
+
+  const abandonedPath = `${lockPath}.stale-${randomUUID()}`;
+  try {
+    await rename(lockPath, abandonedPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  }
+  await rm(abandonedPath, { recursive: true, force: true });
+  return true;
+}
+
+async function readLockOwner(path: string): Promise<CatalogLockOwner> {
+  const bytes = await readRegularFile(path, 4096);
+  const value: unknown = JSON.parse(bytes.toString('utf8'));
+  if (
+    !isRecord(value) ||
+    value.formatVersion !== 1 ||
+    !Number.isSafeInteger(value.pid) ||
+    (value.pid as number) <= 0 ||
+    typeof value.host !== 'string' ||
+    typeof value.token !== 'string'
+  ) {
+    throw new Error('Catalog lock owner record is invalid');
+  }
+  return value as unknown as CatalogLockOwner;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolvePromise) =>
+    setTimeout(resolvePromise, milliseconds),
+  );
 }
 
 /** Validate the exact three-file snapshot format emitted by the indexer. */
@@ -368,7 +645,7 @@ async function loadInstalledSnapshots(
       ) {
         throw new Error('Catalog snapshot pointer identity is invalid');
       }
-      entries.push(catalogEntry(snapshot, 'installed'));
+      entries.push(catalogEntry(snapshot, 'installed', pointer.trackingRecipe));
     }
     assertUniqueInstalledIdentities(entries);
     return entries;
@@ -413,16 +690,22 @@ function parseCatalogRegistry(bytes: Buffer): CatalogRegistry {
   const snapshots = value.snapshots.map((candidate): CatalogSnapshotPointer => {
     if (
       !isRecord(candidate) ||
-      hasOnlyKeys(candidate, [
-        'source',
-        'version',
-        'revision',
-        'directoryKey',
-      ]) !== true ||
+      Object.keys(candidate).some(
+        (key) =>
+          ![
+            'source',
+            'version',
+            'revision',
+            'directoryKey',
+            'trackingRecipe',
+          ].includes(key),
+      ) ||
       typeof candidate.source !== 'string' ||
       typeof candidate.version !== 'string' ||
       typeof candidate.revision !== 'string' ||
       typeof candidate.directoryKey !== 'string' ||
+      (candidate.trackingRecipe !== undefined &&
+        typeof candidate.trackingRecipe !== 'string') ||
       !/^[a-f0-9]{64}$/u.test(candidate.directoryKey)
     ) {
       throw new Error('Catalog registry contains an unsafe snapshot pointer');
@@ -432,10 +715,20 @@ function parseCatalogRegistry(bytes: Buffer): CatalogRegistry {
       version: candidate.version,
       revision: candidate.revision,
       directoryKey: candidate.directoryKey,
+      ...(typeof candidate.trackingRecipe === 'string'
+        ? { trackingRecipe: candidate.trackingRecipe }
+        : {}),
     };
     validateCatalogText(pointer.source, 256, 'Source');
     validateCatalogText(pointer.version, 64, 'Version');
     validateCatalogText(pointer.revision, 256, 'Revision');
+    if (pointer.trackingRecipe) {
+      assertTrackingRecipe(
+        pointer.source,
+        pointer.version,
+        pointer.trackingRecipe,
+      );
+    }
     return pointer;
   });
   return { formatVersion: 1, snapshots };
@@ -762,6 +1055,7 @@ function runtimeManifestFromBuild(
 function catalogEntry(
   snapshot: ValidatedSnapshot,
   status: CatalogEntryStatus,
+  trackingRecipe?: string,
 ): DocumentationCatalogEntry {
   return {
     source: snapshot.source,
@@ -770,6 +1064,7 @@ function catalogEntry(
     status,
     databasePath: snapshot.databasePath,
     manifest: snapshot.manifest,
+    ...(trackingRecipe ? { trackingRecipe } : {}),
   };
 }
 

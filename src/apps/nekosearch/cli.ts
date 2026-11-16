@@ -33,6 +33,42 @@ if (command === 'build') {
       process.stderr.write(`nekosearch list failed: ${formatError(error)}\n`);
       process.exitCode = 1;
     });
+} else if (command === 'outdated' && arguments_.length <= 1) {
+  void import('./remote-snapshots.js')
+    .then(({ checkOutdatedSnapshots }) => checkOutdatedSnapshots(arguments_[0]))
+    .then((results) => {
+      process.stdout.write(
+        [
+          [
+            'SOURCE',
+            'VERSION',
+            'STATUS',
+            'INSTALLED',
+            'UPSTREAM',
+            'DETAIL',
+          ].join('\t'),
+          ...results.map((result) =>
+            [
+              result.source,
+              result.version,
+              result.status,
+              result.installedRevision,
+              result.upstreamRevision ?? '',
+              result.error ?? '',
+            ].join('\t'),
+          ),
+        ].join('\n') + '\n',
+      );
+      if (results.some((result) => result.status === 'check failed')) {
+        process.exitCode = 1;
+      }
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `nekosearch outdated failed: ${formatError(error)}\n`,
+      );
+      process.exitCode = 1;
+    });
 } else if (
   command === 'add' &&
   arguments_.length === 2 &&
@@ -157,6 +193,7 @@ function usage(): string {
     '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
     '  nekosearch serve',
     '  nekosearch list',
+    '  nekosearch outdated [<source@version>]',
     '  nekosearch add --from <snapshot-dir>',
     '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
     '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
@@ -165,6 +202,7 @@ function usage(): string {
     'Network access:',
     '  build, list, add --from, serve, and mcp configure codex use local files.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
+    '  outdated resolves tracked upstream refs over HTTPS without downloading docs.',
     '  serve is stdio-only, offline, and read-only.',
     '  add/update store validated SQLite snapshots in the user data directory.',
     '',

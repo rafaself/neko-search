@@ -26,11 +26,12 @@ import { basename, dirname, join } from 'node:path';
 export function createMcpServerTestIndex(
   databasePath: string,
   version = '12',
+  options: { documentationId?: string; revision?: string } = {},
 ): DocumentationCorpus {
   const source = {
     kind: 'local' as const,
     root: '/synthetic/mcp-docs',
-    revision: 'mcp-synthetic-revision',
+    revision: options.revision ?? 'mcp-synthetic-revision',
   };
   const file = {
     id: 'synthetic-mcp-documentation',
@@ -66,7 +67,7 @@ export function createMcpServerTestIndex(
   const manifest = DocumentationBuildManifestSchema.parse({
     manifestVersion: DOCUMENTATION_BUILD_MANIFEST_VERSION,
     documentation: {
-      id: 'synthetic-mcp-documentation',
+      id: options.documentationId ?? 'synthetic-mcp-documentation',
       version: corpus.version,
     },
     source: corpus.source,

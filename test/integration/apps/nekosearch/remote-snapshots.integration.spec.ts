@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,8 +10,12 @@ import {
   resolveDocumentationSource,
 } from '../../../../apps/docs-indexer/src/integrations/nestjs/documentation.integration.js';
 import { sourceUrl } from '../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
-import { listCatalogIndexes } from '../../../../src/apps/nekosearch/catalog.js';
 import {
+  addSnapshot,
+  listCatalogIndexes,
+} from '../../../../src/apps/nekosearch/catalog.js';
+import {
+  checkOutdatedSnapshots,
   installRemoteSnapshot,
   type NestJsSnapshotBuilder,
 } from '../../../../src/apps/nekosearch/remote-snapshots.js';
@@ -169,6 +174,179 @@ describe('NekoSearch curated source installs', () => {
     expect(currentFetcher.requestedRefNames()).toEqual(['master']);
     expect(currentFetcher.requestedRawPaths()).toEqual([]);
     expect(current.entry.revision).toBe(secondRevision);
+  }, 20_000);
+
+  it('reports current and changed tracked refs without downloading documentation files', async () => {
+    const installedRevision = '2'.repeat(40);
+    await installRevision(installedRevision);
+
+    const currentUpstream = createV12Upstream(installedRevision);
+    await expect(
+      checkOutdatedSnapshots(
+        'nestjs@12',
+        remoteOptions(currentUpstream.fetcher),
+      ),
+    ).resolves.toMatchObject([
+      {
+        selector: 'nestjs@12',
+        status: 'current',
+        installedRevision,
+        upstreamRevision: installedRevision,
+      },
+    ]);
+    expect(currentUpstream.requestedRefNames()).toEqual(['master']);
+    expect(currentUpstream.requestedRawPaths()).toEqual([]);
+
+    const changedUpstream = createV12Upstream('3'.repeat(40));
+    await expect(
+      checkOutdatedSnapshots(undefined, remoteOptions(changedUpstream.fetcher)),
+    ).resolves.toMatchObject([
+      {
+        selector: 'nestjs@12',
+        status: 'changed',
+        installedRevision,
+        upstreamRevision: '3'.repeat(40),
+      },
+    ]);
+    expect(changedUpstream.requestedRefNames()).toEqual(['master']);
+    expect(changedUpstream.requestedRawPaths()).toEqual([]);
+  }, 20_000);
+
+  it('reports upstream failures as check failed and leaves add-from Git provenance untracked', async () => {
+    const installedRevision = '4'.repeat(40);
+    await installRevision(installedRevision);
+    const failedCheck = await checkOutdatedSnapshots('nestjs@12', {
+      ...remoteOptions(() =>
+        Promise.resolve(new Response('unavailable', { status: 503 })),
+      ),
+    });
+    expect(failedCheck).toMatchObject([
+      { selector: 'nestjs@12', status: 'check failed', installedRevision },
+    ]);
+    expect(failedCheck[0]?.error).toMatch(/503|resolve|upstream/iu);
+
+    const fromRevision = '5'.repeat(40);
+    const fromUpstream = createV12Upstream(fromRevision);
+    const importedDirectory = mkdtempSync(
+      join(tmpdir(), 'nekosearch-from-git-snapshot-'),
+    );
+    try {
+      await sourceBuilder.buildNestJsDocumentationSnapshot(
+        '12',
+        importedDirectory,
+        fromUpstream.fetcher,
+        {
+          kind: 'git',
+          repository: officialRepository,
+          ref: 'master',
+          revision: fromRevision,
+        },
+      );
+      const importedCatalogRoot = join(root, 'xdg', 'imported-catalog');
+      const importedOptions = {
+        catalogRoot: importedCatalogRoot,
+        packageDataDirectory: dataDirectory,
+      };
+      const imported = await addSnapshot(importedDirectory, importedOptions);
+      expect(imported.trackingRecipe).toBeUndefined();
+      expect(
+        await checkOutdatedSnapshots(undefined, {
+          ...importedOptions,
+          fetcher: fromUpstream.fetcher,
+          sourceBuilder,
+        }),
+      ).toEqual([]);
+      expect(
+        await checkOutdatedSnapshots('nestjs@12', {
+          ...importedOptions,
+          fetcher: fromUpstream.fetcher,
+          sourceBuilder,
+        }),
+      ).toMatchObject([{ selector: 'nestjs@12', status: 'untracked' }]);
+      expect(fromUpstream.requestedRefNames()).toEqual([]);
+
+      await expect(
+        checkOutdatedSnapshots('nestjs@11', {
+          ...importedOptions,
+          fetcher: fromUpstream.fetcher,
+          sourceBuilder,
+        }),
+      ).rejects.toThrow(/No installed snapshot exists.*nekosearch list/iu);
+
+      const pinnedRevision = '6'.repeat(40);
+      const pinnedUpstream = createV12Upstream(pinnedRevision);
+      const pinnedBuilder: NestJsSnapshotBuilder = {
+        resolveDocumentationSource: () =>
+          Promise.resolve({
+            kind: 'git',
+            repository: officialRepository,
+            ref: pinnedRevision,
+            revision: pinnedRevision,
+          }),
+        buildNestJsDocumentationSnapshot: async (
+          version,
+          outputDirectory,
+          fetcher,
+          resolvedSource,
+        ) => {
+          await sourceBuilder.buildNestJsDocumentationSnapshot(
+            version,
+            outputDirectory,
+            fetcher,
+            { ...resolvedSource, ref: 'master' },
+          );
+          const manifestPath = join(outputDirectory, 'manifest.json');
+          const corpusPath = join(outputDirectory, 'corpus.json');
+          const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+            source: { ref: string };
+            corpus: { sha256: string };
+          };
+          const corpus = JSON.parse(await readFile(corpusPath, 'utf8')) as {
+            source: { ref: string };
+            documents: { source: { provenance: { ref: string } } }[];
+          };
+          manifest.source.ref = resolvedSource.ref;
+          corpus.source.ref = resolvedSource.ref;
+          for (const document of corpus.documents) {
+            document.source.provenance.ref = resolvedSource.ref;
+          }
+          const corpusBytes = Buffer.from(
+            `${JSON.stringify(corpus, null, 2)}\n`,
+            'utf8',
+          );
+          manifest.corpus.sha256 = createHash('sha256')
+            .update(corpusBytes)
+            .digest('hex');
+          await writeFile(corpusPath, corpusBytes);
+          await writeFile(
+            manifestPath,
+            `${JSON.stringify(manifest, null, 2)}\n`,
+          );
+        },
+      };
+      const pinnedCatalogRoot = join(root, 'xdg', 'pinned-catalog');
+      const pinnedOptions = {
+        ...remoteOptions(pinnedUpstream.fetcher),
+        catalogRoot: pinnedCatalogRoot,
+        sourceBuilder: pinnedBuilder,
+      };
+      const pinned = await installRemoteSnapshot(
+        'nestjs',
+        '12',
+        'add',
+        pinnedOptions,
+      );
+      expect(pinned.entry.trackingRecipe).toBeUndefined();
+      expect(await checkOutdatedSnapshots(undefined, pinnedOptions)).toEqual(
+        [],
+      );
+      expect(
+        await checkOutdatedSnapshots('nestjs@12', pinnedOptions),
+      ).toMatchObject([{ selector: 'nestjs@12', status: 'untracked' }]);
+      expect(pinnedUpstream.requestedRefNames()).toEqual([]);
+    } finally {
+      rmSync(importedDirectory, { recursive: true, force: true });
+    }
   }, 20_000);
 
   it('fails explicitly on a missing curated ref and does not try a fallback', async () => {

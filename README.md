@@ -47,11 +47,14 @@ NestJS 11 and 12 can be installed on demand:
 ```sh
 nekosearch add nestjs@12
 nekosearch update nestjs@12
+nekosearch outdated [nestjs@12]
 ```
 
 These commands require network access to GitHub over HTTPS. NekoSearch resolves the curated official source ref to a concrete commit, downloads supported documentation files from that commit without Git, applies the NestJS-specific Markdown transformation, and builds and validates the SQLite snapshot locally. The resolved commit and ref are recorded in its manifest. Updates stay within the requested major and activate only after the replacement snapshot passes validation; a failed update leaves the active snapshot in place.
 
 The current recipes use the official `nestjs/docs.nestjs.com` repository: the `11.0.0` tag for NestJS 11 and the `master` branch for NestJS 12. The NestJS 12 recipe checks its migration guide to ensure that `master` still describes the v11-to-v12 migration. If a configured ref cannot be resolved, installation fails instead of selecting another ref.
+
+`nekosearch outdated` checks installed snapshots from tracked curated recipes; pass a selector to check one source. It resolves the upstream ref and compares commit IDs without downloading documentation files. Results distinguish `current`, `changed`, `untracked`, and `check failed`. A network or ref-resolution failure is reported as `check failed`, never as current. A snapshot pinned to an immutable commit, or installed with `add --from`, is untracked and does not follow future upstream revisions.
 
 ## Network access and serving
 
@@ -60,6 +63,7 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 | `nekosearch build ...`                      | No             | Builds a snapshot from local files at the chosen output path.                |
 | `nekosearch add --from ...`                 | No             | Validates and installs a local snapshot.                                     |
 | `nekosearch list`                           | No             | Lists bundled and installed snapshots.                                       |
+| `nekosearch outdated [<source@version>]`    | Yes            | Resolves tracked refs only; does not download documentation files.           |
 | `nekosearch add nestjs@11` / `nestjs@12`    | Yes            | Fetches the selected curated source over HTTPS and builds it locally.        |
 | `nekosearch update nestjs@11` / `nestjs@12` | Yes            | Resolves and builds the requested major's latest curated commit.             |
 | `nekosearch serve`                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections. |
