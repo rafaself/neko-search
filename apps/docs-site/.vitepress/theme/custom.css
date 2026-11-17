@@ -42,6 +42,9 @@
 body {
   -webkit-font-smoothing: antialiased;
 }
+html {
+  scroll-behavior: smooth;
+}
 ::selection {
   background: var(--vp-c-brand-soft);
 }
@@ -70,6 +73,24 @@ body {
 }
 .vp-doc div[class*='language-'] {
   border: 1px solid var(--vp-c-divider);
+}
+.VPDocAsideOutline .outline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.VPDocAsideOutline .outline-title::before {
+  content: '';
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3h8M6 8h8M6 13h8' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='2.5' cy='3' r='1' fill='black'/%3E%3Ccircle cx='2.5' cy='8' r='1' fill='black'/%3E%3Ccircle cx='2.5' cy='13' r='1' fill='black'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3h8M6 8h8M6 13h8' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='2.5' cy='3' r='1' fill='black'/%3E%3Ccircle cx='2.5' cy='8' r='1' fill='black'/%3E%3Ccircle cx='2.5' cy='13' r='1' fill='black'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  opacity: 0.75;
 }
 @media (min-width: 768px) and (max-width: 1100px) {
   .VPNavBar .VPNavBarSearch .DocSearch-Button {
