@@ -1,6 +1,6 @@
 ---
 title: Interactive Setup
-description: Choose curated documentation and configure or remove user-level MCP client registrations through a reviewed setup flow.
+description: Choose curated documentation and configure or remove the detected Grok Build user-level MCP registration through a reviewed setup flow.
 ---
 
 # Interactive Setup
@@ -9,7 +9,7 @@ description: Choose curated documentation and configure or remove user-level MCP
 nekosearch setup
 ```
 
-Setup helps you install optional curated snapshots and connect supported MCP clients. It runs only when invoked explicitly; installing or upgrading the npm package does not run it.
+Setup helps you install optional curated snapshots and connect Grok Build CLI when it is detected. It runs only when invoked explicitly; installing or upgrading the npm package does not run it.
 
 ## Choose documentation
 
@@ -17,38 +17,37 @@ Select the curated snapshots you want to install. The current choices are NestJS
 
 Setup is for curated sources. Use [`add --dir`, `add --github`, or `add --from`](../cli/commands.md#add) for custom documentation.
 
-## Choose clients
+## Configure Grok Build CLI
 
-Setup inspects supported user-level client configurations and application availability. It distinguishes clients that are ready, already configured, in conflict, unavailable, or manual-only.
+Setup detects the Grok Build CLI executable (`grok`) on `PATH` and inspects its MCP registry. If it is available and its registration can be inspected safely, setup offers the user-level NekoSearch registration. Other MCP clients are not automatically detected by the current setup adapter.
 
 - Use **Space** to select or unselect a choice, **Enter** to continue, and **Backspace** to return to the previous step.
-- Existing matching registrations are selected initially.
-- Keeping a configured client selected leaves a matching registration unchanged.
-- Deselecting a configured client proposes removal of its NekoSearch registration.
-- An older Codex registration can be marked for replacement in the selection and review.
+- An existing matching registration is selected initially and remains unchanged if kept selected.
+- Deselecting the configured Grok Build registration proposes removing only that verified NekoSearch user registration.
 
 ::: warning Review removals
-Deselecting an already configured client can remove its NekoSearch registration after confirmation. It does not uninstall the client, delete your documentation, or remove unrelated MCP registrations.
+Deselecting the configured provider can remove its verified NekoSearch registration after confirmation. It does not uninstall Grok Build, delete your documentation, or remove unrelated MCP registrations.
 :::
 
-See [Client Configuration](../mcp/client-configuration.md) for the implemented adapters and their locations.
+See [Client Configuration](../mcp/client-configuration.md) for the Grok Build commands and manual stdio setup for other MCP clients.
 
 ## Review and confirm
 
-Before changes begin, setup displays the selected documentation and provider actions, including the scope and configuration target. Backspace returns to client selection; canceling before application leaves configuration and documentation unchanged.
+Before changes begin, setup displays the selected documentation and Grok Build action, including the user scope and target registry. Backspace returns to provider selection; canceling before application leaves configuration and documentation unchanged.
 
-After confirmation, selected documentation is resolved, downloaded, indexed, validated, and installed. Selected client changes are then applied. A failure in one operation is reported while remaining operations continue; setup is not one transaction spanning every source and client.
+After confirmation, selected documentation is resolved, downloaded, indexed, validated, and installed. The Grok Build registration is then applied through its CLI. A failure in one operation is reported while remaining operations continue; setup is not one transaction spanning the source and provider.
 
 Registration uses the absolute Node executable, the installed CLI entry point, and `serve`. Setup does not create a daemon, launch a shell server, or configure an HTTP listener.
 
 ## Configuration conflicts
 
-The adapters preserve unrelated values and supported comments. Unsafe paths, unreadable or unparseable files, managed configurations, and conflicting registrations can make an operation unavailable or cause it to fail. Setup does not silently overwrite those conflicts.
+NekoSearch delegates registry changes to the Grok Build CLI and verifies the result. A same-name registration in another scope, an ambiguous origin, or a different command is treated as a conflict and left unchanged.
 
-For intentional Codex replacement outside setup:
+Configure the provider directly without the interactive flow:
 
 ```sh
-nekosearch mcp configure codex --force
+nekosearch mcp configure grok-build
+nekosearch mcp remove grok-build
 ```
 
 ## Non-interactive use
@@ -59,7 +58,7 @@ Use explicit commands in scripts instead:
 
 ```sh
 nekosearch add --dir ./docs --id my-api@1
-nekosearch mcp configure codex
+nekosearch mcp configure grok-build
 ```
 
 Restart or reconnect the client after registration or snapshot changes. A written registration alone does not prove that the client connected successfully.

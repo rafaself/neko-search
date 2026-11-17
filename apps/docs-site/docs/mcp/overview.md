@@ -26,7 +26,7 @@ The CLI entry point is:
 nekosearch serve
 ```
 
-Use [Interactive Setup](../getting-started/setup.md) to register this command with supported clients. Setup uses an absolute Node executable and CLI path so client startup does not depend on the shell finding a global binary.
+Use [Interactive Setup](../getting-started/setup.md) to register this command with Grok Build CLI when `grok` is available. For another MCP client with stdio support, use its own settings with an absolute Node executable, the NekoSearch CLI entry point, and `serve` as a separate argument.
 
 The process loads and validates the catalog before connecting its MCP transport. Stdout is protocol-only; readiness messages, failures, and optional debug timings go to stderr. The process shuts down when its input closes or a termination signal is handled.
 

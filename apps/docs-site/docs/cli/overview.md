@@ -13,16 +13,16 @@ nekosearch --help
 
 ## Command families
 
-| Task                                         | Commands                                                                    |
-| -------------------------------------------- | --------------------------------------------------------------------------- |
-| Interactive onboarding and client selection  | `setup`                                                                     |
-| Build without installing                     | `build`                                                                     |
-| Install documentation                        | `add --dir`, `add --github`, `add --from`, `add nestjs@11`, `add nestjs@12` |
-| Inspect the catalog                          | `list`, `status`                                                            |
-| Refresh curated documentation                | `update nestjs@11`, `update nestjs@12`                                      |
-| Remove an installed snapshot                 | `remove`                                                                    |
-| Register the installed executable with Codex | `mcp configure codex`                                                       |
-| Start the MCP stdio process                  | `serve`                                                                     |
+| Task                                        | Commands                                                                    |
+| ------------------------------------------- | --------------------------------------------------------------------------- |
+| Interactive onboarding and client selection | `setup`                                                                     |
+| Build without installing                    | `build`                                                                     |
+| Install documentation                       | `add --dir`, `add --github`, `add --from`, `add nestjs@11`, `add nestjs@12` |
+| Inspect the catalog                         | `list`, `status`                                                            |
+| Refresh curated documentation               | `update nestjs@11`, `update nestjs@12`                                      |
+| Remove an installed snapshot                | `remove`                                                                    |
+| Configure or remove Grok Build registration | `mcp configure grok-build`, `mcp remove grok-build`                         |
+| Start the MCP stdio process                 | `serve`                                                                     |
 
 There are no CLI `search` or `fetch` subcommands. Agents use the [MCP tools](../mcp/tools.md) to retrieve documentation.
 
@@ -34,13 +34,13 @@ Adding an existing selector fails rather than overwriting it. Only the curated N
 
 ## Network access
 
-| Command                                              | Uses network                                             |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| `build`, `list`, `remove`, `add --dir`, `add --from` | No                                                       |
-| `status`                                             | No, unless `--check-upstream` explicitly requests checks |
-| `serve`, `mcp configure codex`                       | No documentation network access                          |
-| `setup`                                              | Only for selected curated documentation downloads        |
-| `add --github`, curated `add` and `update`           | Yes, HTTPS to GitHub                                     |
+| Command                                                      | Uses network                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `build`, `list`, `remove`, `add --dir`, `add --from`         | No                                                                           |
+| `status`                                                     | No, unless `--check-upstream` explicitly requests checks                     |
+| `serve`, `mcp configure grok-build`, `mcp remove grok-build` | No NekoSearch documentation download; provider commands delegate to Grok CLI |
+| `setup`                                                      | Only for selected curated documentation downloads                            |
+| `add --github`, curated `add` and `update`                   | Yes, HTTPS to GitHub                                                         |
 
 The server does not expose HTTP or SSE transport. Your MCP client starts a child process and communicates with it over stdin/stdout. Logs go to stderr.
 

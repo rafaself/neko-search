@@ -14,7 +14,7 @@ nekosearch --help
 nekosearch -h
 ```
 
-Print usage and network-access notes to stderr, then exit successfully. Invoking `nekosearch` with no command also prints usage. There is no public `--version` flag; `status` includes the CLI version.
+Print usage and network-access notes to stdout, then exit successfully. Invoking `nekosearch` with no command also prints usage. There is no public `--version` flag; `status` includes the CLI version.
 
 ## setup
 
@@ -22,9 +22,9 @@ Print usage and network-access notes to stderr, then exit successfully. Invoking
 nekosearch setup
 ```
 
-Interactively choose curated snapshots and supported user-level client registrations. No arguments or options are accepted. Changes start only after the final review and confirmation. Deselecting an existing matching provider proposes removing its NekoSearch registration.
+Interactively choose curated snapshots and, when Grok Build CLI is detected, its user-level NekoSearch registration. No arguments or options are accepted. Changes start only after the final review and confirmation. Deselecting an existing matching Grok registration proposes removing it.
 
-**Errors:** requires interactive stdin/stdout; client conflicts and individual download/configuration failures are reported. Remaining confirmed operations can continue after a failure.
+**Errors:** requires interactive stdin/stdout; Grok Build inspection conflicts and individual download/configuration failures are reported. Remaining confirmed operations can continue after a failure.
 
 See [Interactive Setup](../getting-started/setup.md).
 
@@ -179,24 +179,41 @@ Remove one installed selector from the catalog and retire its snapshot files. It
 
 Existing MCP sessions retain their open indexes; restart them after removal.
 
-## mcp configure codex
+## mcp configure
 
 ```text
-nekosearch mcp configure codex [--force]
+nekosearch mcp configure <provider>
 ```
 
-Register this NekoSearch installation through the installed Codex CLI. It inspects `codex mcp list --json` and, when needed, runs `codex mcp add` with an absolute Node executable, the installed CLI path, and `serve`. Matching registrations remain unchanged.
+Configure the NekoSearch stdio server with a supported provider. The current provider is:
 
-| Option    | Behavior                                                                                        |
-| --------- | ----------------------------------------------------------------------------------------------- |
-| `--force` | Replace a different registration named `nekosearch` by removing it and adding this installation |
+| Provider ID  | Behavior                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| `grok-build` | Inspect Grok Build, add a user-level registration if absent, and verify the resulting registration |
 
 ```sh
-nekosearch mcp configure codex
-nekosearch mcp configure codex --force
+nekosearch mcp configure grok-build
 ```
 
-**Errors:** Codex unavailable, timed-out/failed commands, unsupported list output, conflicting registration without `--force`, or invalid executable arguments. Registration is local; it does not perform an MCP connection test.
+The command delegates to `grok inspect --json` and `grok mcp add --scope user nekosearch -- <node> <cli-entry-point> serve`. An exact matching registration is unchanged. NekoSearch does not directly edit Grok's configuration file and has no force option.
+
+**Errors:** unknown provider, Grok Build CLI not detected on `PATH`, failed inspection or registration verification, conflicting or ambiguous same-name registration, or a failed Grok CLI command. The command exits with code `1` for these operational failures. Registration does not perform an MCP connection test.
+
+## mcp remove
+
+```text
+nekosearch mcp remove <provider>
+```
+
+Remove a verified NekoSearch registration managed by the selected provider. The current supported provider is `grok-build`:
+
+```sh
+nekosearch mcp remove grok-build
+```
+
+Removal is idempotent when the registration is already absent. For Grok Build, NekoSearch first confirms that exactly one user-scope `nekosearch` registration matches this installation, delegates removal to `grok mcp remove --scope user nekosearch`, and verifies the result. Registrations with a different command, another scope, or an unknown origin are left unchanged.
+
+**Errors:** unknown provider, Grok Build CLI not detected on `PATH`, unverified or conflicting registration, failed Grok CLI command, or a registration that remains after removal. Operational failures exit with code `1`.
 
 ## serve
 

@@ -19,7 +19,7 @@ An agent needs documentation for the source and version you are working with. Ne
 - **Local snapshots:** serve installed documentation without fetching pages or opening a network listener.
 - **Source-scoped search:** search up to five exact selectors together while keeping results grouped by source.
 - **Internal references:** follow resolved document and section links within a snapshot.
-- **Coding client integration:** configure supported clients such as Codex, Claude Code, and Cursor through interactive setup.
+- **MCP client integration:** automatically configure Grok Build CLI, or launch the stdio server from another MCP client using that client's settings.
 
 A small MCP protocol summary is bundled with the CLI. NestJS is optional; no NestJS snapshot is bundled or required.
 
@@ -54,7 +54,7 @@ nekosearch setup
 nekosearch list
 ```
 
-Interactive setup lets you select optional curated documentation and review client registrations before confirming changes. Your client starts the MCP server when it connects.
+Interactive setup lets you select optional curated documentation and review the Grok Build registration when its CLI is available. Other stdio MCP clients can launch the server using their own configuration settings.
 
 Follow the [Quick Start](./getting-started/quick-start.md) to make your first search using the bundled reference, or read [Installation](./getting-started/installation.md) for requirements and installation details.
 

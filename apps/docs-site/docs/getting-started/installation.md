@@ -51,7 +51,7 @@ This lists bundled and installed snapshots. A new catalog has the bundled MCP re
 ## Choose your next step
 
 - [Quick Start](./quick-start.md): connect an agent and make your first search.
-- [Interactive Setup](./setup.md): choose optional curated documentation and client registrations.
+- [Interactive Setup](./setup.md): choose optional curated documentation and configure the detected Grok Build provider.
 - [Custom Documentation](../guides/custom-documentation.md): install a directory from your own project.
 
 ::: tip Offline after installation
