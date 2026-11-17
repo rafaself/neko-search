@@ -8,6 +8,7 @@ import {
   listCatalogIndexes,
   removeSnapshot,
 } from './catalog.js';
+import { isHelpInvocation, renderCliHelp } from './cli-help.js';
 import { parseStatusArguments, renderStatus } from './status.js';
 
 const [command, ...arguments_] = process.argv.slice(2);
@@ -87,14 +88,11 @@ if (command === 'setup' && arguments_.length === 0) {
   /^nestjs@(11|12)$/u.test(arguments_[0] ?? '')
 ) {
   runRemoteSnapshotCommand('update', arguments_[0] ?? '');
+} else if (isHelpInvocation(command, arguments_)) {
+  process.stdout.write(renderCliHelp());
 } else {
-  process.stderr.write(
-    command === '--help' || command === '-h' || command === undefined
-      ? usage()
-      : `Unknown command: ${command}\n${usage()}`,
-  );
-  if (command !== '--help' && command !== '-h' && command !== undefined)
-    process.exitCode = 2;
+  process.stderr.write(`Unknown command: ${command}\n${renderCliHelp()}`);
+  process.exitCode = 2;
 }
 
 function runRemoteSnapshotCommand(
@@ -129,7 +127,7 @@ function runStatusCommand(arguments_: string[]): void {
     parsed = parseStatusArguments(arguments_);
   } catch (error) {
     process.stderr.write(
-      `nekosearch status failed: ${errorMessage(error)}\n${usage()}`,
+      `nekosearch status failed: ${errorMessage(error)}\n${renderCliHelp()}`,
     );
     process.exitCode = 2;
     return;
@@ -226,14 +224,14 @@ function runGitHubSnapshotCommand(arguments_: string[]): void {
     }));
   } catch (error) {
     process.stderr.write(
-      `nekosearch add --github failed: ${errorMessage(error)}\n${usage()}`,
+      `nekosearch add --github failed: ${errorMessage(error)}\n${renderCliHelp()}`,
     );
     process.exitCode = 2;
     return;
   }
   if (!values.github || !values.ref || !values.path || !values.id) {
     process.stderr.write(
-      `nekosearch add --github requires --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>\n${usage()}`,
+      `nekosearch add --github requires --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>\n${renderCliHelp()}`,
     );
     process.exitCode = 2;
     return;
@@ -286,40 +284,6 @@ function runCodexConfigureCommand(force: boolean): void {
       );
       process.exitCode = 1;
     });
-}
-
-function usage(): string {
-  return [
-    'NekoSearch is a local, read-only MCP server for documentation snapshots.',
-    '',
-    'Usage:',
-    '  nekosearch setup                   (interactive first-run setup)',
-    '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
-    '  nekosearch serve',
-    '  nekosearch list',
-    '  nekosearch status [<source@version>] [--check-upstream]',
-    '  nekosearch remove <source@version>',
-    '  nekosearch add --dir <docs-dir> --id <source@version> (offline local build and install)',
-    '  nekosearch add --github <repository-url> --ref <ref> --path <docs-dir> --id <source@version>',
-    '  nekosearch add --from <snapshot-dir>',
-    '  nekosearch add nestjs@<major>       (curated example: 11 or 12)',
-    '  nekosearch update nestjs@<major>    (curated example: 11 or 12)',
-    '  nekosearch mcp configure codex [--force]',
-    '',
-    '  status defaults to a local overview; a selector reads only that snapshot.',
-    '  --check-upstream checks tracked refs only and reports untracked snapshots.',
-    '',
-    'Network access:',
-    '  build, list, status, remove, add --dir, add --from, serve, and mcp configure codex use local files.',
-    '  setup lists detected providers and applies selected changes only after final confirmation.',
-    '  setup only requires network access for curated docs you select.',
-    '  add --github fetches a public GitHub source over HTTPS and pins the resolved commit.',
-    '  add/update nestjs@<major> fetch official documentation over HTTPS.',
-    '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',
-    '  serve is stdio-only, offline, and read-only.',
-    '  add/update store validated SQLite snapshots in the user data directory.',
-    '',
-  ].join('\n');
 }
 
 function formatError(error: unknown): string {
