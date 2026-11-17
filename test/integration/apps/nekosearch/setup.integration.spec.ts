@@ -68,6 +68,16 @@ describe('nekosearch setup flow', () => {
     });
 
     expect(result).toBe(0);
+    expect(prompts.messages[0]).toBe(`          /\\        /\\
+         /  \\______/  \\
+        (    ^ v ^     )
+         \\____________/
+   _     /            \\
+  / )   /              \\
+  \\ \\___\\   (__) (__)  /
+   \\_____\\____________/
+
+         NekoSearch`);
     expect(events).toEqual([
       'confirmed',
       'install:nestjs@12',
@@ -170,8 +180,10 @@ describe('nekosearch setup flow', () => {
     );
   });
 
-  it('marks an already configured provider disabled in its group', async () => {
+  it('shows already configured providers outside the selectable choices', async () => {
     const prompts = createPrompts({ multiSelections: [[], []] });
+    const configureClient =
+      jest.fn<NonNullable<SetupDependencies['configureClient']>>();
     const result = await runSetup({
       terminal: { stdinIsTTY: true, stdoutIsTTY: true },
       prompts,
@@ -186,23 +198,23 @@ describe('nekosearch setup flow', () => {
           },
           client('cursor', 'Cursor'),
         ]),
+      configureClient,
     });
 
     expect(result).toBe(0);
-    expect(
-      prompts.groupMultiselectCalls[0]?.groups['Already configured'],
-    ).toEqual([
-      {
-        value: 'codex',
-        label: 'Codex',
-        hint: '✓ configured',
-        disabled: true,
-      },
-    ]);
-    expect(prompts.messages.join('\n')).toContain('1 already configured');
+    expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
+      'Ready to configure': [
+        { value: 'cursor', label: 'Cursor', hint: 'User' },
+      ],
+    });
+    expect(prompts.messages.join('\n')).toContain(
+      'Already configured:\n  ✓ Codex',
+    );
+    expect(prompts.messages.join('\n')).not.toContain('Already configured\n');
+    expect(configureClient).not.toHaveBeenCalled();
   });
 
-  it('keeps conflicts disabled in bulk setup', async () => {
+  it('omits conflicting providers from the selectable choices', async () => {
     const prompts = createPrompts({ multiSelections: [[], ['codex']] });
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
@@ -225,14 +237,14 @@ describe('nekosearch setup flow', () => {
     });
 
     expect(result).toBe(0);
-    expect(prompts.groupMultiselectCalls[0]?.groups.Conflicts).toEqual([
-      {
-        value: 'codex',
-        label: 'Codex',
-        hint: 'legacy Codex registration exists',
-        disabled: true,
-      },
-    ]);
+    expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
+      'Ready to configure': [
+        { value: 'cursor', label: 'Cursor', hint: 'User' },
+      ],
+    });
+    expect(prompts.groupMultiselectCalls[0]?.groups).not.toHaveProperty(
+      'Conflicts',
+    );
     expect(configureClient).not.toHaveBeenCalled();
   });
 
@@ -261,8 +273,8 @@ describe('nekosearch setup flow', () => {
     expect(configureClient).not.toHaveBeenCalled();
   });
 
-  it('shows manual instructions for manual-only clients without configuring them', async () => {
-    const prompts = createPrompts({ multiSelections: [[], ['junie']] });
+  it('omits manual-only and undetected providers from setup choices', async () => {
+    const prompts = createPrompts({ multiSelections: [[]] });
     const junie: SetupClientStatus = {
       id: 'junie',
       label: 'Junie',
@@ -274,6 +286,11 @@ describe('nekosearch setup flow', () => {
       scope: 'user',
       target: '/home/user/.junie/mcp/mcp.json',
     };
+    const undetected: SetupClientStatus = {
+      ...client('cursor', 'Cursor'),
+      state: 'not-detected',
+      application: 'not-detected',
+    };
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
 
@@ -282,14 +299,18 @@ describe('nekosearch setup flow', () => {
       prompts,
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
-      inspectClients: () => Promise.resolve([junie]),
+      inspectClients: () => Promise.resolve([junie, undetected]),
       configureClient,
     });
 
     expect(result).toBe(0);
-    expect(prompts.messages.join('\n')).toContain('Manual setup instructions');
-    expect(prompts.messages.join('\n')).toContain(
-      'Junie — User: /home/user/.junie/mcp/mcp.json',
+    expect(prompts.groupMultiselectCalls).toHaveLength(0);
+    expect(prompts.messages.join('\n')).not.toContain('Junie');
+    expect(prompts.messages.join('\n')).not.toContain(
+      'Other supported clients',
+    );
+    expect(prompts.messages.join('\n')).not.toContain(
+      'Show manual setup instructions',
     );
     expect(configureClient).not.toHaveBeenCalled();
   });

@@ -44,8 +44,17 @@ export interface SetupSpinner {
 }
 
 export const SETUP_BACK = Symbol('setup-back');
-const SHOW_UNDETECTED_SETUP_INSTRUCTIONS = '__nekosearch_show_undetected_setup';
-const NOT_DETECTED_SUMMARY = '__nekosearch_not_detected_summary';
+
+const SETUP_BANNER = String.raw`          /\        /\
+         /  \______/  \
+        (    ^ v ^     )
+         \____________/
+   _     /            \
+  / )   /              \
+  \ \___\   (__) (__)  /
+   \_____\____________/
+
+         NekoSearch`;
 
 export interface SetupPromptApi {
   intro(message: string): void;
@@ -149,7 +158,7 @@ export async function runSetup(
   let selectableClients: SetupClientStatus[] = [];
   let applyChanges = false;
 
-  prompts.intro('NekoSearch setup');
+  prompts.intro(SETUP_BANNER);
   let catalogEntries: DocumentationCatalogEntry[] = [];
   let catalogReadable = true;
   try {
@@ -238,10 +247,20 @@ export async function runSetup(
         continue;
       }
 
-      prompts.message(formatProviderSummary(selectableClients));
       const readyClients = selectableClients.filter(isBulkConfigurableClient);
-      const groups = buildClientGroups(selectableClients);
-      if (Object.values(groups).some((options) => options.some(isEnabled))) {
+      const alreadyConfigured = selectableClients.filter(
+        (client) => client.state === 'already-configured',
+      );
+      if (alreadyConfigured.length > 0) {
+        prompts.message(
+          [
+            'Already configured:',
+            ...alreadyConfigured.map((client) => `  ✓ ${client.label}`),
+          ].join('\n'),
+        );
+      }
+      const groups = buildClientGroups(readyClients);
+      if (readyClients.length > 0) {
         const selection = await prompts.groupMultiselect(
           'Select providers to configure (Space toggles; Enter continues)',
           groups,
@@ -261,33 +280,15 @@ export async function runSetup(
         selectedClients = readyClients
           .filter((client) => selected.has(client.id))
           .map(({ id }) => id);
-        const selectedManual = selectableClients.filter(
-          (client) =>
-            clientState(client) === 'manual-only' && selected.has(client.id),
-        );
-        const showUndetectedInstructions = selected.has(
-          SHOW_UNDETECTED_SETUP_INSTRUCTIONS,
-        );
-        if (selectedManual.length > 0 || showUndetectedInstructions) {
-          prompts.message(
-            renderManualInstructions(
-              [...selectedManual],
-              showUndetectedInstructions
-                ? selectableClients.filter(
-                    (client) => clientState(client) === 'not-detected',
-                  )
-                : [],
-              serverCommand,
-            ),
-          );
-        }
       } else {
         selectedClients = [];
-        prompts.message(
-          selectableClients.length === 0
-            ? 'No supported MCP providers were detected.'
-            : 'No supported MCP providers are ready to configure.',
-        );
+        if (alreadyConfigured.length === 0) {
+          prompts.message(
+            selectableClients.length === 0
+              ? 'No supported MCP providers were detected.'
+              : 'No MCP providers are ready to configure.',
+          );
+        }
       }
       stage = 'review';
       continue;
@@ -391,6 +392,7 @@ export function createSetupPromptApi(
     intro: (message) =>
       clack.intro(styleText('bold', message), {
         output,
+        withGuide: false,
         ...(accessible !== undefined && { accessible }),
       }),
     message: (message) => clack.log.message(message, promptOptions),
@@ -508,18 +510,9 @@ function renderSummary(summary: {
   return lines.join('\n');
 }
 
-type SetupClientSelection =
-  | SetupClientId
-  | typeof SHOW_UNDETECTED_SETUP_INSTRUCTIONS
-  | typeof NOT_DETECTED_SUMMARY;
-
-function clientState(client: SetupClientStatus): SetupClientStatus['state'] {
-  return client.state;
-}
-
 function isBulkConfigurableClient(client: SetupClientStatus): boolean {
   return (
-    clientState(client) === 'ready' &&
+    client.state === 'ready' &&
     client.application === 'detected' &&
     client.setupMode === 'automatic' &&
     ['available', 'missing', 'managed'].includes(client.configuration) &&
@@ -527,115 +520,18 @@ function isBulkConfigurableClient(client: SetupClientStatus): boolean {
   );
 }
 
-function isEnabled(choice: SetupChoice<SetupClientSelection>): boolean {
-  return choice.disabled !== true;
-}
-
-function formatProviderSummary(clients: SetupClientStatus[]): string {
-  const counts = {
-    ready: clients.filter(isBulkConfigurableClient).length,
-    configured: clients.filter(
-      (client) => clientState(client) === 'already-configured',
-    ).length,
-    conflicts: clients.filter((client) => clientState(client) === 'conflict')
-      .length,
-    undetected: clients.filter(
-      (client) => clientState(client) === 'not-detected',
-    ).length,
-    manual: clients.filter((client) => clientState(client) === 'manual-only')
-      .length,
-  };
-  return `Providers: ${counts.ready} ready; ${counts.configured} already configured; ${counts.conflicts} conflicts; ${counts.undetected} not detected; ${counts.manual} manual only.`;
-}
-
 function buildClientGroups(
   clients: SetupClientStatus[],
-): SetupGroupedChoices<SetupClientSelection> {
-  const groups: SetupGroupedChoices<SetupClientSelection> = {};
-  const addGroup = (
-    label: string,
-    options: SetupChoice<SetupClientSelection>[],
-  ): void => {
-    if (options.length > 0) groups[label] = options;
-  };
-
-  addGroup(
-    'Ready to configure',
-    clients.filter(isBulkConfigurableClient).map((client) => ({
+): SetupGroupedChoices<SetupClientId> {
+  const readyClients = clients.filter(isBulkConfigurableClient);
+  if (readyClients.length === 0) return {};
+  return {
+    'Ready to configure': readyClients.map((client) => ({
       value: client.id,
       label: client.label,
       hint: client.scope === 'user' ? 'User' : 'Project',
     })),
-  );
-  addGroup(
-    'Already configured',
-    clients
-      .filter((client) => clientState(client) === 'already-configured')
-      .map((client) => ({
-        value: client.id,
-        label: client.label,
-        hint: '✓ configured',
-        disabled: true,
-      })),
-  );
-  addGroup(
-    'Conflicts',
-    clients
-      .filter((client) => clientState(client) === 'conflict')
-      .map((client) => ({
-        value: client.id,
-        label: client.label,
-        hint: client.reason
-          ? shorten(client.reason, 42)
-          : 'Resolve the existing configuration first',
-        disabled: true,
-      })),
-  );
-
-  const other: SetupChoice<SetupClientSelection>[] = clients
-    .filter((client) => clientState(client) === 'manual-only')
-    .map((client) => ({
-      value: client.id,
-      label: client.label,
-      hint: 'Manual only',
-    }));
-  const undetectedCount = clients.filter(
-    (client) => clientState(client) === 'not-detected',
-  ).length;
-  if (undetectedCount > 0) {
-    other.push({
-      value: NOT_DETECTED_SUMMARY,
-      label: `${undetectedCount} other supported ${undetectedCount === 1 ? 'client was' : 'clients were'} not detected`,
-      disabled: true,
-    });
-    other.push({
-      value: SHOW_UNDETECTED_SETUP_INSTRUCTIONS,
-      label: 'Show manual setup instructions',
-    });
-  }
-  addGroup('Other supported clients', other);
-  return groups;
-}
-
-function renderManualInstructions(
-  manualClients: SetupClientStatus[],
-  undetectedClients: SetupClientStatus[],
-  serverCommand: NekosearchStdioCommand,
-): string {
-  const clients = [...manualClients, ...undetectedClients];
-  const lines = [
-    'Manual setup instructions',
-    'Add a local stdio MCP server named NekoSearch with:',
-    `  Command: ${serverCommand.command}`,
-    `  Arguments: ${JSON.stringify(serverCommand.args)}`,
-    'Configuration locations used by NekoSearch setup:',
-  ];
-  for (const client of clients) {
-    lines.push(
-      `  ${client.label} — ${client.scope === 'user' ? 'User' : 'Project'}: ${client.target}`,
-    );
-  }
-  return lines.join('\n');
+  };
 }
 
 function renderConfigurationPreview(
@@ -667,12 +563,6 @@ function renderConfigurationPreview(
   }
   lines.push('Existing configurations will be preserved.');
   return lines.join('\n');
-}
-
-function shorten(value: string, maximumLength: number): string {
-  return value.length > maximumLength
-    ? `${value.slice(0, maximumLength - 1)}…`
-    : value;
 }
 
 function isPlainProgressTerminal(terminal: SetupTerminalState): boolean {

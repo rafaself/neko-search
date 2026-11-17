@@ -4,6 +4,22 @@ import { stripVTControlCharacters } from 'node:util';
 import { createSetupPromptApi } from '../../../../src/apps/nekosearch/setup.js';
 
 describe('setup terminal prompts', () => {
+  it('prints multiline setup artwork without adding a prompt guide', () => {
+    const input = new PassThrough();
+    const output = createOutput();
+    const prompts = createSetupPromptApi(input, output.stream);
+    const banner = String.raw` /\  /\
+ \_\/  \
+
+ NekoSearch`;
+
+    prompts.intro(banner);
+
+    expect(output.text()).toBe(`${banner}\n`);
+    input.destroy();
+    output.stream.destroy();
+  });
+
   it('uses Space to select and unselect multiselect choices', async () => {
     const input = new PassThrough();
     const output = createOutput();
