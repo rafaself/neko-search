@@ -74,6 +74,11 @@ html {
 .vp-doc div[class*='language-'] {
   border: 1px solid var(--vp-c-divider);
 }
+.vp-doc .custom-block.tip div.language-text pre,
+.vp-doc .custom-block.tip div.language-text code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .VPDocAsideOutline .outline-title {
   display: flex;
   align-items: center;
