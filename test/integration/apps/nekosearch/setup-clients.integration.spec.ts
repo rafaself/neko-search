@@ -15,7 +15,6 @@ import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { parse as parseToml } from 'smol-toml';
 import {
   configureSetupClient,
-  getManualSetupInstructions,
   inspectSetupClients,
 } from '../../../../src/apps/nekosearch/setup-clients.js';
 import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
@@ -74,6 +73,9 @@ describe('NekoSearch setup MCP client adapters', () => {
     await expect(configureSetupClient('cursor', options())).resolves.toBe(
       'unchanged',
     );
+    expect(
+      (await inspectSetupClients(options())).some(({ id }) => id === 'cursor'),
+    ).toBe(false);
     expect(readFileSync(configPath, 'utf8')).toBe(updated);
     expect(existsSync(`${configPath}.nekosearch-setup.lock`)).toBe(false);
     expect(readdirNames(join(homeDirectory, '.cursor'))).toEqual(['mcp.json']);
@@ -93,9 +95,7 @@ describe('NekoSearch setup MCP client adapters', () => {
     const malformed = '{\n  "mcpServers": {\n';
     writeFileSync(configPath, malformed);
     const statuses = await inspectSetupClients(options());
-    const cursorStatus = statuses.find(({ id }) => id === 'cursor');
-    expect(cursorStatus?.state).toBe('conflict');
-    expect(cursorStatus?.reason).toContain('Cannot safely edit');
+    expect(statuses.some(({ id }) => id === 'cursor')).toBe(false);
     await expect(configureSetupClient('cursor', options())).rejects.toThrow(
       /Cannot safely edit/u,
     );
@@ -180,12 +180,6 @@ describe('NekoSearch setup MCP client adapters', () => {
         },
       },
     });
-    expect(
-      getManualSetupInstructions(
-        'github-copilot',
-        options({ COPILOT_HOME: copilotHome }),
-      ),
-    ).toContain('Copilot CLI and VS Code Copilot Global share this file');
   });
 
   it('writes and reuses the documented user config for remaining automatic adapters', async () => {
@@ -267,37 +261,66 @@ describe('NekoSearch setup MCP client adapters', () => {
       serverCommand: command,
     });
 
-    expect(statuses.find(({ id }) => id === 'antigravity')).toMatchObject({
-      state: 'available',
-      automatic: true,
-    });
+    expect(statuses).toEqual([
+      { id: 'antigravity', label: 'Google Antigravity' },
+    ]);
   });
 
-  it('reports Claude Desktop as manual-only and keeps it distinct from Claude Code', async () => {
-    const statuses = await inspectSetupClients(
-      options({}, (name) => name === 'claude-desktop'),
-    );
-    expect(statuses.find(({ id }) => id === 'claude-desktop')).toMatchObject({
-      state: 'available',
-      automatic: false,
-    });
+  it('shows a replaceable legacy Codex registration for reviewed replacement', async () => {
+    const binDirectory = join(root, 'codex bin');
+    mkdirSync(binDirectory);
+    const codexPath = join(binDirectory, 'codex');
+    writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
+    chmodSync(codexPath, 0o755);
+
+    const calls: string[][] = [];
+    const runCodexCommand = (_command: string, args: string[]) => {
+      calls.push(args);
+      return Promise.resolve({
+        stdout:
+          args[1] === 'list'
+            ? JSON.stringify([
+                {
+                  name: 'nekosearch',
+                  transport: {
+                    type: 'stdio',
+                    command: join(root, 'legacy nekosearch'),
+                    args: ['serve'],
+                  },
+                },
+              ])
+            : '',
+        stderr: '',
+      });
+    };
+    const codexOptions = {
+      homeDirectory,
+      environment: { PATH: binDirectory },
+      platform: 'linux' as NodeJS.Platform,
+      serverCommand: command,
+      runCodexCommand,
+    };
+
+    await expect(inspectSetupClients(codexOptions)).resolves.toEqual([
+      {
+        id: 'codex',
+        label: 'Codex',
+        requiresReplacement: true,
+      },
+    ]);
+
     await expect(
-      configureSetupClient('claude-desktop', options()),
-    ).rejects.toThrow(/does not support automatic setup/u);
-    expect(getManualSetupInstructions('claude-desktop', options())).toContain(
-      'Desktop Extensions',
-    );
-    expect(getManualSetupInstructions('claude-desktop', options())).toContain(
-      'separate from Claude Code',
-    );
-  });
-
-  it('quotes Codex manual instructions for executable paths with spaces', () => {
-    const instructions = getManualSetupInstructions('codex', options());
-
-    expect(instructions).toContain('Use the Codex CLI: codex');
-    expect(instructions).toContain(`'${command.command}'`);
-    expect(instructions).toContain(`'${command.args[0]}' 'serve'`);
+      configureSetupClient('codex', {
+        ...codexOptions,
+        replaceConflictingCodex: true,
+      }),
+    ).resolves.toBe('added');
+    expect(calls).toEqual([
+      ['mcp', 'list', '--json'],
+      ['mcp', 'list', '--json'],
+      ['mcp', 'remove', 'nekosearch'],
+      ['mcp', 'add', 'nekosearch', '--', command.command, ...command.args],
+    ]);
   });
 });
 

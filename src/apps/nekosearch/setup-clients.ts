@@ -23,7 +23,7 @@ import {
 } from './codex-config.js';
 import type { NekosearchStdioCommand } from './mcp-command.js';
 
-export type SetupClientState =
+type SetupClientAvailability =
   'already configured' | 'available' | 'not detected' | 'conflict';
 
 export type SetupClientId =
@@ -37,15 +37,19 @@ export type SetupClientId =
   | 'kiro'
   | 'zed'
   | 'junie'
-  | 'antigravity'
-  | 'claude-desktop';
+  | 'antigravity';
 
 export interface SetupClientStatus {
   id: SetupClientId;
   label: string;
-  state: SetupClientState;
-  automatic: boolean;
+  alreadyConfigured?: boolean;
+  requiresReplacement?: boolean;
+}
+
+interface SetupClientInspection extends SetupClientStatus {
+  state: SetupClientAvailability;
   reason?: string;
+  replaceable?: boolean;
 }
 
 export interface SetupClientOptions {
@@ -55,6 +59,7 @@ export interface SetupClientOptions {
   serverCommand: NekosearchStdioCommand;
   commandExists?: (command: string) => boolean;
   runCodexCommand?: CodexCommandRunner;
+  replaceConflictingCodex?: boolean;
 }
 
 export type SetupClientConfigurationResult = 'added' | 'unchanged';
@@ -62,12 +67,10 @@ export type SetupClientConfigurationResult = 'added' | 'unchanged';
 interface ClientDefinition {
   id: SetupClientId;
   label: string;
-  automatic: boolean;
-  inspect(options: ResolvedSetupClientOptions): Promise<SetupClientStatus>;
+  inspect(options: ResolvedSetupClientOptions): Promise<SetupClientInspection>;
   configure?(
     options: ResolvedSetupClientOptions,
   ): Promise<SetupClientConfigurationResult>;
-  instructions(options: ResolvedSetupClientOptions): string;
 }
 
 interface ResolvedSetupClientOptions extends SetupClientOptions {
@@ -88,7 +91,6 @@ interface JsonClientDefinition {
     registration: Record<string, unknown>,
     command: NekosearchStdioCommand,
   ): boolean;
-  sample(options: ResolvedSetupClientOptions): string;
 }
 
 const JSON_CLIENTS: JsonClientDefinition[] = [
@@ -108,10 +110,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
       (registration.type === undefined || registration.type === 'stdio') &&
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `User config: ${join(options.environment.CLAUDE_CONFIG_DIR || options.homeDirectory, '.claude.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { type: 'stdio', command: options.serverCommand.command, args: options.serverCommand.args })}\n` +
-      'Claude Code also supports `claude mcp add --transport stdio --scope user nekosearch -- <node> <cli-entry-point> serve`.',
   },
   {
     id: 'cursor',
@@ -129,9 +127,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
       (registration.type === undefined || registration.type === 'stdio') &&
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `Global config: ${join(options.homeDirectory, '.cursor', 'mcp.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { type: 'stdio', command: options.serverCommand.command, args: options.serverCommand.args })}`,
   },
   {
     id: 'opencode',
@@ -146,9 +141,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     matchesRegistration: (registration, command) =>
       registration.type === 'local' &&
       arraysEqual(registration.command, [command.command, ...command.args]),
-    sample: (options) =>
-      `Global config: ${join(options.environment.XDG_CONFIG_HOME || join(options.homeDirectory, '.config'), 'opencode', 'opencode.json(c)')}\n` +
-      `Add this entry under mcp.servers:\n${jsonSnippet(['mcp', 'servers', 'nekosearch'], { type: 'local', command: [options.serverCommand.command, ...options.serverCommand.args] })}`,
   },
   {
     id: 'github-copilot',
@@ -170,10 +162,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
       registration.type === 'local' &&
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `Shared Copilot user config: ${join(options.environment.COPILOT_HOME || join(options.homeDirectory, '.copilot'), 'mcp-config.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { type: 'local', command: options.serverCommand.command, args: options.serverCommand.args, tools: ['*'] })}\n` +
-      'Copilot CLI and VS Code Copilot Global share this file.',
   },
   {
     id: 'cline',
@@ -199,9 +187,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
       (registration.type === undefined || registration.type === 'stdio') &&
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `User config: ${options.environment.CLINE_MCP_SETTINGS_PATH || join(options.homeDirectory, '.cline', 'data', 'settings', 'cline_mcp_settings.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { command: options.serverCommand.command, args: options.serverCommand.args, disabled: false, autoApprove: [] })}`,
   },
   {
     id: 'kiro',
@@ -217,9 +202,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     matchesRegistration: (registration, command) =>
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `User config: ${join(options.homeDirectory, '.kiro', 'settings', 'mcp.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { command: options.serverCommand.command, args: options.serverCommand.args })}`,
   },
   {
     id: 'zed',
@@ -234,8 +216,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     matchesRegistration: (registration, command) =>
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `User settings: ${zedSettingsPath(options)}\nAdd this entry under context_servers:\n${jsonSnippet(['context_servers', 'nekosearch'], { command: options.serverCommand.command, args: options.serverCommand.args })}`,
   },
   {
     id: 'junie',
@@ -251,9 +231,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     matchesRegistration: (registration, command) =>
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `User config: ${join(options.homeDirectory, '.junie', 'mcp', 'mcp.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { command: options.serverCommand.command, args: options.serverCommand.args })}`,
   },
   {
     id: 'antigravity',
@@ -269,9 +246,6 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     matchesRegistration: (registration, command) =>
       registration.command === command.command &&
       arraysEqual(registration.args, command.args),
-    sample: (options) =>
-      `Global config: ${join(options.homeDirectory, '.gemini', 'config', 'mcp_config.json')}\n` +
-      `Add this entry under mcpServers:\n${jsonSnippet(['mcpServers', 'nekosearch'], { command: options.serverCommand.command, args: options.serverCommand.args })}`,
   },
 ];
 
@@ -279,14 +253,36 @@ const CLIENTS: ClientDefinition[] = [
   createCodexDefinition(),
   ...JSON_CLIENTS.map(createJsonClientDefinition),
   createGrokDefinition(),
-  createClaudeDesktopDefinition(),
 ];
 
 export async function inspectSetupClients(
   options: SetupClientOptions,
 ): Promise<SetupClientStatus[]> {
   const resolved = resolveOptions(options);
-  return Promise.all(CLIENTS.map((client) => client.inspect(resolved)));
+  const inspections = await Promise.all(
+    CLIENTS.map((client) => client.inspect(resolved)),
+  );
+  return inspections
+    .filter(
+      (client) =>
+        client.state === 'available' ||
+        (client.id === 'codex' &&
+          (client.state === 'already configured' ||
+            (client.state === 'conflict' && client.replaceable === true))),
+    )
+    .map(({ id, label, state, replaceable }) => ({
+      id,
+      label,
+      ...(id === 'codex' &&
+        state === 'already configured' && {
+          alreadyConfigured: true,
+        }),
+      ...(id === 'codex' &&
+        state === 'conflict' &&
+        replaceable === true && {
+          requiresReplacement: true,
+        }),
+    }));
 }
 
 export async function configureSetupClient(
@@ -295,28 +291,18 @@ export async function configureSetupClient(
 ): Promise<SetupClientConfigurationResult> {
   const client = CLIENTS.find((candidate) => candidate.id === id);
   if (!client) throw new Error(`Unknown MCP client ${id}`);
-  if (!client.automatic || !client.configure) {
-    throw new Error(`${client.label} does not support automatic setup`);
-  }
+  if (!client.configure)
+    throw new Error(`${client.label} cannot be configured`);
   return client.configure(resolveOptions(options));
-}
-
-export function getManualSetupInstructions(
-  id: SetupClientId,
-  options: SetupClientOptions,
-): string {
-  const client = CLIENTS.find((candidate) => candidate.id === id);
-  if (!client) throw new Error(`Unknown MCP client ${id}`);
-  return `${client.label}\n${client.instructions(resolveOptions(options))}`;
 }
 
 function createCodexDefinition(): ClientDefinition {
   const label = 'Codex';
   const inspect = async (
     options: ResolvedSetupClientOptions,
-  ): Promise<SetupClientStatus> => {
+  ): Promise<SetupClientInspection> => {
     const command = findExecutable('codex', options);
-    if (!command) return status('codex', label, 'not detected', true);
+    if (!command) return status('codex', label, 'not detected');
     try {
       const inspection = await inspectCodexMcp({
         serverCommand: options.serverCommand,
@@ -327,15 +313,16 @@ function createCodexDefinition(): ClientDefinition {
         id: 'codex',
         label,
         state: inspection.state,
-        automatic: true,
         ...(inspection.state === 'conflict' && { reason: inspection.reason }),
+        ...(inspection.state === 'conflict' && {
+          replaceable: inspection.replaceable,
+        }),
       };
     } catch (error) {
       return status(
         'codex',
         label,
         'conflict',
-        true,
         `Could not inspect the Codex registration safely: ${errorMessage(error)}`,
       );
     }
@@ -343,7 +330,6 @@ function createCodexDefinition(): ClientDefinition {
   return {
     id: 'codex',
     label,
-    automatic: true,
     inspect,
     async configure(options) {
       const command = findExecutable('codex', options);
@@ -351,24 +337,10 @@ function createCodexDefinition(): ClientDefinition {
       const result = await configureCodexMcp({
         serverCommand: options.serverCommand,
         codexCommand: command,
+        force: options.replaceConflictingCodex,
         ...(options.runCodexCommand && { runCommand: options.runCodexCommand }),
       });
       return result === 'unchanged' ? 'unchanged' : 'added';
-    },
-    instructions: (options) => {
-      const arguments_ = [
-        'mcp',
-        'add',
-        'nekosearch',
-        '--',
-        options.serverCommand.command,
-        ...options.serverCommand.args,
-      ];
-      const quote =
-        options.platform === 'win32'
-          ? quotePowerShellArgument
-          : quotePosixShellArgument;
-      return `Use the Codex CLI: codex ${arguments_.map(quote).join(' ')}`;
     },
   };
 }
@@ -378,7 +350,7 @@ function createJsonClientDefinition(
 ): ClientDefinition {
   const inspect = async (
     options: ResolvedSetupClientOptions,
-  ): Promise<SetupClientStatus> => {
+  ): Promise<SetupClientInspection> => {
     let filePath: string;
     try {
       filePath = safeConfigPath(definition.configPath(options));
@@ -387,7 +359,6 @@ function createJsonClientDefinition(
         definition.id,
         definition.label,
         'conflict',
-        true,
         errorMessage(error),
       );
     }
@@ -401,7 +372,6 @@ function createJsonClientDefinition(
           definition.id,
           definition.label,
           'conflict',
-          true,
           `Cannot inspect ${filePath}: ${errorMessage(error)}`,
         );
       }
@@ -411,7 +381,7 @@ function createJsonClientDefinition(
       !fileExists &&
       !definition.commands.some((name) => options.commandExists(name))
     ) {
-      return status(definition.id, definition.label, 'not detected', true);
+      return status(definition.id, definition.label, 'not detected');
     }
     const inspected = await inspectJsonRegistration(
       filePath,
@@ -424,14 +394,12 @@ function createJsonClientDefinition(
       definition.id,
       definition.label,
       inspected.state,
-      true,
       inspected.reason,
     );
   };
   return {
     id: definition.id,
     label: definition.label,
-    automatic: true,
     inspect,
     configure: (options) =>
       installJsonRegistration(
@@ -442,7 +410,6 @@ function createJsonClientDefinition(
           definition.matchesRegistration(registration, command),
         options.serverCommand,
       ),
-    instructions: (options) => definition.sample(options),
   };
 }
 
@@ -453,12 +420,12 @@ function createGrokDefinition(): ClientDefinition {
     safeConfigPath(createGrokTomlPath(options));
   const inspect = async (
     options: ResolvedSetupClientOptions,
-  ): Promise<SetupClientStatus> => {
+  ): Promise<SetupClientInspection> => {
     let filePath: string;
     try {
       filePath = configPath(options);
     } catch (error) {
-      return status(id, label, 'conflict', true, errorMessage(error));
+      return status(id, label, 'conflict', errorMessage(error));
     }
     let fileExists = false;
     try {
@@ -468,7 +435,6 @@ function createGrokDefinition(): ClientDefinition {
           id,
           label,
           'conflict',
-          true,
           `${filePath} is not a regular config file`,
         );
       }
@@ -479,52 +445,24 @@ function createGrokDefinition(): ClientDefinition {
           id,
           label,
           'conflict',
-          true,
           `Cannot inspect ${filePath}: ${errorMessage(error)}`,
         );
       }
     }
     if (!fileExists && !options.commandExists('grok'))
-      return status(id, label, 'not detected', true);
+      return status(id, label, 'not detected');
     const inspected = await inspectTomlRegistration(
       filePath,
       options.serverCommand,
     );
-    return status(id, label, inspected.state, true, inspected.reason);
+    return status(id, label, inspected.state, inspected.reason);
   };
   return {
     id,
     label,
-    automatic: true,
     inspect,
     configure: (options) =>
       installTomlRegistration(configPath(options), options.serverCommand),
-    instructions: (options) =>
-      `User config: ${configPath(options)}\nAdd [mcp_servers.nekosearch] with command = ${JSON.stringify(options.serverCommand.command)} and args = ${JSON.stringify(options.serverCommand.args)}. This adapter is for Grok Build CLI, not Grok in the browser.`,
-  };
-}
-
-function createClaudeDesktopDefinition(): ClientDefinition {
-  const id = 'claude-desktop';
-  const label = 'Claude Desktop (manual only)';
-  return {
-    id,
-    label,
-    automatic: false,
-    inspect(options) {
-      const installed = claudeDesktopDetected(options);
-      return Promise.resolve(
-        status(
-          id,
-          label,
-          installed ? 'available' : 'not detected',
-          false,
-          'Claude Desktop documents local setup through Desktop Extensions (DXT), not a supported raw stdio config path.',
-        ),
-      );
-    },
-    instructions: () =>
-      'Claude Desktop currently installs local MCP servers through Desktop Extensions (DXT): Settings > Extensions > Advanced settings > Install Extension. NekoSearch does not include a DXT package; create or obtain one, then install it there. Claude Desktop is separate from Claude Code.',
   };
 }
 
@@ -533,7 +471,7 @@ async function inspectJsonRegistration(
   registrationPath: string[],
   matches: JsonClientDefinition['matchesRegistration'],
   command: NekosearchStdioCommand,
-): Promise<{ state: SetupClientState; reason?: string }> {
+): Promise<{ state: SetupClientAvailability; reason?: string }> {
   const read = await readJsoncFile(filePath);
   if (read.state === 'missing') return { state: 'available' };
   if (read.state === 'conflict')
@@ -671,7 +609,7 @@ async function readJsoncFile(filePath: string): Promise<
 async function inspectTomlRegistration(
   filePath: string,
   command: NekosearchStdioCommand,
-): Promise<{ state: SetupClientState; reason?: string }> {
+): Promise<{ state: SetupClientAvailability; reason?: string }> {
   try {
     const info = await lstat(filePath);
     if (!info.isFile() || info.isSymbolicLink()) {
@@ -953,31 +891,6 @@ function zedSettingsPath(options: ResolvedSetupClientOptions): string {
   );
 }
 
-function claudeDesktopDetected(options: ResolvedSetupClientOptions): boolean {
-  if (
-    ['claude-desktop', 'Claude'].some((command) =>
-      options.commandExists(command),
-    )
-  )
-    return true;
-  if (options.platform === 'darwin') {
-    return (
-      pathExists('/Applications/Claude.app') ||
-      pathExists(join(options.homeDirectory, 'Applications', 'Claude.app'))
-    );
-  }
-  if (options.platform === 'win32') {
-    const localAppData = options.environment.LOCALAPPDATA;
-    return Boolean(
-      localAppData &&
-      pathExists(join(localAppData, 'Programs', 'Claude', 'Claude.exe')),
-    );
-  }
-  return (
-    pathExists('/usr/bin/claude-desktop') || pathExists('/opt/Claude/claude')
-  );
-}
-
 function createGrokTomlPath(options: ResolvedSetupClientOptions): string {
   return join(
     options.environment.GROK_HOME || join(options.homeDirectory, '.grok'),
@@ -1006,29 +919,13 @@ function safeConfigPath(path: string): string {
   return path;
 }
 
-function jsonSnippet(path: string[], value: Record<string, unknown>): string {
-  const root: Record<string, unknown> = {};
-  let current = root;
-  for (const [index, key] of path.entries()) {
-    if (index === path.length - 1) {
-      current[key] = value;
-    } else {
-      const child: Record<string, unknown> = {};
-      current[key] = child;
-      current = child;
-    }
-  }
-  return JSON.stringify(root, null, 2);
-}
-
 function status(
   id: SetupClientId,
   label: string,
-  state: SetupClientState,
-  automatic: boolean,
+  state: SetupClientAvailability,
   reason?: string,
-): SetupClientStatus {
-  return { id, label, state, automatic, ...(reason && { reason }) };
+): SetupClientInspection {
+  return { id, label, state, ...(reason && { reason }) };
 }
 
 function getPath(value: unknown, path: string[]): unknown {
@@ -1075,25 +972,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function quotePosixShellArgument(argument: string): string {
-  return `'${argument.replaceAll("'", `'\\''`)}'`;
-}
-
-function quotePowerShellArgument(argument: string): string {
-  return `'${argument.replaceAll("'", "''")}'`;
-}
-
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
-}
-
-function pathExists(path: string): boolean {
-  try {
-    accessSync(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // Sync helpers keep PATH detection side-effect free; they never launch a shell.
