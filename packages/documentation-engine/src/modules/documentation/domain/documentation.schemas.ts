@@ -122,7 +122,8 @@ export const DocumentationFrontmatterSchema = z.strictObject({
   title: nonEmptyString.optional(),
 });
 
-export const NormalizedDocumentSchema = DocumentationIdentitySchema.extend({
+const normalizedDocumentFields = {
+  ...DocumentationIdentitySchema.shape,
   title: nonEmptyString,
   canonicalUrl: z.url(),
   source: NormalizedDocumentSourceSchema,
@@ -131,7 +132,16 @@ export const NormalizedDocumentSchema = DocumentationIdentitySchema.extend({
   contentHash: sha256Hash,
   headings: z.array(HeadingSchema),
   chunks: z.array(DocumentationChunkSchema).min(1),
-}).superRefine((document, context) => {
+};
+
+function validateNormalizedDocument(
+  document: {
+    id: string;
+    title: string;
+    chunks: Array<{ documentId: string; title: string; id: string }>;
+  },
+  context: z.RefinementCtx,
+): void {
   const chunkIds = new Set<string>();
   for (const [index, chunk] of document.chunks.entries()) {
     if (chunk.documentId !== document.id) {
@@ -157,79 +167,98 @@ export const NormalizedDocumentSchema = DocumentationIdentitySchema.extend({
     }
     chunkIds.add(chunk.id);
   }
-});
+}
+
+export const NormalizedDocumentSchema = z
+  .strictObject(normalizedDocumentFields)
+  .superRefine(validateNormalizedDocument);
+
+const documentationCorpusFields = {
+  version: DocumentationVersionSchema,
+  source: DocumentationSourceProvenanceSchema,
+};
+
+function validateCorpusRelationships(
+  corpus: {
+    version: string;
+    source: z.infer<typeof DocumentationSourceProvenanceSchema>;
+    documents: z.infer<typeof NormalizedDocumentSchema>[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const ids = new Set<string>();
+  const chunkIds = new Set<string>();
+  for (const [index, document] of corpus.documents.entries()) {
+    if (document.version !== corpus.version) {
+      context.addIssue({
+        code: 'custom',
+        path: ['documents', index, 'version'],
+        message: 'Document version must match its corpus',
+      });
+    }
+    if (!sameSourceProvenance(document.source.provenance, corpus.source)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['documents', index, 'source', 'provenance'],
+        message: 'Document provenance must match its corpus',
+      });
+    }
+    if (ids.has(document.id)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['documents', index, 'id'],
+        message: 'Corpus document IDs must be unique',
+      });
+    }
+    ids.add(document.id);
+    for (const [chunkIndex, chunk] of document.chunks.entries()) {
+      if (chunk.sourceRevision !== corpus.source.revision) {
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'chunks', chunkIndex, 'sourceRevision'],
+          message: 'Chunk revision must match its corpus source',
+        });
+      }
+      if (chunkIds.has(chunk.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'chunks', chunkIndex, 'id'],
+          message: 'Corpus chunk IDs must be unique',
+        });
+      }
+      chunkIds.add(chunk.id);
+    }
+  }
+}
+
+/** Intermediate normalized documents before link targets are resolved. */
+export const DocumentationIngestionCorpusSchema = z
+  .strictObject({
+    ...documentationCorpusFields,
+    documents: z.array(NormalizedDocumentSchema).min(1),
+  })
+  .superRefine(validateCorpusRelationships);
+
+const resolvedDocumentSchema = z
+  .strictObject({
+    ...normalizedDocumentFields,
+    chunks: z
+      .array(
+        DocumentationChunkSchema.extend({
+          references: z.array(DocumentationLinkReferenceSchema),
+        }),
+      )
+      .min(1),
+  })
+  .superRefine(validateNormalizedDocument);
 
 export const DocumentationCorpusSchema = z
   .strictObject({
-    formatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION).optional(),
-    version: DocumentationVersionSchema,
-    source: DocumentationSourceProvenanceSchema,
-    documents: z.array(NormalizedDocumentSchema).min(1),
+    formatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION),
+    ...documentationCorpusFields,
+    documents: z.array(resolvedDocumentSchema).min(1),
   })
-  .superRefine((corpus, context) => {
-    if (corpus.formatVersion === DOCUMENTATION_SNAPSHOT_FORMAT_VERSION) {
-      for (const [documentIndex, document] of corpus.documents.entries()) {
-        for (const [chunkIndex, chunk] of document.chunks.entries()) {
-          if (chunk.references === undefined) {
-            context.addIssue({
-              code: 'custom',
-              path: [
-                'documents',
-                documentIndex,
-                'chunks',
-                chunkIndex,
-                'references',
-              ],
-              message: 'Versioned snapshots must record link references',
-            });
-          }
-        }
-      }
-    }
-    const ids = new Set<string>();
-    const chunkIds = new Set<string>();
-    for (const [index, document] of corpus.documents.entries()) {
-      if (document.version !== corpus.version) {
-        context.addIssue({
-          code: 'custom',
-          path: ['documents', index, 'version'],
-          message: 'Document version must match its corpus',
-        });
-      }
-      if (!sameSourceProvenance(document.source.provenance, corpus.source)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['documents', index, 'source', 'provenance'],
-          message: 'Document provenance must match its corpus',
-        });
-      }
-      if (ids.has(document.id)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['documents', index, 'id'],
-          message: 'Corpus document IDs must be unique',
-        });
-      }
-      ids.add(document.id);
-      for (const [chunkIndex, chunk] of document.chunks.entries()) {
-        if (chunk.sourceRevision !== corpus.source.revision) {
-          context.addIssue({
-            code: 'custom',
-            path: ['documents', index, 'chunks', chunkIndex, 'sourceRevision'],
-            message: 'Chunk revision must match its corpus source',
-          });
-        }
-        if (chunkIds.has(chunk.id)) {
-          context.addIssue({
-            code: 'custom',
-            path: ['documents', index, 'chunks', chunkIndex, 'id'],
-            message: 'Corpus chunk IDs must be unique',
-          });
-        }
-        chunkIds.add(chunk.id);
-      }
-    }
-  });
+  .superRefine(validateCorpusRelationships);
 
 function sameSourceProvenance(
   left: z.infer<typeof DocumentationSourceProvenanceSchema>,

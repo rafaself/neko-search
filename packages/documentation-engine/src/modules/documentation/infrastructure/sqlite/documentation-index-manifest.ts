@@ -7,7 +7,7 @@ import {
   type DocumentationIndexRuntimeManifest,
 } from '../../domain/documentation-index-manifest.schemas.js';
 import {
-  isSupportedDocumentationIndexFormat,
+  DOCUMENTATION_INDEX_FORMAT_VERSION,
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
 } from './index-schema.js';
 
@@ -26,28 +26,18 @@ export function loadDocumentationIndexManifest(
     );
   }
 
-  const buildManifest = DocumentationBuildManifestSchema.safeParse(parsedJson);
-  let manifest: DocumentationIndexRuntimeManifest;
-  if (buildManifest.success) {
-    manifest = DocumentationIndexRuntimeManifestSchema.parse({
-      manifestVersion: DOCUMENTATION_RUNTIME_MANIFEST_VERSION,
-      documentation: buildManifest.data.documentation,
-      source: buildManifest.data.source,
-      index: buildManifest.data.index,
-    });
-  } else {
-    const runtimeManifest =
-      DocumentationIndexRuntimeManifestSchema.safeParse(parsedJson);
-    if (!runtimeManifest.success) {
-      const issue = runtimeManifest.error.issues[0];
-      const location = issue?.path.length ? ` at ${issue.path.join('.')}` : '';
-      throw new Error(
-        `Invalid documentation index manifest${location}: ${issue?.message ?? 'invalid format'}`,
-        { cause: runtimeManifest.error },
-      );
-    }
-    manifest = runtimeManifest.data;
+  let buildManifest: ReturnType<typeof DocumentationBuildManifestSchema.parse>;
+  try {
+    buildManifest = DocumentationBuildManifestSchema.parse(parsedJson);
+  } catch (error) {
+    throw new Error('Invalid documentation build manifest', { cause: error });
   }
+  const manifest = DocumentationIndexRuntimeManifestSchema.parse({
+    manifestVersion: DOCUMENTATION_RUNTIME_MANIFEST_VERSION,
+    documentation: buildManifest.documentation,
+    source: buildManifest.source,
+    index: buildManifest.index,
+  });
 
   if (manifest.index.file !== basename(resolve(databasePath))) {
     throw new Error(
@@ -56,7 +46,7 @@ export function loadDocumentationIndexManifest(
   }
   if (
     manifest.index.schemaVersion !== DOCUMENTATION_INDEX_SCHEMA_VERSION ||
-    !isSupportedDocumentationIndexFormat(manifest.index.formatVersion)
+    manifest.index.formatVersion !== DOCUMENTATION_INDEX_FORMAT_VERSION
   ) {
     throw new Error('Documentation index manifest format is unsupported');
   }

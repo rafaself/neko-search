@@ -1,5 +1,6 @@
 {
   "manifestVersion": 2,
+  "snapshotFormatVersion": 2,
   "documentation": {
     "id": "mcp",
     "version": "2025-11-25"
@@ -12,26 +13,28 @@
   },
   "index": {
     "file": "index.sqlite",
-    "sha256": "aab37499fa1e12187e3dde934f9c1d1933d4bf0ea4ca28ec16abc3063586db34",
+    "sha256": "0b1a18a242a0eddc5a88690523e25980841e36b375e111f145a47a0e750fb0d8",
     "documentationVersion": "2025-11-25",
     "sourceRevision": "2025-11-25",
     "schemaVersion": 1,
-    "formatVersion": 1,
+    "formatVersion": 2,
     "documentCount": 5,
     "chunkCount": 12
   },
   "pipeline": {
-    "parserVersion": 1,
+    "parserVersion": 2,
     "transformerVersion": 1,
     "normalizationAlgorithmVersion": 1,
     "chunkingAlgorithmVersion": 1,
     "maxChunkChars": 4000,
     "indexSchemaVersion": 1,
-    "indexFormatVersion": 1
+    "indexFormatVersion": 2,
+    "linkResolverVersion": 1
   },
   "corpus": {
+    "formatVersion": 2,
     "file": "corpus.json",
-    "sha256": "ff640acfff3de610089d888062543d0ebc7f57a034bcfb78c729edb60b7cb0a9",
+    "sha256": "f0a62d19b49260279e25783139234ee81c46f3d7645eef900e85cb0de1854f5f",
     "documentCount": 5,
     "documents": [
       {

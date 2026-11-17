@@ -4,13 +4,14 @@ import {
   createNestJsDocumentationIdentity,
 } from '../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
 import {
-  DOCUMENTATION_SOURCES,
   readContentAliases,
   readSourceIndex,
 } from '../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
+import { NESTJS_DOCUMENTATION_RECIPES } from '../../apps/docs-indexer/src/integrations/nestjs/source-recipes.js';
 import { sourceUrl } from '../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import type { NestJsDocumentationVersion } from '../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
 import { ingestSnapshot as runDocumentationIngestion } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
 import { transformNestJsDocument } from '../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
@@ -31,7 +32,7 @@ export function makeNestJsSnapshot(
     source: {
       kind: 'git',
       repository: NESTJS_DOCUMENTATION_REPOSITORY,
-      ref: DOCUMENTATION_SOURCES[version].ref.name,
+      ref: NESTJS_DOCUMENTATION_RECIPES[version].ref.name,
       revision: sourceRevision,
     },
     documents: sourceDocuments.map((document) => ({
@@ -46,7 +47,9 @@ export function ingestSnapshot(
   snapshot: DocumentationSnapshot,
   maxChunkChars = 4000,
 ): DocumentationCorpus {
-  return runDocumentationIngestion(snapshot, transformNestJsDocument, maxChunkChars);
+  return resolveInternalDocumentationLinks(
+    runDocumentationIngestion(snapshot, transformNestJsDocument, maxChunkChars),
+  );
 }
 
 export function ingestNestJsDocuments(

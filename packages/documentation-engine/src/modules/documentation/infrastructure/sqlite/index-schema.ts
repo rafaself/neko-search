@@ -1,10 +1,5 @@
 export const DOCUMENTATION_INDEX_SCHEMA_VERSION = 1;
 export const DOCUMENTATION_INDEX_FORMAT_VERSION = 2;
-export const LEGACY_DOCUMENTATION_INDEX_FORMAT_VERSION = 1;
-export const SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS = [
-  LEGACY_DOCUMENTATION_INDEX_FORMAT_VERSION,
-  DOCUMENTATION_INDEX_FORMAT_VERSION,
-] as const;
 export const DOCUMENTATION_INDEX_METADATA_TABLE =
   'documentation_index_metadata';
 export const DOCUMENTATION_INDEX_TABLE = 'documentation_search';
@@ -58,10 +53,4 @@ export function normalizeIndexSchema(sql: string): string {
       /^(create virtual table )[`"[]documentation_search[`"\]]/u,
       '$1documentation_search',
     );
-}
-
-export function isSupportedDocumentationIndexFormat(version: number): boolean {
-  return SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS.includes(
-    version as (typeof SUPPORTED_DOCUMENTATION_INDEX_FORMAT_VERSIONS)[number],
-  );
 }

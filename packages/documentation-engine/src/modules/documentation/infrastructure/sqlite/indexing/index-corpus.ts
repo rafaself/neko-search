@@ -24,7 +24,7 @@ export function indexDocumentationCorpus(
   const parsedCorpus = DocumentationCorpusSchema.parse(corpus);
   const references = parsedCorpus.documents.flatMap((document) =>
     document.chunks.flatMap((chunk) =>
-      (chunk.references ?? []).map((reference, occurrenceIndex) => ({
+      chunk.references.map((reference, occurrenceIndex) => ({
         chunkId: chunk.id,
         occurrenceIndex,
         ...reference,

@@ -3,6 +3,7 @@ import type {
   CodeExampleSchema,
   DocumentationChunkSchema,
   DocumentationCorpusSchema,
+  DocumentationIngestionCorpusSchema,
   DocumentationFrontmatterSchema,
   DocumentationIdentitySchema,
   DocumentationLinkReferenceSchema,
@@ -44,3 +45,6 @@ export type NormalizedDocumentSource = z.infer<
 >;
 export type NormalizedDocument = z.infer<typeof NormalizedDocumentSchema>;
 export type DocumentationCorpus = z.infer<typeof DocumentationCorpusSchema>;
+export type DocumentationIngestionCorpus = z.infer<
+  typeof DocumentationIngestionCorpusSchema
+>;

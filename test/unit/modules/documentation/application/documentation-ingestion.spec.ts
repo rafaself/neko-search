@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { ingestSnapshot } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
 import { transformNestJsDocument } from '../../../../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
 import { writeDocumentationCorpus } from '@nestjs-docs/documentation-engine/infrastructure/filesystem/documentation-corpus-store.js';
+import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { loadIngestionFixtures } from '../../../../fixtures/ingestion.fixtures.js';
 let snapshot: DocumentationSnapshot;
@@ -22,7 +23,9 @@ describe('corpus output', () => {
   it('writes reproducible JSON and cleans staging files if replacement fails', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'nestjs-ingestion-test-'));
     try {
-      const corpus = ingestSnapshot(snapshot, transformNestJsDocument);
+      const corpus = resolveInternalDocumentationLinks(
+        ingestSnapshot(snapshot, transformNestJsDocument),
+      );
       const output = join(directory, 'nested', 'documentation.json');
       await writeDocumentationCorpus(corpus, output);
       const first = await readFile(output, 'utf8');

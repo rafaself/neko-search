@@ -19,7 +19,7 @@ const runtimeIndexFields = {
   documentationVersion: DocumentationVersionSchema,
   sourceRevision: nonEmptyStringSchema,
   schemaVersion: positiveIntegerSchema,
-  formatVersion: positiveIntegerSchema,
+  formatVersion: z.literal(2),
   documentCount: positiveIntegerSchema,
   chunkCount: positiveIntegerSchema,
 };
@@ -68,12 +68,11 @@ export const DocumentationIndexRuntimeManifestSchema = z
 export const DocumentationBuildManifestSchema = z
   .strictObject({
     manifestVersion: z.literal(DOCUMENTATION_BUILD_MANIFEST_VERSION),
-    snapshotFormatVersion: z
-      .literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION)
-      .optional(),
+    snapshotFormatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION),
     ...manifestIdentityFields,
     index: z.strictObject({
       ...runtimeIndexFields,
+      formatVersion: positiveIntegerSchema,
       file: z.literal('index.sqlite'),
     }),
     pipeline: z.strictObject({
@@ -84,12 +83,10 @@ export const DocumentationBuildManifestSchema = z
       maxChunkChars: positiveIntegerSchema,
       indexSchemaVersion: positiveIntegerSchema,
       indexFormatVersion: positiveIntegerSchema,
-      linkResolverVersion: positiveIntegerSchema.optional(),
+      linkResolverVersion: positiveIntegerSchema,
     }),
     corpus: z.strictObject({
-      formatVersion: z
-        .literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION)
-        .optional(),
+      formatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION),
       file: z.literal('corpus.json'),
       sha256: sha256Schema,
       documentCount: positiveIntegerSchema,
@@ -113,32 +110,6 @@ export const DocumentationBuildManifestSchema = z
         code: 'custom',
         path: ['pipeline'],
         message: 'Pipeline index versions must match the index metadata',
-      });
-    }
-    if (
-      manifest.snapshotFormatVersion ===
-        DOCUMENTATION_SNAPSHOT_FORMAT_VERSION &&
-      (manifest.corpus.formatVersion !==
-        DOCUMENTATION_SNAPSHOT_FORMAT_VERSION ||
-        manifest.pipeline.linkResolverVersion === undefined ||
-        manifest.index.formatVersion < 2)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['snapshotFormatVersion'],
-        message: 'Resolved-link snapshot metadata is incomplete',
-      });
-    }
-    if (
-      manifest.snapshotFormatVersion === undefined &&
-      (manifest.corpus.formatVersion !== undefined ||
-        manifest.pipeline.linkResolverVersion !== undefined ||
-        manifest.index.formatVersion !== 1)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['snapshotFormatVersion'],
-        message: 'Legacy snapshots must use format version 1',
       });
     }
     if (

@@ -6,6 +6,7 @@ import type {
   GitDocumentationSource,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { ingestSnapshot } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
+import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import {
   downloadDocumentation,
   REPOSITORY,
@@ -51,10 +52,8 @@ export async function ingestNestJsDocumentation(
   maxChunkChars = 4000,
 ): Promise<NestJsDocumentationIngestion> {
   const snapshot = await downloadDocumentation(version, fetcher);
-  const corpus = ingestSnapshot(
-    snapshot,
-    transformNestJsDocument,
-    maxChunkChars,
+  const corpus = resolveInternalDocumentationLinks(
+    ingestSnapshot(snapshot, transformNestJsDocument, maxChunkChars),
   );
   return { snapshot, corpus };
 }

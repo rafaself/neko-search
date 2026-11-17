@@ -13,7 +13,6 @@ import { validateRuntimeIndex } from './runtime-index.js';
 
 export class SQLiteDocumentationStore implements DocumentationSearchStore {
   private readonly database: DatabaseSync;
-  private readonly indexFormatVersion: number;
   private closed = false;
 
   constructor(
@@ -42,7 +41,6 @@ export class SQLiteDocumentationStore implements DocumentationSearchStore {
           'Documentation index contents do not match the validated manifest',
         );
       }
-      this.indexFormatVersion = summary.indexFormatVersion;
     } catch (error) {
       this.database.close();
       this.closed = true;
@@ -95,10 +93,9 @@ export class SQLiteDocumentationStore implements DocumentationSearchStore {
       .all(documentId, this.indexManifest.documentation.version)
       .map(toDocumentationRow);
     const referencesByChunk = new Map<string, DocumentationLinkReference[]>();
-    if (this.indexFormatVersion >= 2) {
-      const references = this.database
-        .prepare(
-          `SELECT reference.chunk_id AS chunkId, reference.href,
+    const references = this.database
+      .prepare(
+        `SELECT reference.chunk_id AS chunkId, reference.href,
               reference.start_offset AS startOffset,
               reference.end_offset AS endOffset,
               reference.target_document_id AS documentId,
@@ -110,18 +107,17 @@ export class SQLiteDocumentationStore implements DocumentationSearchStore {
               AND source_chunk.documentation_version = ?
             ORDER BY source_chunk.chunk_index ASC,
               reference.occurrence_index ASC`,
-        )
-        .all(documentId, this.indexManifest.documentation.version);
-      for (const row of references) {
-        const referenceRow = row as Record<string, unknown>;
-        if (typeof referenceRow.chunkId !== 'string') {
-          throw new Error('SQLite returned an invalid documentation reference');
-        }
-        const referencesForChunk =
-          referencesByChunk.get(referenceRow.chunkId) ?? [];
-        referencesForChunk.push(toDocumentationLinkReference(referenceRow));
-        referencesByChunk.set(referenceRow.chunkId, referencesForChunk);
+      )
+      .all(documentId, this.indexManifest.documentation.version);
+    for (const row of references) {
+      const referenceRow = row as Record<string, unknown>;
+      if (typeof referenceRow.chunkId !== 'string') {
+        throw new Error('SQLite returned an invalid documentation reference');
       }
+      const referencesForChunk =
+        referencesByChunk.get(referenceRow.chunkId) ?? [];
+      referencesForChunk.push(toDocumentationLinkReference(referenceRow));
+      referencesByChunk.set(referenceRow.chunkId, referencesForChunk);
     }
     return rows.map((row) => ({
       ...row,

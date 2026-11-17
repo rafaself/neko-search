@@ -1,11 +1,11 @@
 import type {
-  DocumentationCorpus,
+  DocumentationIngestionCorpus,
   DocumentationSnapshot,
   NormalizedDocument,
   SourceDocument,
 } from '../../domain/documentation.types.js';
 import {
-  DocumentationCorpusSchema,
+  DocumentationIngestionCorpusSchema,
   DocumentationSnapshotSchema,
 } from '../../domain/documentation.schemas.js';
 import type { DocumentationDocumentTransformer } from '../contracts/documentation-transformer.contract.js';
@@ -22,7 +22,7 @@ export function ingestSnapshot(
   transformDocument: DocumentationDocumentTransformer,
   maxChunkChars = 4000,
   options: DocumentationSnapshotIngestionOptions = {},
-): DocumentationCorpus {
+): DocumentationIngestionCorpus {
   const validatedSnapshot = DocumentationSnapshotSchema.parse(snapshot);
   const paths = new Set<string>();
   const urls = new Set<string>();
@@ -46,7 +46,7 @@ export function ingestSnapshot(
       );
     });
   if (!documents.length) throw new Error('Documentation snapshot is empty');
-  return DocumentationCorpusSchema.parse({
+  return DocumentationIngestionCorpusSchema.parse({
     version: validatedSnapshot.version,
     source: validatedSnapshot.source,
     documents,

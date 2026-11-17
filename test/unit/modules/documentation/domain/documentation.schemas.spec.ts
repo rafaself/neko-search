@@ -66,6 +66,7 @@ function normalizedDocument(
         markdown: 'Some documentation.',
         contentHash: 'd'.repeat(64),
         codeExamples: [],
+        references: [],
       },
     ],
   };
@@ -82,6 +83,7 @@ describe('documentation persistent contracts', () => {
         documents: [document],
       };
       const corpus = {
+        formatVersion: 2,
         version: '2025.1',
         source,
         documents: [normalizedDocument(source)],
@@ -125,6 +127,7 @@ describe('documentation persistent contracts', () => {
   it('rejects corpus version, provenance, and identity relationships that disagree', () => {
     const document = normalizedDocument(gitSource);
     const base = {
+      formatVersion: 2,
       version: '2025.1',
       source: gitSource,
       documents: [document],
@@ -155,6 +158,35 @@ describe('documentation persistent contracts', () => {
       DocumentationCorpusSchema.safeParse({
         ...base,
         documents: [{ ...document, version: '2024.2' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires the current corpus format and resolved reference lists', () => {
+    const document = normalizedDocument(gitSource);
+    const corpus = {
+      formatVersion: 2,
+      version: '2025.1',
+      source: gitSource,
+      documents: [document],
+    };
+    expect(DocumentationCorpusSchema.safeParse(corpus).success).toBe(true);
+    expect(
+      DocumentationCorpusSchema.safeParse({
+        version: corpus.version,
+        source: corpus.source,
+        documents: corpus.documents,
+      }).success,
+    ).toBe(false);
+    expect(
+      DocumentationCorpusSchema.safeParse({
+        ...corpus,
+        documents: [
+          {
+            ...document,
+            chunks: [{ ...document.chunks[0], references: undefined }],
+          },
+        ],
       }).success,
     ).toBe(false);
   });

@@ -107,15 +107,17 @@ describe('generic documentation indexes', () => {
   });
 
   it('rebuilds an incompatible index format during indexing', () => {
-    const oldPath = join(directory, 'old-format.sqlite');
-    const oldDatabase = new DatabaseSync(oldPath);
-    oldDatabase.exec(
+    const incompatiblePath = join(directory, 'incompatible.sqlite');
+    const incompatibleDatabase = new DatabaseSync(incompatiblePath);
+    incompatibleDatabase.exec(
       'CREATE VIRTUAL TABLE documentation_search USING fts5(title, markdown)',
     );
-    oldDatabase.close();
+    incompatibleDatabase.close();
 
-    writeIndex(oldPath, alpha);
-    expect(validateDocumentationIndex('alpha', alpha, oldPath)).toEqual({
+    writeIndex(incompatiblePath, alpha);
+    expect(
+      validateDocumentationIndex('alpha', alpha, incompatiblePath),
+    ).toEqual({
       documentCount: 1,
       chunkCount: 3,
     });
@@ -192,9 +194,15 @@ function makeCorpus(
     parseMarkdown(file.markdown, { path: file.path }),
   );
   return DocumentationCorpusSchema.parse({
+    formatVersion: 2,
     version,
     source,
-    documents: [document],
+    documents: [
+      {
+        ...document,
+        chunks: document.chunks.map((chunk) => ({ ...chunk, references: [] })),
+      },
+    ],
   });
 }
 
@@ -220,8 +228,12 @@ function makeMultiDocumentCorpus(): DocumentationCorpus {
     );
   });
   return DocumentationCorpusSchema.parse({
+    formatVersion: 2,
     version: 'alpha',
     source,
-    documents,
+    documents: documents.map((document) => ({
+      ...document,
+      chunks: document.chunks.map((chunk) => ({ ...chunk, references: [] })),
+    })),
   });
 }

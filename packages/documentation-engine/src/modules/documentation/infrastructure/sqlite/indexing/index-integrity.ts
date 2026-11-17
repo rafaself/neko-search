@@ -182,14 +182,7 @@ export function validateCorpusIndex(
     }
   }
 
-  if (validatedCorpus.formatVersion === 2) {
-    validateCorpusReferences(
-      validatedCorpus,
-      database,
-      documentIds,
-      chunkOwners,
-    );
-  }
+  validateCorpusReferences(validatedCorpus, database, documentIds, chunkOwners);
 
   return { documentCount: documentIds.size, chunkCount: expectedRows.length };
 }
@@ -207,9 +200,7 @@ function validateCorpusReferences(
   }> = [];
   for (const document of corpus.documents) {
     for (const chunk of document.chunks) {
-      for (const [occurrenceIndex, reference] of (
-        chunk.references ?? []
-      ).entries()) {
+      for (const [occurrenceIndex, reference] of chunk.references.entries()) {
         if (reference.endOffset > chunk.markdown.length) {
           throw new Error('Documentation link occurrence exceeds its chunk');
         }

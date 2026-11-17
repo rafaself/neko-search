@@ -8,7 +8,6 @@ import {
   DOCUMENTATION_INDEX_SCHEMA_VERSION,
   DOCUMENTATION_REFERENCES_SCHEMA,
   DOCUMENTATION_REFERENCES_TABLE,
-  isSupportedDocumentationIndexFormat,
   normalizeIndexSchema,
 } from './index-schema.js';
 
@@ -98,19 +97,17 @@ export function validateRuntimeIndex(
   if (
     metadata.get('schema_version') !==
       String(DOCUMENTATION_INDEX_SCHEMA_VERSION) ||
-    !isSupportedDocumentationIndexFormat(indexFormatVersion)
+    indexFormatVersion !== DOCUMENTATION_INDEX_FORMAT_VERSION
   ) {
     fail('index schema or format version is unsupported');
   }
-  if (indexFormatVersion === DOCUMENTATION_INDEX_FORMAT_VERSION) {
-    const referencesSql = tableSql.get(DOCUMENTATION_REFERENCES_TABLE);
-    if (
-      typeof referencesSql !== 'string' ||
-      normalizeIndexSchema(referencesSql) !==
-        normalizeIndexSchema(DOCUMENTATION_REFERENCES_SCHEMA)
-    ) {
-      fail('documentation references table is missing or incompatible');
-    }
+  const referencesSql = tableSql.get(DOCUMENTATION_REFERENCES_TABLE);
+  if (
+    typeof referencesSql !== 'string' ||
+    normalizeIndexSchema(referencesSql) !==
+      normalizeIndexSchema(DOCUMENTATION_REFERENCES_SCHEMA)
+  ) {
+    fail('documentation references table is missing or incompatible');
   }
   if (metadata.get('documentation_version') !== version) {
     fail('selected documentation version does not match index metadata');

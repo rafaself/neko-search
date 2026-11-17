@@ -2,9 +2,13 @@ import { posix } from 'node:path';
 import type {
   DocumentationCorpus,
   DocumentationChunk,
+  DocumentationIngestionCorpus,
   NormalizedDocument,
 } from '../../domain/documentation.types.js';
-import { DocumentationCorpusSchema } from '../../domain/documentation.schemas.js';
+import {
+  DocumentationCorpusSchema,
+  DocumentationIngestionCorpusSchema,
+} from '../../domain/documentation.schemas.js';
 import { parseMarkdown } from './markdown-parser.js';
 
 export const DOCUMENTATION_LINK_RESOLVER_VERSION = 1;
@@ -13,9 +17,9 @@ type PageLookup = Map<string, NormalizedDocument[]>;
 
 /** Resolve links only against pages already present in the local snapshot. */
 export function resolveInternalDocumentationLinks(
-  input: DocumentationCorpus,
+  input: DocumentationIngestionCorpus,
 ): DocumentationCorpus {
-  const corpus = DocumentationCorpusSchema.parse(input);
+  const corpus = DocumentationIngestionCorpusSchema.parse(input);
   const byCanonicalUrl: PageLookup = new Map();
   const bySourcePath: PageLookup = new Map();
   for (const document of corpus.documents) {
