@@ -18,7 +18,7 @@ Install curated documentation, build from your own files, or ingest a directory 
 
 SQLite support comes from Node.js. You do not need a separate database server, a Git installation for GitHub ingestion, or a search API key.
 
-## Install the CLI
+## Install NekoSearch
 
 ```sh
 npm install --global nekosearch
@@ -26,6 +26,15 @@ nekosearch --help
 ```
 
 The executable is named `nekosearch`. Installation and package upgrades do not run interactive setup or download optional documentation.
+
+::: tip Ask your agent to configure NekoSearch
+Paste this prompt into your AI coding agent:
+
+```text
+Install NekoSearch globally with npm if it is not already installed, then run `nekosearch setup` in an interactive terminal. Help me choose optional documentation and an MCP client. Before setup applies any changes, summarize the selections and wait for my confirmation. If my client is not available in setup, stop and show me the relevant NekoSearch client configuration instructions. When setup finishes, explain how to reconnect my client and make a first search.
+```
+
+:::
 
 ## What is included?
 
