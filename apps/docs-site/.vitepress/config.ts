@@ -91,8 +91,8 @@ export default defineConfig({
     nav: [
       {
         text: 'Getting Started',
-        link: '/getting-started/installation',
-        activeMatch: '/getting-started/',
+        link: '/',
+        activeMatch: '^/$|/getting-started/',
       },
       {
         text: 'Guides',

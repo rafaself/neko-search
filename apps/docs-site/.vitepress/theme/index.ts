@@ -8,6 +8,7 @@ const Breadcrumbs = defineComponent({
   setup() {
     const { page } = useData();
     return () => {
+      if (page.value.relativePath === 'index.md') return null;
       const path = `/${page.value.relativePath.replace(/\.md$/u, '')}`;
       const group = sidebar.find(({ items }) =>
         items.some(({ link }) => link === path),
@@ -22,7 +23,13 @@ const Breadcrumbs = defineComponent({
           h('span', { 'aria-hidden': 'true' }, '/'),
           h(
             'a',
-            { href: withBase(`${group.items[0]!.link}.html`) },
+            {
+              href: withBase(
+                group.items[0]!.link === '/'
+                  ? '/'
+                  : `${group.items[0]!.link}.html`,
+              ),
+            },
             group.text,
           ),
           h('span', { 'aria-hidden': 'true' }, '/'),

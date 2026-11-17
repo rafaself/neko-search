@@ -4,6 +4,7 @@ export const sidebar = [
   {
     text: 'Getting Started',
     items: [
+      { text: 'Introduction', link: '/' },
       { text: 'Installation', link: '/getting-started/installation' },
       { text: 'Quick Start', link: '/getting-started/quick-start' },
       { text: 'Interactive Setup', link: '/getting-started/setup' },
