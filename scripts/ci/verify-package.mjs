@@ -31,6 +31,9 @@ export async function verifyPackage(root = rootDirectory) {
 
   const requiredFiles = [
     'dist/apps/nekosearch/cli.js',
+    'dist/apps/nekosearch/mcp-command.js',
+    'dist/apps/nekosearch/setup.js',
+    'dist/apps/nekosearch/setup-clients.js',
     'dist/apps/nekosearch/catalog.js',
     'dist/apps/nekosearch/remote-snapshots.js',
     'dist/apps/nekosearch/serve.js',
@@ -54,6 +57,9 @@ export async function verifyPackage(root = rootDirectory) {
   const files = packageMetadata.files ?? [];
   if (
     packageMetadata.private === true ||
+    ['preinstall', 'install', 'postinstall'].some((hook) =>
+      Object.hasOwn(packageMetadata.scripts ?? {}, hook),
+    ) ||
     packageMetadata.bin?.nekosearch !== './dist/apps/nekosearch/cli.js' ||
     Object.keys(packageMetadata.bin ?? {}).length !== 1 ||
     packageMetadata.dependencies?.['@nestjs-docs/documentation-engine'] !==

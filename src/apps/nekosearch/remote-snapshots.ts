@@ -17,6 +17,10 @@ import {
 const OFFICIAL_SOURCE_REPOSITORY = 'https://github.com/nestjs/docs.nestjs.com';
 const SUPPORTED_VERSIONS = ['11', '12'] as const;
 
+export const CURATED_REMOTE_SNAPSHOT_RECIPES = SUPPORTED_VERSIONS.map(
+  (version) => ({ source: 'nestjs', version, selector: `nestjs@${version}` }),
+);
+
 type NestJsVersion = (typeof SUPPORTED_VERSIONS)[number];
 type RemoteOperation = 'add' | 'update';
 
@@ -30,6 +34,7 @@ export interface NestJsSnapshotBuilder {
     outputDirectory: string,
     fetcher: typeof fetch,
     resolvedSource: GitDocumentationSource,
+    onProgress?: (phase: 'downloading' | 'indexing') => void,
   ): Promise<unknown>;
 }
 
@@ -37,7 +42,11 @@ export interface RemoteSnapshotOptions extends CatalogOptions {
   /** Injectable HTTPS transport and builder for deterministic offline tests. */
   fetcher?: typeof fetch;
   sourceBuilder?: NestJsSnapshotBuilder;
+  onProgress?: (phase: RemoteSnapshotPhase) => void;
 }
+
+export type RemoteSnapshotPhase =
+  'resolving' | 'downloading' | 'indexing' | 'validating' | 'installing';
 
 export type RemoteSnapshotResult = SnapshotUpdateResult;
 
@@ -109,6 +118,7 @@ export async function installRemoteSnapshot(
 
   const fetcher = options.fetcher ?? fetch;
   const sourceBuilder = options.sourceBuilder ?? (await loadSourceBuilder());
+  options.onProgress?.('resolving');
   const resolvedSource = await resolveRecipe(
     targetVersion,
     sourceBuilder,
@@ -143,7 +153,9 @@ export async function installRemoteSnapshot(
       snapshotDirectory,
       fetcher,
       resolvedSource,
+      options.onProgress,
     );
+    options.onProgress?.('validating');
     const snapshot = await validateSnapshotDirectory(snapshotDirectory);
     if (
       snapshot.source !== source ||
@@ -160,6 +172,7 @@ export async function installRemoteSnapshot(
     }
 
     if (operation === 'add') {
+      options.onProgress?.('installing');
       const entry = await addSnapshot(snapshotDirectory, options, {
         trackingRecipe: isImmutableRef(resolvedSource.ref)
           ? null
@@ -167,6 +180,7 @@ export async function installRemoteSnapshot(
       });
       return { entry, changed: true };
     }
+    options.onProgress?.('installing');
     return await updateSnapshot(snapshotDirectory, options, {
       trackingRecipe: isImmutableRef(resolvedSource.ref)
         ? null

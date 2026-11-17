@@ -13,7 +13,13 @@ interface Registration {
 }
 
 describe('NekoSearch Codex MCP configuration', () => {
-  const nekosearchCommand = '/opt/nekosearch/bin/nekosearch';
+  const serverCommand = {
+    command: '/opt/node/bin/node',
+    args: ['/opt/nekosearch/dist/apps/nekosearch/cli.js', 'serve'] as [
+      string,
+      'serve',
+    ],
+  };
 
   it('reports a missing Codex CLI without attempting a registration', async () => {
     const missingCodex: CodexCommandRunner = () =>
@@ -24,7 +30,7 @@ describe('NekoSearch Codex MCP configuration', () => {
       );
 
     await expect(
-      configureCodexMcp({ nekosearchCommand, runCommand: missingCodex }),
+      configureCodexMcp({ serverCommand, runCommand: missingCodex }),
     ).rejects.toThrow(/Codex CLI was not found/u);
   });
 
@@ -32,19 +38,26 @@ describe('NekoSearch Codex MCP configuration', () => {
     const { registrations, calls, runCommand } = createCodexRunner();
 
     await expect(
-      configureCodexMcp({ nekosearchCommand, runCommand }),
+      configureCodexMcp({ serverCommand, runCommand }),
     ).resolves.toBe('added');
     expect(calls).toEqual([
       ['mcp', 'list', '--json'],
-      ['mcp', 'add', 'nekosearch', '--', nekosearchCommand, 'serve'],
+      [
+        'mcp',
+        'add',
+        'nekosearch',
+        '--',
+        serverCommand.command,
+        ...serverCommand.args,
+      ],
     ]);
     expect(registrations).toEqual([
       {
         name: 'nekosearch',
         transport: {
           type: 'stdio',
-          command: nekosearchCommand,
-          args: ['serve'],
+          command: serverCommand.command,
+          args: serverCommand.args,
         },
       },
     ]);
@@ -52,23 +65,26 @@ describe('NekoSearch Codex MCP configuration', () => {
 
   it('leaves an already matching registration unchanged', async () => {
     const { calls, runCommand } = createCodexRunner([
-      stdioRegistration(nekosearchCommand, ['serve']),
+      stdioRegistration(serverCommand.command, serverCommand.args),
     ]);
 
     await expect(
-      configureCodexMcp({ nekosearchCommand, runCommand }),
+      configureCodexMcp({ serverCommand, runCommand }),
     ).resolves.toBe('unchanged');
     expect(calls).toEqual([['mcp', 'list', '--json']]);
   });
 
   it('preserves a conflicting registration unless force is set', async () => {
-    const conflicting = stdioRegistration('/another/nekosearch', ['serve']);
+    const conflicting = stdioRegistration('/another/node', [
+      '/another/cli.js',
+      'serve',
+    ]);
     const { registrations, calls, runCommand } = createCodexRunner([
       conflicting,
     ]);
 
     await expect(
-      configureCodexMcp({ nekosearchCommand, runCommand }),
+      configureCodexMcp({ serverCommand, runCommand }),
     ).rejects.toThrow(/pass --force to replace it/u);
     expect(registrations).toEqual([conflicting]);
     expect(calls).toEqual([['mcp', 'list', '--json']]);
@@ -76,24 +92,31 @@ describe('NekoSearch Codex MCP configuration', () => {
 
   it('replaces a conflicting registration through Codex MCP commands with force', async () => {
     const { registrations, calls, runCommand } = createCodexRunner([
-      stdioRegistration('/another/nekosearch', ['serve']),
+      stdioRegistration('/another/node', ['/another/cli.js', 'serve']),
     ]);
 
     await expect(
-      configureCodexMcp({ nekosearchCommand, force: true, runCommand }),
+      configureCodexMcp({ serverCommand, force: true, runCommand }),
     ).resolves.toBe('replaced');
     expect(calls).toEqual([
       ['mcp', 'list', '--json'],
       ['mcp', 'remove', 'nekosearch'],
-      ['mcp', 'add', 'nekosearch', '--', nekosearchCommand, 'serve'],
+      [
+        'mcp',
+        'add',
+        'nekosearch',
+        '--',
+        serverCommand.command,
+        ...serverCommand.args,
+      ],
     ]);
     expect(registrations).toEqual([
       {
         name: 'nekosearch',
         transport: {
           type: 'stdio',
-          command: nekosearchCommand,
-          args: ['serve'],
+          command: serverCommand.command,
+          args: serverCommand.args,
         },
       },
     ]);

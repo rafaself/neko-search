@@ -65,13 +65,16 @@ export async function buildNestJsDocumentationSnapshot(
   outputDirectory: string,
   fetcher: typeof fetch = fetch,
   resolvedSource?: GitDocumentationSource,
+  onProgress?: (phase: 'downloading' | 'indexing') => void,
 ): Promise<DocumentationBuildSummary> {
   const recipe = getNestJsDocumentationRecipe(version);
+  onProgress?.('downloading');
   const snapshot = await downloadDocumentation(
     version,
     fetcher,
     resolvedSource,
   );
+  onProgress?.('indexing');
   return buildDocumentationSnapshot({
     identity: { id: 'nestjs', version },
     snapshot,

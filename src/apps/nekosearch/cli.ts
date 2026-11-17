@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { serve } from './serve.js';
@@ -13,7 +12,17 @@ import { parseStatusArguments, renderStatus } from './status.js';
 
 const [command, ...arguments_] = process.argv.slice(2);
 
-if (command === 'build') {
+if (command === 'setup' && arguments_.length === 0) {
+  void import('./setup.js')
+    .then(({ runSetup }) => runSetup())
+    .then((exitCode) => {
+      if (exitCode !== 0) process.exitCode = exitCode;
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(`nekosearch setup failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
+} else if (command === 'build') {
   runBuildCommand(arguments_);
 } else if (
   command === 'mcp' &&
@@ -253,13 +262,16 @@ function runGitHubSnapshotCommand(arguments_: string[]): void {
 }
 
 function runCodexConfigureCommand(force: boolean): void {
-  const nekosearchCommand = resolve(
-    process.argv[1] ?? fileURLToPath(import.meta.url),
-  );
   void import('./codex-config.js')
-    .then(({ configureCodexMcp }) =>
-      configureCodexMcp({ nekosearchCommand, force }),
-    )
+    .then(async ({ configureCodexMcp }) => {
+      const { createNekosearchStdioCommand } = await import('./mcp-command.js');
+      return configureCodexMcp({
+        serverCommand: createNekosearchStdioCommand(
+          fileURLToPath(import.meta.url),
+        ),
+        force,
+      });
+    })
     .then((result) => {
       const message = {
         added: 'Configured Codex MCP server nekosearch.',
@@ -281,6 +293,7 @@ function usage(): string {
     'NekoSearch is a local, read-only MCP server for documentation snapshots.',
     '',
     'Usage:',
+    '  nekosearch setup                   (interactive first-run setup)',
     '  nekosearch build <docs-dir> --id <source@version> --output <snapshot-dir> [--clean]',
     '  nekosearch serve',
     '  nekosearch list',
@@ -298,6 +311,8 @@ function usage(): string {
     '',
     'Network access:',
     '  build, list, status, remove, add --dir, add --from, serve, and mcp configure codex use local files.',
+    '  setup reads local client settings; only curated docs you select require network access.',
+    '  setup writes client settings only after showing changes and receiving confirmation.',
     '  add --github fetches a public GitHub source over HTTPS and pins the resolved commit.',
     '  add/update nestjs@<major> fetch official documentation over HTTPS.',
     '  status --check-upstream resolves tracked refs over HTTPS without downloading docs.',

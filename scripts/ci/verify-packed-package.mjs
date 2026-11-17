@@ -156,6 +156,28 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
   await assert.rejects(readFile(mdxExecutionMarker), { code: 'ENOENT' });
 
+  const isolatedHome = join(project, 'setup-user-home');
+  const setupResult = runResult(binary, ['setup'], {
+    cwd: project,
+    env: {
+      ...guardedEnvironment,
+      HOME: isolatedHome,
+      USERPROFILE: isolatedHome,
+    },
+  });
+  assert.equal(
+    setupResult.status,
+    2,
+    'non-TTY setup should exit with guidance',
+  );
+  assert.match(setupResult.stderr, /needs an interactive terminal/u);
+  await assert.rejects(readFile(catalogFile), { code: 'ENOENT' });
+  await assert.rejects(readFile(networkMarker), { code: 'ENOENT' });
+  assert.ok(
+    !(await readdir(project)).includes('setup-user-home'),
+    'non-TTY setup must not create or edit client settings',
+  );
+
   const initialCatalog = run(binary, ['list'], {
     cwd: project,
     env: guardedEnvironment,
@@ -758,7 +780,12 @@ async function verifyCodexConfiguration(
     isAbsolute(state.registrations[0].transport.command),
     'Codex must receive an absolute NekoSearch executable path',
   );
-  assert.deepEqual(state.registrations[0].transport.args, ['serve']);
+  assert.equal(state.registrations[0].transport.command, process.execPath);
+  const registeredArgs = state.registrations[0].transport.args;
+  assert.deepEqual(registeredArgs, [
+    join(project, 'node_modules', 'nekosearch', 'dist/apps/nekosearch/cli.js'),
+    'serve',
+  ]);
   const registeredCommand = state.registrations[0].transport.command;
 
   assert.match(
@@ -804,12 +831,12 @@ async function verifyCodexConfiguration(
     ['mcp', 'list', '--json'],
     ['mcp', 'list', '--json'],
     ['mcp', 'remove', 'nekosearch'],
-    ['mcp', 'add', 'nekosearch', '--', registeredCommand, 'serve'],
+    ['mcp', 'add', 'nekosearch', '--', registeredCommand, ...registeredArgs],
   ]);
   assert.deepEqual(state.registrations[0].transport, {
     type: 'stdio',
     command: registeredCommand,
-    args: ['serve'],
+    args: registeredArgs,
   });
   return {
     stateFile,
@@ -884,6 +911,9 @@ async function main() {
       'licenses/nestjs-docs-v11-LICENSE',
       'licenses/nestjs-docs-v12-LICENSE',
       'dist/apps/nekosearch/cli.js',
+      'dist/apps/nekosearch/mcp-command.js',
+      'dist/apps/nekosearch/setup.js',
+      'dist/apps/nekosearch/setup-clients.js',
       'dist/apps/nekosearch/codex-config.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
@@ -1049,6 +1079,7 @@ process.once('exit', () => {
       cliSource,
       codexConfigSource,
       serveSource,
+      setupSource,
       remoteSnapshotSource,
       buildSource,
     ] = await Promise.all([
@@ -1058,6 +1089,7 @@ process.once('exit', () => {
         'utf8',
       ),
       readFile(join(installedPackage, 'dist/apps/nekosearch/serve.js'), 'utf8'),
+      readFile(join(installedPackage, 'dist/apps/nekosearch/setup.js'), 'utf8'),
       readFile(
         join(installedPackage, 'dist/apps/nekosearch/remote-snapshots.js'),
         'utf8',
@@ -1067,15 +1099,18 @@ process.once('exit', () => {
     assert.match(cliSource, /import\('\.\/remote-snapshots\.js'\)/u);
     assert.match(cliSource, /import\('\.\/build\.js'\)/u);
     assert.match(cliSource, /import\('\.\/codex-config\.js'\)/u);
+    assert.match(cliSource, /import\('\.\/setup\.js'\)/u);
     assert.doesNotMatch(cliSource, /^import .*remote-snapshots/mu);
     assert.doesNotMatch(cliSource, /^import .*build\.js/mu);
     assert.doesNotMatch(cliSource, /^import .*codex-config\.js/mu);
+    assert.doesNotMatch(cliSource, /^import .*setup\.js/mu);
     assert.match(codexConfigSource, /execFile\(/u);
     assert.doesNotMatch(codexConfigSource, /shell:\s*true/u);
     assert.doesNotMatch(
       serveSource,
-      /remote-snapshots|markdown-parser|document-normalizer|docs-indexer|build-runtime/u,
+      /remote-snapshots|setup|@clack\/prompts|markdown-parser|document-normalizer|docs-indexer|build-runtime/u,
     );
+    assert.match(setupSource, /@clack\/prompts/u);
     assert.doesNotMatch(
       remoteSnapshotSource,
       /markdown-parser|document-normalizer|docs-indexer/u,
@@ -1145,6 +1180,16 @@ process.once('exit', () => {
       installedDependencyNames.has('json5'),
       'the curated source parser must be available to the on-demand builder',
     );
+    for (const requiredSetupDependency of [
+      '@clack/prompts',
+      'jsonc-parser',
+      'smol-toml',
+    ]) {
+      assert.ok(
+        installedDependencyNames.has(requiredSetupDependency),
+        `${requiredSetupDependency} must be installed for interactive setup`,
+      );
+    }
     for (const developmentOnlyPackage of [
       'typescript',
       'jest',

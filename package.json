@@ -45,11 +45,14 @@
     "licenses/nestjs-docs-v12-LICENSE"
   ],
   "dependencies": {
+    "@clack/prompts": "^1.9.0",
     "@mdx-js/mdx": "^3.1.1",
     "@modelcontextprotocol/server": "^2.4.0",
     "@nestjs-docs/documentation-engine": "0.1.0",
     "json5": "^2.2.3",
+    "jsonc-parser": "^3.3.1",
     "remark-gfm": "^4.0.1",
+    "smol-toml": "^1.9.1",
     "zod": "^4.6.7"
   },
   "bundleDependencies": [

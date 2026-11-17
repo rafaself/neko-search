@@ -53,6 +53,9 @@ describe('npm package verification', () => {
 
     const requiredFiles = [
       'dist/apps/nekosearch/cli.js',
+      'dist/apps/nekosearch/mcp-command.js',
+      'dist/apps/nekosearch/setup.js',
+      'dist/apps/nekosearch/setup-clients.js',
       'dist/apps/nekosearch/catalog.js',
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/serve.js',

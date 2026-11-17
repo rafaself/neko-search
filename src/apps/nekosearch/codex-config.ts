@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { isAbsolute, win32 } from 'node:path';
+import { arraysEqual, type NekosearchStdioCommand } from './mcp-command.js';
 
 const CODEX_MCP_NAME = 'nekosearch';
 const CODEX_LIST_ARGS = ['mcp', 'list', '--json'];
@@ -17,8 +18,8 @@ export type CodexCommandRunner = (
 ) => Promise<CodexCommandResult>;
 
 export interface ConfigureCodexMcpOptions {
-  /** Absolute executable path for the currently running nekosearch CLI. */
-  nekosearchCommand: string;
+  /** Absolute, shell-free command used to start this NekoSearch installation. */
+  serverCommand: NekosearchStdioCommand;
   force?: boolean;
   codexCommand?: string;
   /** Injectable runner for deterministic command and conflict tests. */
@@ -27,14 +28,22 @@ export interface ConfigureCodexMcpOptions {
 
 export type ConfigureCodexMcpResult = 'added' | 'replaced' | 'unchanged';
 
-/** Register the current CLI with Codex using Codex's supported MCP commands. */
-export async function configureCodexMcp(
-  options: ConfigureCodexMcpOptions,
-): Promise<ConfigureCodexMcpResult> {
-  if (!isAbsolutePath(options.nekosearchCommand)) {
-    throw new Error('The nekosearch executable path must be absolute');
-  }
+export type CodexMcpInspection =
+  | { state: 'available' }
+  | { state: 'already configured' }
+  | { state: 'conflict'; reason: string; replaceable: boolean };
 
+export interface InspectCodexMcpOptions {
+  serverCommand: NekosearchStdioCommand;
+  codexCommand?: string;
+  runCommand?: CodexCommandRunner;
+}
+
+/** Inspect Codex's user registration without changing it. */
+export async function inspectCodexMcp(
+  options: InspectCodexMcpOptions,
+): Promise<CodexMcpInspection> {
+  assertServerCommand(options.serverCommand);
   const codexCommand = options.codexCommand ?? 'codex';
   const runCommand = options.runCommand ?? executeCodexCommand;
   const registrations = await listCodexServers(codexCommand, runCommand);
@@ -42,28 +51,57 @@ export async function configureCodexMcp(
     (registration) => registration.name === CODEX_MCP_NAME,
   );
   if (matchingNames.length > 1) {
-    throw new Error(
-      `Codex returned multiple MCP registrations named ${CODEX_MCP_NAME}`,
-    );
+    return {
+      state: 'conflict',
+      reason: `Codex returned multiple MCP registrations named ${CODEX_MCP_NAME}`,
+      replaceable: false,
+    };
   }
-
   const existing = matchingNames[0];
-  if (existing && registrationMatches(existing, options.nekosearchCommand)) {
-    return 'unchanged';
-  }
-  if (existing && !options.force) {
-    throw new Error(
-      `Codex already has a different MCP registration named ${CODEX_MCP_NAME}; pass --force to replace it`,
-    );
+  if (!existing) return { state: 'available' };
+  return registrationMatches(existing, options.serverCommand)
+    ? { state: 'already configured' }
+    : {
+        state: 'conflict',
+        reason: `Codex already has a different MCP registration named ${CODEX_MCP_NAME}`,
+        replaceable: true,
+      };
+}
+
+/** Register the current CLI with Codex using Codex's supported MCP commands. */
+export async function configureCodexMcp(
+  options: ConfigureCodexMcpOptions,
+): Promise<ConfigureCodexMcpResult> {
+  assertServerCommand(options.serverCommand);
+  const codexCommand = options.codexCommand ?? 'codex';
+  const runCommand = options.runCommand ?? executeCodexCommand;
+  const inspection = await inspectCodexMcp({
+    serverCommand: options.serverCommand,
+    codexCommand,
+    runCommand,
+  });
+  if (inspection.state === 'already configured') return 'unchanged';
+  if (
+    inspection.state === 'conflict' &&
+    (!options.force || !inspection.replaceable)
+  ) {
+    throw new Error(`${inspection.reason}; pass --force to replace it`);
   }
 
-  const replaced = existing !== undefined;
+  const replaced = inspection.state === 'conflict';
   if (replaced) {
     await runCodex(codexCommand, ['mcp', 'remove', CODEX_MCP_NAME], runCommand);
   }
   await runCodex(
     codexCommand,
-    ['mcp', 'add', CODEX_MCP_NAME, '--', options.nekosearchCommand, 'serve'],
+    [
+      'mcp',
+      'add',
+      CODEX_MCP_NAME,
+      '--',
+      options.serverCommand.command,
+      ...options.serverCommand.args,
+    ],
     runCommand,
   );
   return replaced ? 'replaced' : 'added';
@@ -108,15 +146,26 @@ function isCodexServerRegistration(
 
 function registrationMatches(
   registration: CodexServerRegistration,
-  command: string,
+  command: NekosearchStdioCommand,
 ): boolean {
   return (
     registration.transport.type === 'stdio' &&
-    registration.transport.command === command &&
+    registration.transport.command === command.command &&
     Array.isArray(registration.transport.args) &&
-    registration.transport.args.length === 1 &&
-    registration.transport.args[0] === 'serve'
+    arraysEqual(registration.transport.args, command.args)
   );
+}
+
+function assertServerCommand(command: NekosearchStdioCommand): void {
+  if (
+    !isAbsolutePath(command.command) ||
+    !isAbsolutePath(command.args[0]) ||
+    command.args[1] !== 'serve'
+  ) {
+    throw new Error(
+      'NekoSearch MCP command and CLI path must be absolute and end with serve',
+    );
+  }
 }
 
 async function runCodex(
