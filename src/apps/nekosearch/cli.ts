@@ -28,11 +28,17 @@ if (command === 'setup' && arguments_.length === 0) {
 } else if (
   command === 'mcp' &&
   arguments_[0] === 'configure' &&
-  arguments_[1] === 'codex' &&
-  (arguments_.length === 2 ||
-    (arguments_.length === 3 && arguments_[2] === '--force'))
+  arguments_.length === 2 &&
+  arguments_[1]
 ) {
-  runCodexConfigureCommand(arguments_.length === 3);
+  runMcpProviderCommand('configure', arguments_[1]);
+} else if (
+  command === 'mcp' &&
+  arguments_[0] === 'remove' &&
+  arguments_.length === 2 &&
+  arguments_[1]
+) {
+  runMcpProviderCommand('remove', arguments_[1]);
 } else if (command === 'serve' && arguments_.length === 0) {
   serve().catch((error: unknown) => {
     process.stderr.write(`nekosearch serve failed: ${formatError(error)}\n`);
@@ -259,28 +265,33 @@ function runGitHubSnapshotCommand(arguments_: string[]): void {
     });
 }
 
-function runCodexConfigureCommand(force: boolean): void {
-  void import('./codex-config.js')
-    .then(async ({ configureCodexMcp }) => {
-      const { createNekosearchStdioCommand } = await import('./mcp-command.js');
-      return configureCodexMcp({
-        serverCommand: createNekosearchStdioCommand(
-          fileURLToPath(import.meta.url),
-        ),
-        force,
-      });
+function runMcpProviderCommand(
+  operation: 'configure' | 'remove',
+  provider: string,
+): void {
+  void Promise.all([import('./setup-clients.js'), import('./mcp-command.js')])
+    .then(([setupClients, mcpCommand]) => {
+      const serverCommand = mcpCommand.createNekosearchStdioCommand(
+        fileURLToPath(import.meta.url),
+      );
+      return operation === 'configure'
+        ? setupClients.configureSetupClient(provider, { serverCommand })
+        : setupClients.removeSetupClient(provider, { serverCommand });
     })
     .then((result) => {
-      const message = {
-        added: 'Configured Codex MCP server nekosearch.',
-        replaced: 'Replaced Codex MCP server nekosearch.',
-        unchanged: 'Codex MCP server nekosearch is already configured.',
-      }[result];
+      const message =
+        operation === 'configure'
+          ? result === 'added'
+            ? `Configured ${provider} MCP server nekosearch.`
+            : `${provider} MCP server nekosearch is already configured.`
+          : result === 'removed'
+            ? `Removed ${provider} MCP server nekosearch.`
+            : `${provider} MCP server nekosearch is already absent.`;
       process.stdout.write(`${message}\n`);
     })
     .catch((error: unknown) => {
       process.stderr.write(
-        `nekosearch mcp configure codex failed: ${formatError(error)}\n`,
+        `nekosearch mcp ${operation} ${provider} failed: ${formatError(error)}\n`,
       );
       process.exitCode = 1;
     });

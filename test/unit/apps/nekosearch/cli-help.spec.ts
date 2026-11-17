@@ -18,7 +18,7 @@ describe('nekosearch CLI help', () => {
     },
   );
 
-  it('uses a concise Codex-style command reference', () => {
+  it('uses a concise command reference with generic provider management', () => {
     const help = renderCliHelp();
 
     expect(help).toContain('NekoSearch\nLocal, read-only MCP server');
@@ -28,6 +28,8 @@ describe('nekosearch CLI help', () => {
     expect(help.match(/\bnekosearch\b/gu)).toHaveLength(1);
     expect(help).toContain('  help                   Print this message');
     expect(help).toContain('  add --from <snapshot-dir>');
+    expect(help).toContain('  mcp configure <provider>');
+    expect(help).toContain('  mcp remove <provider>');
     expect(help).toContain('  update nestjs@<major>');
   });
 

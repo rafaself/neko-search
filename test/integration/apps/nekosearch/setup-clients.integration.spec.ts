@@ -1,450 +1,385 @@
 import {
   chmodSync,
-  existsSync,
   mkdtempSync,
   mkdirSync,
-  readFileSync,
-  readdirSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
-import { parse as parseToml } from 'smol-toml';
 import {
   configureSetupClient,
   inspectSetupClients,
   removeSetupClient,
 } from '../../../../src/apps/nekosearch/setup-clients.js';
+import {
+  buildWindowsCommandLine,
+  providerCommandRunner,
+  resolveProviderExecutable,
+  runProviderCommand,
+  type ProviderCommandRunner,
+} from '../../../../src/apps/nekosearch/providers/provider-runner.js';
 import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
 
-let root: string;
-let homeDirectory: string;
-let command: NekosearchStdioCommand;
+const SERVER_COMMAND: NekosearchStdioCommand = {
+  command: '/node runtime with spaces/node',
+  args: ['/installed package with spaces/dist/nekosearch/cli.js', 'serve'],
+};
 
-describe('NekoSearch setup MCP client adapters', () => {
+describe('NekoSearch MCP provider adapters', () => {
+  let root: string;
+  let home: string;
+  let grokHome: string;
+  let registrations: Record<string, unknown>[];
+  let calls: string[][];
+  let runner: ProviderCommandRunner;
+
+  const options = (
+    providerRunner: ProviderCommandRunner = runner,
+  ): {
+    homeDirectory: string;
+    environment: NodeJS.ProcessEnv;
+    platform: NodeJS.Platform;
+    serverCommand: NekosearchStdioCommand;
+    providerRunner: ProviderCommandRunner;
+  } => ({
+    homeDirectory: home,
+    environment: { HOME: home, GROK_HOME: grokHome, PATH: '' },
+    platform: process.platform,
+    serverCommand: SERVER_COMMAND,
+    providerRunner,
+  });
+
+  const userRegistration = (
+    command = SERVER_COMMAND.command,
+    origin: string = join(grokHome, 'config.toml'),
+  ): Record<string, unknown> => ({
+    name: 'nekosearch',
+    origin,
+    transport: 'stdio',
+    command,
+    args: SERVER_COMMAND.args,
+  });
+
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'nekosearch setup clients with spaces '));
-    homeDirectory = join(root, 'user home');
-    mkdirSync(homeDirectory);
-    command = {
-      command: join(root, 'node executable with spaces'),
-      args: [
-        join(root, 'installed package', 'dist', 'apps', 'nekosearch', 'cli.js'),
-        'serve',
-      ],
+    root = mkdtempSync(
+      join(tmpdir(), 'nekosearch provider setup with spaces '),
+    );
+    home = join(root, 'user home');
+    grokHome = join(root, 'grok home');
+    mkdirSync(home);
+    mkdirSync(grokHome);
+    registrations = [];
+    calls = [];
+    runner = {
+      resolve: () => join(root, 'bin with spaces', 'grok'),
+      run: (_executable, arguments_) => {
+        calls.push(arguments_);
+        if (arguments_[0] === 'inspect') {
+          return Promise.resolve({
+            stdout: JSON.stringify({ mcpServers: registrations }),
+            stderr: '',
+          });
+        }
+        if (arguments_[0] === 'mcp' && arguments_[1] === 'add') {
+          const separator = arguments_.indexOf('--');
+          registrations.push({
+            name: arguments_[separator - 1],
+            origin: join(grokHome, 'config.toml'),
+            transport: 'stdio',
+            command: arguments_[separator + 1],
+            args: arguments_.slice(separator + 2),
+          });
+          return Promise.resolve({ stdout: '', stderr: '' });
+        }
+        if (arguments_[0] === 'mcp' && arguments_[1] === 'remove') {
+          registrations = registrations.filter(
+            (registration) => registration.name !== arguments_.at(-1),
+          );
+          return Promise.resolve({ stdout: '', stderr: '' });
+        }
+        throw new Error(`Unexpected Grok command: ${arguments_.join(' ')}`);
+      },
     };
   });
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('preserves JSONC settings when adding and removing its registration', async () => {
-    const configPath = join(homeDirectory, '.cursor', 'mcp.json');
-    mkdirSync(join(homeDirectory, '.cursor'));
-    const original = [
-      '{',
-      '  // Keep this comment.',
-      '  "unrelated": { "enabled": true },',
-      '  "mcpServers": { "existing": { "command": "other" } }',
-      '}',
-      '',
-    ].join('\n');
-    writeFileSync(configPath, original);
+  it('omits a missing CLI and rejects direct configuration requests', async () => {
+    const missingRunner: ProviderCommandRunner = {
+      ...runner,
+      resolve: () => undefined,
+    };
+    await expect(inspectSetupClients(options(missingRunner))).resolves.toEqual(
+      [],
+    );
+    await expect(
+      configureSetupClient('grok-build', options(missingRunner)),
+    ).rejects.toThrow(/Grok Build CLI was not detected/u);
+  });
 
-    await expect(configureSetupClient('cursor', options())).resolves.toBe(
+  it('detects a compatible CLI and reports an available user registration', async () => {
+    await expect(inspectSetupClients(options())).resolves.toEqual([
+      {
+        id: 'grok-build',
+        label: 'Grok Build CLI',
+        state: 'ready',
+        application: 'detected',
+        configuration: 'managed',
+        registration: 'missing',
+        setupMode: 'automatic',
+        scope: 'user',
+        target: 'Grok Build user MCP registry (managed by `grok mcp`)',
+      },
+    ]);
+    expect(calls).toEqual([['inspect', '--json']]);
+  });
+
+  it('adds through the provider CLI with separately passed arguments and leaves identical registrations unchanged', async () => {
+    await expect(configureSetupClient('grok-build', options())).resolves.toBe(
       'added',
     );
-
-    const updated = readFileSync(configPath, 'utf8');
-    expect(updated).toContain('// Keep this comment.');
-    expect(updated).toContain('"unrelated": { "enabled": true }');
-    expect(parseJson(updated)).toMatchObject({
-      unrelated: { enabled: true },
-      mcpServers: {
-        existing: { command: 'other' },
-        nekosearch: {
-          type: 'stdio',
-          command: command.command,
-          args: command.args,
-        },
+    expect(calls).toContainEqual([
+      'mcp',
+      'add',
+      '--scope',
+      'user',
+      'nekosearch',
+      '--',
+      SERVER_COMMAND.command,
+      ...SERVER_COMMAND.args,
+    ]);
+    expect(registrations).toEqual([
+      {
+        name: 'nekosearch',
+        origin: join(grokHome, 'config.toml'),
+        transport: 'stdio',
+        command: SERVER_COMMAND.command,
+        args: SERVER_COMMAND.args,
       },
-    });
-    await expect(configureSetupClient('cursor', options())).resolves.toBe(
+    ]);
+    await expect(inspectSetupClients(options())).resolves.toMatchObject([
+      { state: 'already-configured', registration: 'configured' },
+    ]);
+    await expect(configureSetupClient('grok-build', options())).resolves.toBe(
       'unchanged',
     );
-    const cursor = (await inspectSetupClients(options())).find(
-      ({ id }) => id === 'cursor',
-    );
-    expect(cursor).toMatchObject({
-      state: 'already-configured',
-      application: 'not-detected',
-      configuration: 'available',
-      registration: 'configured',
-    });
-    expect(readFileSync(configPath, 'utf8')).toBe(updated);
-    expect(existsSync(`${configPath}.nekosearch-setup.lock`)).toBe(false);
-    expect(readdirNames(join(homeDirectory, '.cursor'))).toEqual(['mcp.json']);
+    expect(calls.filter(([operation]) => operation === 'mcp')).toHaveLength(1);
+  });
 
-    await expect(removeSetupClient('cursor', options())).resolves.toBe(
+  it('removes only the verified NekoSearch user registration', async () => {
+    registrations = [userRegistration()];
+    await expect(removeSetupClient('grok-build', options())).resolves.toBe(
       'removed',
     );
-    const removed = readFileSync(configPath, 'utf8');
-    expect(removed).toContain('// Keep this comment.');
-    expect(removed).toContain('"unrelated": { "enabled": true }');
-    expect(parseJson(removed)).toMatchObject({
-      unrelated: { enabled: true },
-      mcpServers: { existing: { command: 'other' } },
-    });
-    expect(parseJson(removed)).not.toHaveProperty('mcpServers.nekosearch');
-    await expect(removeSetupClient('cursor', options())).resolves.toBe(
-      'unchanged',
-    );
+    expect(registrations).toEqual([]);
+    expect(calls).toContainEqual([
+      'mcp',
+      'remove',
+      '--scope',
+      'user',
+      'nekosearch',
+    ]);
   });
 
-  it('does not replace conflicting or unparsable JSONC entries', async () => {
-    const configPath = join(homeDirectory, '.cursor', 'mcp.json');
-    mkdirSync(join(homeDirectory, '.cursor'));
-    const conflict =
-      '{\n  "mcpServers": { "nekosearch": { "command": "other" } }\n}\n';
-    writeFileSync(configPath, conflict);
-    await expect(configureSetupClient('cursor', options())).rejects.toThrow(
-      /different nekosearch MCP entry/u,
-    );
-    await expect(removeSetupClient('cursor', options())).rejects.toThrow(
-      /no longer matches this NekoSearch setup/u,
-    );
-    expect(readFileSync(configPath, 'utf8')).toBe(conflict);
+  it('preserves unrelated user registrations while adding NekoSearch', async () => {
+    const other = {
+      name: 'existing-server',
+      origin: join(grokHome, 'config.toml'),
+      transport: 'stdio',
+      command: '/other/mcp-server',
+      args: ['--keep'],
+    };
+    registrations = [other];
 
-    const malformed = '{\n  "mcpServers": {\n';
-    writeFileSync(configPath, malformed);
-    const statuses = await inspectSetupClients(options());
-    expect(statuses.find(({ id }) => id === 'cursor')).toMatchObject({
+    await expect(configureSetupClient('grok-build', options())).resolves.toBe(
+      'added',
+    );
+
+    expect(registrations).toContainEqual(other);
+    expect(registrations).toHaveLength(2);
+  });
+
+  it.each<[string, () => Record<string, unknown>]>([
+    ['different user command', () => userRegistration('/other/nekosearch')],
+    [
+      'project scope',
+      () => userRegistration(SERVER_COMMAND.command, 'project'),
+    ],
+    [
+      'workspace scope',
+      () => userRegistration(SERVER_COMMAND.command, 'workspace'),
+    ],
+    ['plugin scope', () => userRegistration(SERVER_COMMAND.command, 'plugin')],
+    [
+      'unknown origin',
+      () => ({
+        name: 'nekosearch',
+        transport: 'stdio',
+        command: SERVER_COMMAND.command,
+        args: SERVER_COMMAND.args,
+      }),
+    ],
+  ])(
+    'preserves a same-name external registration (%s)',
+    async (_name, createRegistration) => {
+      const registration = createRegistration();
+      registrations = [registration];
+      const status = await inspectSetupClients(options());
+      expect(status[0]).toMatchObject({
+        state: 'conflict',
+        registration:
+          registration.origin === undefined ? 'unknown' : 'conflict',
+      });
+      await expect(
+        configureSetupClient('grok-build', options()),
+      ).rejects.toThrow(/registration|scope|origin/u);
+      await expect(removeSetupClient('grok-build', options())).rejects.toThrow(
+        /registration|scope|origin/u,
+      );
+      expect(registrations).toEqual([registration]);
+      expect(calls.every((call) => call[0] === 'inspect')).toBe(true);
+    },
+  );
+
+  it('fails closed when the CLI output is invalid or does not identify origins', async () => {
+    const invalidOutputRunner: ProviderCommandRunner = {
+      ...runner,
+      run: () =>
+        Promise.resolve({
+          stdout: JSON.stringify({ servers: [] }),
+          stderr: '',
+        }),
+    };
+    await expect(
+      inspectSetupClients(options(invalidOutputRunner)),
+    ).resolves.toMatchObject([
+      { state: 'unsupported', setupMode: 'unsupported' },
+    ]);
+
+    registrations = [userRegistration(SERVER_COMMAND.command, 'unrecognized')];
+    const unknownOrigin = await inspectSetupClients(options());
+    expect(unknownOrigin[0]).toMatchObject({
       state: 'conflict',
-      application: 'not-detected',
-      configuration: 'unsafe',
       registration: 'unknown',
     });
-    await expect(configureSetupClient('cursor', options())).rejects.toThrow(
-      /Cannot safely edit/u,
-    );
-    expect(readFileSync(configPath, 'utf8')).toBe(malformed);
   });
 
-  it('uses the existing OpenCode JSONC user file and preserves its comments', async () => {
-    const directory = join(homeDirectory, '.config', 'opencode');
-    mkdirSync(directory, { recursive: true });
-    const configPath = join(directory, 'opencode.jsonc');
-    writeFileSync(configPath, '{\n  // OpenCode note.\n  "theme": "dark"\n}\n');
+  it('does not treat a generic user label as an owned Grok config origin', async () => {
+    registrations = [userRegistration(SERVER_COMMAND.command, 'user')];
 
-    await expect(configureSetupClient('opencode', options())).resolves.toBe(
-      'added',
-    );
-
-    const updated = readFileSync(configPath, 'utf8');
-    expect(updated).toContain('// OpenCode note.');
-    expect(parseJson(updated)).toMatchObject({
-      theme: 'dark',
-      mcp: {
-        servers: {
-          nekosearch: {
-            type: 'local',
-            command: [command.command, ...command.args],
-          },
-        },
-      },
-    });
-    expect(existsSync(join(directory, 'opencode.json'))).toBe(false);
-  });
-
-  it('adds Grok Build CLI TOML without rewriting its comments or other tables', async () => {
-    const grokHome = join(root, 'Grok profile with spaces');
-    mkdirSync(grokHome);
-    const configPath = join(grokHome, 'config.toml');
-    const original = '# Keep this TOML comment.\n[other]\nvalue = "retained"\n';
-    writeFileSync(configPath, original);
-
-    await expect(
-      configureSetupClient('grok-build', options({ GROK_HOME: grokHome })),
-    ).resolves.toBe('added');
-
-    const updated = readFileSync(configPath, 'utf8');
-    expect(updated.startsWith(original)).toBe(true);
-    expect(parseToml(updated)).toMatchObject({
-      other: { value: 'retained' },
-      mcp_servers: {
-        nekosearch: { command: command.command, args: command.args },
-      },
-    });
-    await expect(
-      configureSetupClient('grok-build', options({ GROK_HOME: grokHome })),
-    ).resolves.toBe('unchanged');
-    expect(readFileSync(configPath, 'utf8')).toBe(updated);
-    await expect(
-      removeSetupClient('grok-build', options({ GROK_HOME: grokHome })),
-    ).resolves.toBe('removed');
-    const removed = readFileSync(configPath, 'utf8');
-    expect(parseToml(removed)).toMatchObject({
-      other: { value: 'retained' },
-    });
-    expect(parseToml(removed)).not.toHaveProperty('mcp_servers.nekosearch');
-    expect(removed).toContain('# Keep this TOML comment.');
-  });
-
-  it('uses the shared Copilot CLI and VS Code Copilot Global user config', async () => {
-    const copilotHome = join(root, 'Copilot home with spaces');
-    mkdirSync(copilotHome);
-    const configPath = join(copilotHome, 'mcp-config.json');
-    writeFileSync(
-      configPath,
-      '{ "mcpServers": { "other": { "type": "local" } } }\n',
-    );
-
-    await expect(
-      configureSetupClient(
-        'github-copilot',
-        options({ COPILOT_HOME: copilotHome }),
-      ),
-    ).resolves.toBe('added');
-
-    expect(parseJson(readFileSync(configPath, 'utf8'))).toMatchObject({
-      mcpServers: {
-        other: { type: 'local' },
-        nekosearch: {
-          type: 'local',
-          command: command.command,
-          args: command.args,
-          tools: ['*'],
-        },
-      },
-    });
-  });
-
-  it('writes and reuses the documented user config for remaining automatic adapters', async () => {
-    const claudeConfigDirectory = join(root, 'Claude config directory');
-    const clineConfig = join(root, 'Cline config with spaces.json');
-    const xdgConfigDirectory = join(root, 'XDG config');
-    const cases = [
-      {
-        id: 'claude-code',
-        filePath: join(claudeConfigDirectory, '.claude.json'),
-        rootKey: 'mcpServers',
-        environment: { CLAUDE_CONFIG_DIR: claudeConfigDirectory },
-      },
-      {
-        id: 'cline',
-        filePath: clineConfig,
-        rootKey: 'mcpServers',
-        environment: { CLINE_MCP_SETTINGS_PATH: clineConfig },
-      },
-      {
-        id: 'kiro',
-        filePath: join(homeDirectory, '.kiro', 'settings', 'mcp.json'),
-        rootKey: 'mcpServers',
-        environment: {},
-      },
-      {
-        id: 'zed',
-        filePath: join(xdgConfigDirectory, 'zed', 'settings.json'),
-        rootKey: 'context_servers',
-        environment: { XDG_CONFIG_HOME: xdgConfigDirectory },
-      },
-      {
-        id: 'junie',
-        filePath: join(homeDirectory, '.junie', 'mcp', 'mcp.json'),
-        rootKey: 'mcpServers',
-        environment: {},
-      },
-      {
-        id: 'antigravity',
-        filePath: join(homeDirectory, '.gemini', 'config', 'mcp_config.json'),
-        rootKey: 'mcpServers',
-        environment: {},
-      },
-    ] as const;
-
-    for (const adapter of cases) {
-      const adapterOptions = options(adapter.environment);
-      await expect(
-        configureSetupClient(adapter.id, adapterOptions),
-      ).resolves.toBe('added');
-      expect(parseJson(readFileSync(adapter.filePath, 'utf8'))).toMatchObject({
-        [adapter.rootKey]: {
-          nekosearch: {
-            command: command.command,
-            args: command.args,
-          },
-        },
-      });
-      const configuredText = readFileSync(adapter.filePath, 'utf8');
-      await expect(
-        configureSetupClient(adapter.id, adapterOptions),
-      ).resolves.toBe('unchanged');
-      expect(readFileSync(adapter.filePath, 'utf8')).toBe(configuredText);
-    }
-  });
-
-  it('detects Antigravity through the documented agy command when it is a symlink', async () => {
-    const binDirectory = join(root, 'bin');
-    mkdirSync(binDirectory);
-    const actualExecutable = join(binDirectory, 'actual agy executable');
-    writeFileSync(actualExecutable, '#!/bin/sh\nexit 0\n');
-    chmodSync(actualExecutable, 0o755);
-    symlinkSync(actualExecutable, join(binDirectory, 'agy'));
-
-    const statuses = await inspectSetupClients({
-      homeDirectory,
-      environment: { PATH: binDirectory },
-      platform: 'linux',
-      serverCommand: command,
-    });
-
-    expect(statuses.find(({ id }) => id === 'antigravity')).toMatchObject({
-      id: 'antigravity',
-      label: 'Google Antigravity',
-      state: 'ready',
-      application: 'detected',
-      registration: 'missing',
-    });
-  });
-
-  it('offers Codex when its configured home is fresh and creates it on setup', async () => {
-    const binDirectory = join(root, 'codex bin');
-    mkdirSync(binDirectory);
-    const codexPath = join(binDirectory, 'codex');
-    writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
-    chmodSync(codexPath, 0o755);
-    const codexHome = join(root, 'fresh codex home');
-    const calls: string[][] = [];
-    const runCodexCommand = (_command: string, args: string[]) => {
-      calls.push(args);
-      return Promise.resolve({
-        stdout: args[1] === 'list' ? '[]' : '',
-        stderr: '',
-      });
-    };
-    const codexOptions = {
-      homeDirectory,
-      environment: { PATH: binDirectory, CODEX_HOME: codexHome },
-      platform: 'linux' as NodeJS.Platform,
-      serverCommand: command,
-      runCodexCommand,
-    };
-
-    const statuses = await inspectSetupClients(codexOptions);
-
-    expect(statuses.find(({ id }) => id === 'codex')).toMatchObject({
-      state: 'ready',
-      registration: 'missing',
-    });
-    expect(existsSync(codexHome)).toBe(false);
-    expect(calls).toEqual([]);
-
-    await expect(configureSetupClient('codex', codexOptions)).resolves.toBe(
-      'added',
-    );
-    expect(existsSync(codexHome)).toBe(true);
-    expect(calls).toEqual([
-      ['mcp', 'list', '--json'],
-      ['mcp', 'add', 'nekosearch', '--', command.command, ...command.args],
+    await expect(inspectSetupClients(options())).resolves.toMatchObject([
+      { state: 'conflict', registration: 'unknown' },
     ]);
-  });
-
-  it('recognizes a replaceable legacy Codex registration as configured', async () => {
-    const binDirectory = join(root, 'codex bin');
-    mkdirSync(binDirectory);
-    mkdirSync(join(homeDirectory, '.codex'));
-    const codexPath = join(binDirectory, 'codex');
-    writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
-    chmodSync(codexPath, 0o755);
-
-    const calls: string[][] = [];
-    const runCodexCommand = (_command: string, args: string[]) => {
-      calls.push(args);
-      return Promise.resolve({
-        stdout:
-          args[1] === 'list'
-            ? JSON.stringify([
-                {
-                  name: 'nekosearch',
-                  transport: {
-                    type: 'stdio',
-                    command: join(root, 'legacy nekosearch'),
-                    args: ['serve'],
-                  },
-                },
-              ])
-            : '',
-        stderr: '',
-      });
-    };
-    const codexOptions = {
-      homeDirectory,
-      environment: { PATH: binDirectory },
-      platform: 'linux' as NodeJS.Platform,
-      serverCommand: command,
-      runCodexCommand,
-    };
-
-    await expect(inspectSetupClients(codexOptions)).resolves.toEqual(
-      expect.arrayContaining([
-        {
-          id: 'codex',
-          label: 'Codex',
-          state: 'already-configured',
-          application: 'detected',
-          configuration: 'managed',
-          registration: 'configured',
-          setupMode: 'automatic',
-          scope: 'user',
-          target: 'Codex user MCP registry (managed by `codex mcp`)',
-          replaceable: true,
-          reason:
-            'Codex already has a different MCP registration named nekosearch',
-        },
-      ]),
+    await expect(removeSetupClient('grok-build', options())).rejects.toThrow(
+      /origin/u,
     );
-
-    await expect(
-      configureSetupClient('codex', {
-        ...codexOptions,
-        replaceConflictingCodex: true,
-      }),
-    ).resolves.toBe('added');
-    expect(calls).toEqual([
-      ['mcp', 'list', '--json'],
-      ['mcp', 'list', '--json'],
-      ['mcp', 'remove', 'nekosearch'],
-      ['mcp', 'add', 'nekosearch', '--', command.command, ...command.args],
-    ]);
+    expect(registrations).toHaveLength(1);
   });
 });
 
-function options(
-  environment: NodeJS.ProcessEnv = {},
-  commandExists: (command: string) => boolean = () => false,
-) {
-  return {
-    homeDirectory,
-    environment: { ...environment, PATH: '' },
-    platform: 'linux' as NodeJS.Platform,
-    serverCommand: command,
-    commandExists,
-  };
-}
+describe('provider CLI runner', () => {
+  let root: string;
 
-function parseJson(text: string): Record<string, unknown> {
-  const errors: ParseError[] = [];
-  const parsed = parseJsonc(text, errors, {
-    allowTrailingComma: true,
-  }) as Record<string, unknown>;
-  if (errors.length > 0) {
-    throw new Error('Test fixture contains invalid JSONC');
-  }
-  return parsed;
-}
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'nekosearch cli runner with spaces '));
+  });
 
-function readdirNames(directory: string): string[] {
-  return readdirSync(directory).sort();
-}
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('resolves executables from PATH, including paths containing spaces', () => {
+    const binDirectory = join(root, 'bin directory with spaces');
+    mkdirSync(binDirectory);
+    const executable = join(binDirectory, 'grok');
+    writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+    chmodSync(executable, 0o755);
+    expect(
+      resolveProviderExecutable(
+        'grok',
+        { PATH: binDirectory },
+        process.platform,
+      ),
+    ).toBe(executable);
+  });
+
+  it('runs without a shell and preserves argument boundaries', async () => {
+    const script = join(root, 'echo args.mjs');
+    writeFileSync(
+      script,
+      'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n',
+    );
+    const result = await providerCommandRunner.run(
+      process.execPath,
+      [script, 'value with spaces', 'second;argument'],
+      { environment: process.env, platform: process.platform, cwd: root },
+    );
+    expect(JSON.parse(result.stdout)).toEqual([
+      'value with spaces',
+      'second;argument',
+    ]);
+  });
+
+  it('enforces timeouts and output limits', async () => {
+    await expect(
+      runProviderCommand(
+        process.execPath,
+        ['-e', 'setTimeout(() => {}, 1000)'],
+        {
+          environment: process.env,
+          platform: process.platform,
+          timeoutMs: 30,
+        },
+      ),
+    ).rejects.toThrow(/timed out/u);
+    await expect(
+      runProviderCommand(
+        process.execPath,
+        ['-e', 'process.stdout.write("too much")'],
+        {
+          environment: process.env,
+          platform: process.platform,
+          maxOutputBytes: 2,
+        },
+      ),
+    ).rejects.toThrow(/exceeded 2 bytes/u);
+  });
+
+  it('reports provider process failures without treating them as an empty listing', async () => {
+    await expect(
+      runProviderCommand(
+        process.execPath,
+        ['-e', 'process.stderr.write("failure detail"); process.exit(7)'],
+        { environment: process.env, platform: process.platform },
+      ),
+    ).rejects.toThrow(/exit code 7: failure detail/u);
+  });
+
+  it('resolves Windows command extensions without requiring a shell', () => {
+    const binDirectory = join(root, 'windows bin with spaces');
+    mkdirSync(binDirectory);
+    const executable = join(binDirectory, 'grok.CMD');
+    writeFileSync(executable, '@echo off\r\n');
+    expect(
+      resolveProviderExecutable(
+        'grok',
+        { PATH: binDirectory, PATHEXT: '.EXE;.CMD' },
+        'win32',
+      ),
+    ).toBe(executable);
+  });
+
+  it('quotes Windows batch paths with spaces and rejects shell metacharacters', () => {
+    expect(
+      buildWindowsCommandLine('C:\\Program Files\\Grok\\grok.cmd', [
+        'mcp',
+        'add',
+        'name with spaces',
+      ]),
+    ).toBe(
+      '""C:\\Program Files\\Grok\\grok.cmd" "mcp" "add" "name with spaces""',
+    );
+    expect(() =>
+      buildWindowsCommandLine('C:\\Grok\\grok.cmd', ['mcp', '& whoami']),
+    ).toThrow(/metacharacters/u);
+  });
+});

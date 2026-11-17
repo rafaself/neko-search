@@ -204,7 +204,7 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   );
   assert.match(fixtureAdded, /Added fastapi@1 revision /u);
 
-  const codexStateAfterConfigure = await verifyCodexConfiguration(
+  const grokStateAfterConfigure = await verifyGrokConfiguration(
     binary,
     project,
     temporaryDirectory,
@@ -269,18 +269,18 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     storedReferenceCount > 0,
     'the activated local snapshot should retain its resolved link rows',
   );
-  const codexStateAfterSnapshotUpdate = JSON.parse(
-    await readFile(codexStateAfterConfigure.stateFile, 'utf8'),
+  const grokStateAfterSnapshotUpdate = JSON.parse(
+    await readFile(grokStateAfterConfigure.stateFile, 'utf8'),
   );
   assert.deepEqual(
-    codexStateAfterSnapshotUpdate.registrations,
-    codexStateAfterConfigure.registrations,
-    'updating a snapshot must preserve the Codex server registration',
+    grokStateAfterSnapshotUpdate.registrations,
+    grokStateAfterConfigure.registrations,
+    'updating a snapshot must preserve the Grok Build server registration',
   );
   assert.equal(
-    codexStateAfterSnapshotUpdate.calls.length,
-    codexStateAfterConfigure.calls.length,
-    'snapshot updates must not invoke Codex configuration commands',
+    grokStateAfterSnapshotUpdate.calls.length,
+    grokStateAfterConfigure.calls.length,
+    'snapshot updates must not invoke provider configuration commands',
   );
   const catalogOutput = run(binary, ['list'], {
     cwd: project,
@@ -710,86 +710,92 @@ async function verifyCatalogServer(project, temporaryDirectory) {
   }
 }
 
-async function verifyCodexConfiguration(
+async function verifyGrokConfiguration(
   binary,
   project,
   temporaryDirectory,
   environment,
 ) {
-  const fakeCodexDirectory = join(temporaryDirectory, 'fake-codex-bin');
+  const fakeGrokDirectory = join(temporaryDirectory, 'fake-grok-bin');
   const nodeOnlyDirectory = join(temporaryDirectory, 'node-only-bin');
-  const fakeCodex = join(fakeCodexDirectory, 'codex');
-  const stateFile = join(temporaryDirectory, 'codex-state.json');
+  const fakeGrok = join(fakeGrokDirectory, 'grok');
+  const grokHome = join(temporaryDirectory, 'grok home');
+  const stateFile = join(temporaryDirectory, 'grok-state.json');
   await Promise.all([
-    mkdir(fakeCodexDirectory),
+    mkdir(fakeGrokDirectory),
     mkdir(nodeOnlyDirectory),
+    mkdir(grokHome),
     writeFile(stateFile, JSON.stringify({ registrations: [], calls: [] })),
   ]);
   await Promise.all([
     writeFile(
-      fakeCodex,
+      fakeGrok,
       [
         '#!/usr/bin/env node',
         "const fs = require('node:fs');",
-        'const stateFile = process.env.NEKOSEARCH_CODEX_TEST_STATE;',
+        'const path = require("node:path");',
+        'const stateFile = process.env.NEKOSEARCH_GROK_TEST_STATE;',
         'const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));',
         'const args = process.argv.slice(2);',
         'state.calls.push(args);',
-        'if (args[0] !== "mcp") process.exit(2);',
-        'if (args[1] === "list") {',
+        'if (args[0] === "inspect" && args[1] === "--json") {',
         '  fs.writeFileSync(stateFile, JSON.stringify(state));',
-        '  process.stdout.write(JSON.stringify(state.registrations));',
+        '  process.stdout.write(JSON.stringify({ mcpServers: state.registrations }));',
         '  process.exit(0);',
         '}',
+        'if (args[0] !== "mcp") process.exit(2);',
         'if (args[1] === "remove") {',
-        '  state.registrations = state.registrations.filter((item) => item.name !== args[2]);',
+        '  const name = args.at(-1);',
+        '  state.registrations = state.registrations.filter((item) => item.name !== name);',
         '} else if (args[1] === "add") {',
         '  const separator = args.indexOf("--");',
-        '  state.registrations = state.registrations.filter((item) => item.name !== args[2]);',
-        '  state.registrations.push({ name: args[2], enabled: true, transport: { type: "stdio", command: args[separator + 1], args: args.slice(separator + 2) } });',
+        '  const name = args[separator - 1];',
+        '  if (state.registrations.some((item) => item.name === name)) process.exit(3);',
+        '  state.registrations.push({ name, origin: path.join(process.env.GROK_HOME, "config.toml"), transport: "stdio", command: args[separator + 1], args: args.slice(separator + 2) });',
         '} else { process.exit(2); }',
         'fs.writeFileSync(stateFile, JSON.stringify(state));',
       ].join('\n') + '\n',
     ),
     symlink(process.execPath, join(nodeOnlyDirectory, 'node')),
   ]);
-  await chmod(fakeCodex, 0o755);
+  await chmod(fakeGrok, 0o755);
 
   const stateEnvironment = {
     ...environment,
-    PATH: `${fakeCodexDirectory}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}`,
-    NEKOSEARCH_CODEX_TEST_STATE: stateFile,
+    PATH: `${fakeGrokDirectory}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}`,
+    GROK_HOME: grokHome,
+    NEKOSEARCH_GROK_TEST_STATE: stateFile,
   };
-  const missingCodex = runResult(binary, ['mcp', 'configure', 'codex'], {
+  const missingGrok = runResult(binary, ['mcp', 'configure', 'grok-build'], {
     cwd: project,
     env: { ...environment, PATH: nodeOnlyDirectory },
   });
-  assert.equal(missingCodex.status, 1);
-  assert.match(missingCodex.stderr, /Codex CLI was not found/u);
+  assert.equal(missingGrok.status, 1);
+  assert.match(missingGrok.stderr, /Grok Build CLI was not detected/u);
 
   assert.match(
-    run(binary, ['mcp', 'configure', 'codex'], {
+    run(binary, ['mcp', 'configure', 'grok-build'], {
       cwd: project,
       env: stateEnvironment,
     }),
-    /Configured Codex MCP server nekosearch/u,
+    /Configured grok-build MCP server nekosearch/u,
   );
   let state = JSON.parse(await readFile(stateFile, 'utf8'));
   assert.equal(state.registrations.length, 1);
   assert.ok(
-    isAbsolute(state.registrations[0].transport.command),
-    'Codex must receive an absolute NekoSearch executable path',
+    isAbsolute(state.registrations[0].command),
+    'Grok Build must receive an absolute NekoSearch executable path',
   );
-  assert.equal(state.registrations[0].transport.command, process.execPath);
-  const registeredArgs = state.registrations[0].transport.args;
+  assert.equal(state.registrations[0].command, process.execPath);
+  const registeredArgs = state.registrations[0].args;
   assert.deepEqual(registeredArgs, [
     join(project, 'node_modules', 'nekosearch', 'dist/apps/nekosearch/cli.js'),
     'serve',
   ]);
-  const registeredCommand = state.registrations[0].transport.command;
+  const registeredCommand = state.registrations[0].command;
 
   assert.match(
-    run(binary, ['mcp', 'configure', 'codex'], {
+    run(binary, ['mcp', 'configure', 'grok-build'], {
       cwd: project,
       env: stateEnvironment,
     }),
@@ -797,51 +803,77 @@ async function verifyCodexConfiguration(
   );
   state = JSON.parse(await readFile(stateFile, 'utf8'));
   assert.equal(
-    state.calls.filter((args) => args[1] === 'add').length,
+    state.calls.filter((args) => args[0] === 'mcp' && args[1] === 'add').length,
     1,
     'repeated configuration must not add a duplicate registration',
   );
+  const configuredState = state;
 
   const conflict = {
     name: 'nekosearch',
-    enabled: true,
-    transport: { type: 'stdio', command: '/other/nekosearch', args: ['serve'] },
+    origin: join(grokHome, 'config.toml'),
+    transport: 'stdio',
+    command: '/other/nekosearch',
+    args: ['serve'],
   };
   state = { registrations: [conflict], calls: [] };
   await writeFile(stateFile, JSON.stringify(state));
-  const refusedConflict = runResult(binary, ['mcp', 'configure', 'codex'], {
+  const refusedConflict = runResult(
+    binary,
+    ['mcp', 'configure', 'grok-build'],
+    {
+      cwd: project,
+      env: stateEnvironment,
+    },
+  );
+  assert.equal(refusedConflict.status, 1);
+  assert.match(
+    refusedConflict.stderr,
+    /different nekosearch MCP registration/u,
+  );
+  state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.deepEqual(state.registrations, [conflict]);
+  assert.deepEqual(state.calls, [['inspect', '--json']]);
+
+  state = {
+    registrations: [
+      {
+        name: 'nekosearch',
+        origin: join(grokHome, 'project', '.grok', 'config.toml'),
+        transport: 'stdio',
+        command: registeredCommand,
+        args: registeredArgs,
+      },
+    ],
+    calls: [],
+  };
+  await writeFile(stateFile, JSON.stringify(state));
+  const refusedExternal = runResult(binary, ['mcp', 'remove', 'grok-build'], {
     cwd: project,
     env: stateEnvironment,
   });
-  assert.equal(refusedConflict.status, 1);
-  assert.match(refusedConflict.stderr, /pass --force/u);
+  assert.equal(refusedExternal.status, 1);
   state = JSON.parse(await readFile(stateFile, 'utf8'));
-  assert.deepEqual(state.registrations, [conflict]);
-  assert.deepEqual(state.calls, [['mcp', 'list', '--json']]);
+  assert.equal(state.registrations.length, 1);
+  assert.deepEqual(state.calls, [['inspect', '--json']]);
 
-  assert.match(
-    run(binary, ['mcp', 'configure', 'codex', '--force'], {
-      cwd: project,
-      env: stateEnvironment,
-    }),
-    /Replaced Codex MCP server nekosearch/u,
-  );
-  state = JSON.parse(await readFile(stateFile, 'utf8'));
-  assert.deepEqual(state.calls, [
-    ['mcp', 'list', '--json'],
-    ['mcp', 'list', '--json'],
-    ['mcp', 'remove', 'nekosearch'],
-    ['mcp', 'add', 'nekosearch', '--', registeredCommand, ...registeredArgs],
-  ]);
-  assert.deepEqual(state.registrations[0].transport, {
-    type: 'stdio',
-    command: registeredCommand,
-    args: registeredArgs,
-  });
+  state = {
+    registrations: [
+      {
+        name: 'nekosearch',
+        origin: join(grokHome, 'config.toml'),
+        transport: 'stdio',
+        command: registeredCommand,
+        args: registeredArgs,
+      },
+    ],
+    calls: configuredState.calls,
+  };
+  await writeFile(stateFile, JSON.stringify(state));
   return {
     stateFile,
-    registrations: state.registrations,
-    calls: state.calls,
+    registrations: configuredState.registrations,
+    calls: configuredState.calls,
   };
 }
 
@@ -914,7 +946,9 @@ async function main() {
       'dist/apps/nekosearch/mcp-command.js',
       'dist/apps/nekosearch/setup.js',
       'dist/apps/nekosearch/setup-clients.js',
-      'dist/apps/nekosearch/codex-config.js',
+      'dist/apps/nekosearch/providers/provider-runner.js',
+      'dist/apps/nekosearch/providers/provider-registry.js',
+      'dist/apps/nekosearch/providers/adapters/grok.adapter.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
@@ -1077,7 +1111,7 @@ process.once('exit', () => {
     const installedPackage = join(project, 'node_modules', 'nekosearch');
     const [
       cliSource,
-      codexConfigSource,
+      providerRunnerSource,
       serveSource,
       setupSource,
       remoteSnapshotSource,
@@ -1085,7 +1119,10 @@ process.once('exit', () => {
     ] = await Promise.all([
       readFile(join(installedPackage, 'dist/apps/nekosearch/cli.js'), 'utf8'),
       readFile(
-        join(installedPackage, 'dist/apps/nekosearch/codex-config.js'),
+        join(
+          installedPackage,
+          'dist/apps/nekosearch/providers/provider-runner.js',
+        ),
         'utf8',
       ),
       readFile(join(installedPackage, 'dist/apps/nekosearch/serve.js'), 'utf8'),
@@ -1098,14 +1135,13 @@ process.once('exit', () => {
     ]);
     assert.match(cliSource, /import\('\.\/remote-snapshots\.js'\)/u);
     assert.match(cliSource, /import\('\.\/build\.js'\)/u);
-    assert.match(cliSource, /import\('\.\/codex-config\.js'\)/u);
+    assert.match(cliSource, /import\('\.\/setup-clients\.js'\)/u);
     assert.match(cliSource, /import\('\.\/setup\.js'\)/u);
     assert.doesNotMatch(cliSource, /^import .*remote-snapshots/mu);
     assert.doesNotMatch(cliSource, /^import .*build\.js/mu);
-    assert.doesNotMatch(cliSource, /^import .*codex-config\.js/mu);
     assert.doesNotMatch(cliSource, /^import .*setup\.js/mu);
-    assert.match(codexConfigSource, /execFile\(/u);
-    assert.doesNotMatch(codexConfigSource, /shell:\s*true/u);
+    assert.match(providerRunnerSource, /spawn\(/u);
+    assert.doesNotMatch(providerRunnerSource, /shell:\s*true/u);
     assert.doesNotMatch(
       serveSource,
       /remote-snapshots|setup|@clack\/prompts|markdown-parser|document-normalizer|docs-indexer|build-runtime/u,
@@ -1164,6 +1200,8 @@ process.once('exit', () => {
       'jest',
       'typescript',
       'eslint',
+      'jsonc-parser',
+      'smol-toml',
     ]) {
       assert.ok(
         !installedDependencyNames.has(excludedPackage),
@@ -1180,11 +1218,7 @@ process.once('exit', () => {
       installedDependencyNames.has('json5'),
       'the curated source parser must be available to the on-demand builder',
     );
-    for (const requiredSetupDependency of [
-      '@clack/prompts',
-      'jsonc-parser',
-      'smol-toml',
-    ]) {
+    for (const requiredSetupDependency of ['@clack/prompts']) {
       assert.ok(
         installedDependencyNames.has(requiredSetupDependency),
         `${requiredSetupDependency} must be installed for interactive setup`,

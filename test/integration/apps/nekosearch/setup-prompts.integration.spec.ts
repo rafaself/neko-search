@@ -73,13 +73,19 @@ describe('setup terminal prompts', () => {
     const prompts = createSetupPromptApi(input, output.stream);
     const selection = prompts.multiselect('Choose docs and providers', [
       { value: 'nestjs@12', label: 'nestjs@12', hint: '✓', disabled: true },
-      { value: 'codex', label: 'Codex', hint: '✓' },
+      {
+        value: 'grok-build',
+        label: 'Grok Build CLI',
+        hint: 'Already configured · User',
+      },
     ]);
 
     press(input, 'return', '\r');
     await expect(selection).resolves.toEqual([]);
     expect(output.text()).toContain('nestjs@12 (✓)');
-    expect(output.text()).toContain('Codex (✓)');
+    expect(output.text()).toContain(
+      'Grok Build CLI (Already configured · User)',
+    );
 
     input.destroy();
     output.stream.destroy();

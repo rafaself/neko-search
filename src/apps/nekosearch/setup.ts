@@ -252,7 +252,8 @@ export async function runSetup(
         continue;
       }
 
-      const setupChoices = selectableClients.filter(isSelectableProvider);
+      const visibleProviders = selectableClients.filter(isMenuProvider);
+      const setupChoices = visibleProviders.filter(isSelectableProvider);
       if (!providerSelectionInitialized) {
         selectedClients = setupChoices
           .filter((client) => client.state === 'already-configured')
@@ -262,8 +263,8 @@ export async function runSetup(
       selectedClients = selectedClients.filter((id) =>
         setupChoices.some((client) => client.id === id),
       );
-      const groups = buildClientGroups(setupChoices);
-      if (setupChoices.length > 0) {
+      const groups = buildClientGroups(visibleProviders);
+      if (visibleProviders.length > 0) {
         const selection = await prompts.groupMultiselect(
           'Select providers for setup (uncheck configured providers to remove)',
           groups,
@@ -283,11 +284,7 @@ export async function runSetup(
           .map(({ id }) => id);
       } else {
         selectedClients = [];
-        prompts.message(
-          selectableClients.length === 0
-            ? 'No supported MCP providers were detected.'
-            : 'No MCP providers are ready to configure.',
-        );
+        prompts.message(providerAvailabilityMessage(selectableClients));
       }
       stage = 'review';
       continue;
@@ -298,7 +295,7 @@ export async function runSetup(
       (client) =>
         (client.state === 'ready' && selectedClientIds.has(client.id)) ||
         (client.state === 'already-configured' &&
-          (client.replaceable || !selectedClientIds.has(client.id))),
+          !selectedClientIds.has(client.id)),
     );
     if (selectedDocs.length === 0 && !hasProviderChanges) break;
     prompts.message(
@@ -348,20 +345,11 @@ export async function runSetup(
     for (const id of selectedClients) {
       const client = selectableClients.find((entry) => entry.id === id);
       const label = client?.label ?? id;
-      const replaceableCodex =
-        client?.id === 'codex' && client.replaceable === true;
-      if (client?.state === 'already-configured' && !replaceableCodex) {
-        continue;
-      }
+      if (client?.state === 'already-configured') continue;
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
       spinner.start(`Configuring ${label}`);
       try {
-        const result = await configureClient(
-          id,
-          replaceableCodex
-            ? { ...clientOptions, replaceConflictingCodex: true }
-            : clientOptions,
-        );
+        const result = await configureClient(id, clientOptions);
         if (result === 'added') {
           configuredClients.push(label);
           spinner.stop(`Configured ${label}`);
@@ -386,12 +374,7 @@ export async function runSetup(
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
       spinner.start(`Removing ${client.label}`);
       try {
-        const result = await removeClient(
-          client.id,
-          client.id === 'codex' && client.replaceable
-            ? { ...clientOptions, removeConflictingCodex: true }
-            : clientOptions,
-        );
+        const result = await removeClient(client.id, clientOptions);
         if (result === 'removed') {
           removedClients.push(client.label);
           spinner.stop(`Removed ${client.label}`);
@@ -587,6 +570,24 @@ function isSelectableProvider(client: SetupClientStatus): boolean {
   );
 }
 
+function isMenuProvider(client: SetupClientStatus): boolean {
+  return (
+    client.setupMode === 'automatic' &&
+    ['ready', 'already-configured', 'conflict'].includes(client.state)
+  );
+}
+
+function providerAvailabilityMessage(clients: SetupClientStatus[]): string {
+  if (clients.length === 0) return 'No supported MCP providers were detected.';
+  const unsupported = clients.filter(
+    (client) => client.state === 'unsupported',
+  );
+  if (unsupported.length > 0) {
+    return `Detected MCP providers do not expose a supported inspection interface: ${unsupported.map(({ label }) => label).join(', ')}.`;
+  }
+  return 'No MCP providers are ready to configure.';
+}
+
 function buildClientGroups(
   clients: SetupClientStatus[],
 ): SetupGroupedChoices<SetupClientId> {
@@ -595,14 +596,18 @@ function buildClientGroups(
     'MCP providers': clients.map((client) => ({
       value: client.id,
       label: client.label,
-      hint:
-        client.state === 'already-configured'
-          ? 'Already configured'
-          : client.scope === 'user'
-            ? 'User'
-            : 'Project',
+      hint: providerChoiceHint(client),
+      disabled: client.state === 'conflict',
     })),
   };
+}
+
+function providerChoiceHint(client: SetupClientStatus): string {
+  if (client.state === 'already-configured') return 'Already configured · User';
+  if (client.state === 'conflict') {
+    return `Conflict · ${client.reason ?? 'Registration is not owned by NekoSearch'}`;
+  }
+  return 'Available · User';
 }
 
 function renderConfigurationPreview(
@@ -638,7 +643,7 @@ function renderConfigurationPreview(
         `  ${client.label}`,
         `    Scope: ${client.scope === 'user' ? 'User' : 'Project'}`,
         `    Target: ${client.target}`,
-        `    Action: ${client.replaceable ? 'Update NekoSearch registration' : client.state === 'already-configured' ? 'Keep existing NekoSearch configuration' : 'Add NekoSearch'}`,
+        `    Action: ${client.state === 'already-configured' ? 'Keep existing NekoSearch configuration' : 'Add NekoSearch'}`,
       );
     }
     for (const client of removedClients) {

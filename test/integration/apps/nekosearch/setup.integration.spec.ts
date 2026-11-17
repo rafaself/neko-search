@@ -25,7 +25,7 @@ describe('nekosearch setup flow', () => {
   it('waits for final confirmation before installing docs or configuring providers', async () => {
     const events: string[] = [];
     const prompts = createPrompts({
-      multiSelections: [['nestjs@12'], ['codex']],
+      multiSelections: [['nestjs@12'], ['grok-build']],
       confirmations: [true],
       onConfirm: () => events.push('confirmed'),
     });
@@ -63,7 +63,8 @@ describe('nekosearch setup flow', () => {
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
       install,
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
       configureClient,
     });
 
@@ -81,13 +82,13 @@ describe('nekosearch setup flow', () => {
     expect(events).toEqual([
       'confirmed',
       'install:nestjs@12',
-      'configure:codex',
+      'configure:grok-build',
     ]);
     expect(prompts.confirmations).toEqual([
       'Proceed with these changes? (Backspace returns to provider selection)',
     ]);
     expect(prompts.messages.join('\n')).toContain(
-      'Changes to be applied\nDocumentation:\n  nestjs@12\nMCP clients:\n  Codex\n    Scope: User\n    Target: /codex/mcp.json\n    Action: Add NekoSearch\nOther provider settings will be preserved.',
+      'Changes to be applied\nDocumentation:\n  nestjs@12\nMCP clients:\n  Grok Build CLI\n    Scope: User\n    Target: Grok Build user MCP registry (managed by `grok mcp`)\n    Action: Add NekoSearch\nOther provider settings will be preserved.',
     );
     expect(prompts.messages.at(-1)).toContain(
       'Documentation installed: nestjs@12',
@@ -106,8 +107,8 @@ describe('nekosearch setup flow', () => {
       ]),
     );
     expect(prompts.spinnerCalls[1]).toEqual([
-      'start:Configuring Codex',
-      'stop:Configured Codex',
+      'start:Configuring Grok Build CLI',
+      'stop:Configured Grok Build CLI',
     ]);
   });
 
@@ -117,8 +118,8 @@ describe('nekosearch setup flow', () => {
         ['nestjs@12'],
         SETUP_BACK,
         ['nestjs@11'],
-        ['codex'],
-        ['codex'],
+        ['grok-build'],
+        ['grok-build'],
       ],
       confirmations: [SETUP_BACK, true],
     });
@@ -137,7 +138,8 @@ describe('nekosearch setup flow', () => {
           changed: true,
         });
       },
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
       configureClient: (id) => {
         configured.push(id);
         return Promise.resolve('added');
@@ -146,14 +148,16 @@ describe('nekosearch setup flow', () => {
 
     expect(result).toBe(0);
     expect(installed).toEqual(['nestjs@11']);
-    expect(configured).toEqual(['codex']);
+    expect(configured).toEqual(['grok-build']);
     expect(prompts.multiselectCalls[1]?.initialValues).toEqual(['nestjs@12']);
-    expect(prompts.groupMultiselectCalls[2]?.initialValues).toEqual(['codex']);
+    expect(prompts.groupMultiselectCalls[2]?.initialValues).toEqual([
+      'grok-build',
+    ]);
   });
 
-  it('shows the detected provider choices without state labels', async () => {
+  it('shows the available provider and its user scope', async () => {
     const prompts = createPrompts({
-      multiSelections: [[], ['codex', 'cursor', 'github-copilot', 'cline']],
+      multiSelections: [[], ['grok-build']],
       confirmations: [true],
     });
     const configured: string[] = [];
@@ -163,7 +167,8 @@ describe('nekosearch setup flow', () => {
       prompts,
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
       configureClient: (id) => {
         configured.push(id);
         return Promise.resolve('added');
@@ -172,17 +177,19 @@ describe('nekosearch setup flow', () => {
 
     expect(result).toBe(0);
     expect(prompts.groupMultiselectCalls[0]?.groups['MCP providers']).toEqual([
-      { value: 'codex', label: 'Codex', hint: 'User' },
+      {
+        value: 'grok-build',
+        label: 'Grok Build CLI',
+        hint: 'Available · User',
+        disabled: false,
+      },
     ]);
-    expect(configured).toEqual(['codex']);
-    expect(prompts.messages.join('\n')).not.toMatch(
-      /:\s*(available|not detected|already configured|conflict)\b/u,
-    );
+    expect(configured).toEqual(['grok-build']);
   });
 
-  it('starts a replaceable Codex registration checked and removes it when unchecked', async () => {
+  it('removes a verified configured provider when unchecked', async () => {
     const prompts = createPrompts({
-      multiSelections: [[], ['cursor']],
+      multiSelections: [[], []],
       confirmations: [true],
     });
     const configureClient = jest
@@ -199,13 +206,10 @@ describe('nekosearch setup flow', () => {
       inspectClients: () =>
         Promise.resolve([
           {
-            ...client('codex', 'Codex'),
+            ...client('grok-build', 'Grok Build CLI'),
             state: 'already-configured',
-            application: 'not-detected',
             registration: 'configured',
-            replaceable: true,
           },
-          client('cursor', 'Cursor'),
         ]),
       configureClient,
       removeClient,
@@ -215,69 +219,28 @@ describe('nekosearch setup flow', () => {
     expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
       'MCP providers': [
         {
-          value: 'codex',
-          label: 'Codex',
-          hint: 'Already configured',
+          value: 'grok-build',
+          label: 'Grok Build CLI',
+          hint: 'Already configured · User',
+          disabled: false,
         },
-        { value: 'cursor', label: 'Cursor', hint: 'User' },
       ],
     });
-    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
+    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual([
+      'grok-build',
+    ]);
     expect(prompts.messages.join('\n')).toContain(
       'Action: Remove NekoSearch configuration',
     );
-    expect(configureClient).toHaveBeenCalledWith('cursor', expect.any(Object));
-    expect(removeClient).toHaveBeenCalledWith(
-      'codex',
-      expect.objectContaining({ removeConflictingCodex: true }),
+    expect(configureClient).not.toHaveBeenCalled();
+    expect(removeClient).toHaveBeenCalledWith('grok-build', expect.any(Object));
+    expect(prompts.messages.at(-1)).toContain(
+      'Providers removed: Grok Build CLI',
     );
-    expect(prompts.messages.at(-1)).toContain('Providers removed: Codex');
-  });
-
-  it('updates a checked replaceable Codex registration to the current CLI', async () => {
-    const prompts = createPrompts({
-      multiSelections: [[], ['codex']],
-      confirmations: [true],
-    });
-    const configureClient = jest
-      .fn<NonNullable<SetupDependencies['configureClient']>>()
-      .mockResolvedValue('added');
-    const removeClient =
-      jest.fn<NonNullable<SetupDependencies['removeClient']>>();
-
-    const result = await runSetup({
-      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
-      prompts,
-      serverCommand: SERVER_COMMAND,
-      listIndexes: () => Promise.resolve([]),
-      inspectClients: () =>
-        Promise.resolve([
-          {
-            ...client('codex', 'Codex'),
-            state: 'already-configured',
-            registration: 'configured',
-            replaceable: true,
-          },
-        ]),
-      configureClient,
-      removeClient,
-    });
-
-    expect(result).toBe(0);
-    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
-    expect(prompts.messages.join('\n')).toContain(
-      'Action: Update NekoSearch registration',
-    );
-    expect(configureClient).toHaveBeenCalledWith(
-      'codex',
-      expect.objectContaining({ replaceConflictingCodex: true }),
-    );
-    expect(removeClient).not.toHaveBeenCalled();
-    expect(prompts.messages.at(-1)).toContain('Providers configured: Codex');
   });
 
   it('keeps a checked configured provider without showing a confirmation', async () => {
-    const prompts = createPrompts({ multiSelections: [[], ['codex']] });
+    const prompts = createPrompts({ multiSelections: [[], ['grok-build']] });
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
     const removeClient =
@@ -291,7 +254,7 @@ describe('nekosearch setup flow', () => {
       inspectClients: () =>
         Promise.resolve([
           {
-            ...client('codex', 'Codex'),
+            ...client('grok-build', 'Grok Build CLI'),
             state: 'already-configured',
             registration: 'configured',
           },
@@ -301,12 +264,14 @@ describe('nekosearch setup flow', () => {
     });
 
     expect(result).toBe(0);
-    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
+    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual([
+      'grok-build',
+    ]);
     expect(prompts.confirmations).toEqual([]);
     expect(configureClient).not.toHaveBeenCalled();
     expect(removeClient).not.toHaveBeenCalled();
     expect(prompts.messages.at(-1)).toContain(
-      'Providers kept configured: Codex',
+      'Providers kept configured: Grok Build CLI',
     );
   });
 
@@ -326,7 +291,7 @@ describe('nekosearch setup flow', () => {
       inspectClients: () =>
         Promise.resolve([
           {
-            ...client('codex', 'Codex'),
+            ...client('grok-build', 'Grok Build CLI'),
             state: 'already-configured',
             registration: 'configured',
           },
@@ -339,8 +304,8 @@ describe('nekosearch setup flow', () => {
     expect(removeClient).not.toHaveBeenCalled();
   });
 
-  it('omits conflicting providers from the selectable choices', async () => {
-    const prompts = createPrompts({ multiSelections: [[], ['codex']] });
+  it('shows conflicts as disabled and does not modify their registration', async () => {
+    const prompts = createPrompts({ multiSelections: [[]] });
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
     const result = await runSetup({
@@ -351,19 +316,25 @@ describe('nekosearch setup flow', () => {
       inspectClients: () =>
         Promise.resolve([
           {
-            ...client('codex', 'Codex'),
+            ...client('grok-build', 'Grok Build CLI'),
             state: 'conflict',
             registration: 'conflict',
-            reason: 'legacy Codex registration exists',
+            reason: 'registration has a different command',
           },
-          client('cursor', 'Cursor'),
         ]),
       configureClient,
     });
 
     expect(result).toBe(0);
     expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
-      'MCP providers': [{ value: 'cursor', label: 'Cursor', hint: 'User' }],
+      'MCP providers': [
+        {
+          value: 'grok-build',
+          label: 'Grok Build CLI',
+          hint: 'Conflict · registration has a different command',
+          disabled: true,
+        },
+      ],
     });
     expect(configureClient).not.toHaveBeenCalled();
   });
@@ -393,23 +364,13 @@ describe('nekosearch setup flow', () => {
     expect(configureClient).not.toHaveBeenCalled();
   });
 
-  it('omits manual-only and undetected providers from setup choices', async () => {
+  it('omits providers with unsupported inspection output from setup choices', async () => {
     const prompts = createPrompts({ multiSelections: [[]] });
-    const junie: SetupClientStatus = {
-      id: 'junie',
-      label: 'Junie',
-      state: 'manual-only',
-      application: 'manual-only',
-      configuration: 'unknown',
+    const unsupported: SetupClientStatus = {
+      ...client('grok-build', 'Grok Build CLI'),
+      state: 'unsupported',
+      setupMode: 'unsupported',
       registration: 'unknown',
-      setupMode: 'manual',
-      scope: 'user',
-      target: '/home/user/.junie/mcp/mcp.json',
-    };
-    const undetected: SetupClientStatus = {
-      ...client('cursor', 'Cursor'),
-      state: 'not-detected',
-      application: 'not-detected',
     };
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
@@ -419,19 +380,16 @@ describe('nekosearch setup flow', () => {
       prompts,
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
-      inspectClients: () => Promise.resolve([junie, undetected]),
+      inspectClients: () => Promise.resolve([unsupported]),
       configureClient,
     });
 
     expect(result).toBe(0);
     expect(prompts.groupMultiselectCalls).toHaveLength(0);
-    expect(prompts.messages.join('\n')).not.toContain('Junie');
-    expect(prompts.messages.join('\n')).not.toContain(
-      'Other supported clients',
+    expect(prompts.messages.join('\n')).toContain(
+      'Detected MCP providers do not expose a supported inspection interface: Grok Build CLI.',
     );
-    expect(prompts.messages.join('\n')).not.toContain(
-      'Show manual setup instructions',
-    );
+    expect(prompts.messages.join('\n')).not.toContain('Grok Build CLI\n');
     expect(configureClient).not.toHaveBeenCalled();
   });
 
@@ -539,7 +497,8 @@ describe('nekosearch setup flow', () => {
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
       install,
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
       configureClient,
     });
 
@@ -582,7 +541,7 @@ describe('nekosearch setup flow', () => {
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
     const inspectClients = jest.fn(() =>
-      Promise.resolve([client('codex', 'Codex')]),
+      Promise.resolve([client('grok-build', 'Grok Build CLI')]),
     );
     const prompts = createPrompts({ multiSelections: [CANCELED] });
 
@@ -607,7 +566,7 @@ describe('nekosearch setup flow', () => {
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
     const prompts = createPrompts({
-      multiSelections: [['nestjs@12'], ['codex']],
+      multiSelections: [['nestjs@12'], ['grok-build']],
       confirmations: [false],
     });
 
@@ -617,7 +576,8 @@ describe('nekosearch setup flow', () => {
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
       install,
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
       configureClient,
     });
 
@@ -652,7 +612,8 @@ describe('nekosearch setup flow', () => {
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
       install,
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
     });
 
     expect(result).toBe(1);
@@ -687,7 +648,8 @@ describe('nekosearch setup flow', () => {
       prompts,
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([entry]),
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients: () =>
+        Promise.resolve([client('grok-build', 'Grok Build CLI')]),
     });
 
     expect(prompts.multiselectCalls[0]?.options).toEqual(
@@ -709,11 +671,11 @@ function client(id: SetupClientId, label: string): SetupClientStatus {
     label,
     state: 'ready',
     application: 'detected',
-    configuration: 'missing',
+    configuration: 'managed',
     registration: 'missing',
     setupMode: 'automatic',
     scope: 'user',
-    target: `/${id}/mcp.json`,
+    target: 'Grok Build user MCP registry (managed by `grok mcp`)',
   };
 }
 
