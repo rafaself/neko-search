@@ -205,7 +205,7 @@ Fetch its target with the same selector:
 }
 ```
 
-Only links completely visible in the fetched page are returned as references. External and unresolved URLs remain in the Markdown and are not fetched by the server. Legacy format-1 snapshots, including the current bundled MCP summary, return no resolved references.
+Only links completely visible in the fetched page are returned as references. External and unresolved URLs remain in the Markdown and are not fetched by the server.
 
 ## Failure behavior
 

@@ -18,7 +18,7 @@ Keep changes focused. Avoid adding dependencies or abstractions unless they solv
 - Validate external inputs and fail explicitly.
 - Keep source/version isolation and exact-selector behavior intact.
 - Preserve the read-only, offline serving boundary and protocol-only stdout.
-- Treat snapshot hashes, schema versions, and stored formats as compatibility boundaries.
+- Keep snapshot hashes, schema versions, and stored formats explicit when their structures change.
 - Keep optional source installation separate from package installation and server startup.
 
 Add behavior-focused coverage when changing domain behavior. Never weaken tests to hide a failure; investigate the underlying contract first.

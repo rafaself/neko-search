@@ -86,7 +86,7 @@ Restart the MCP server through your client. Ask the agent to discover the source
 
 Fetch a hit with its returned IDs. Internal references in `fetch_docs` output supply target `documentId` and optional `sectionId` values, so your agent can follow the authentication link without fetching a website.
 
-Resolved references stay within the same snapshot. External or unresolved links remain in the Markdown. The bundled legacy MCP reference predates resolved-link metadata; newly built snapshots support it.
+Resolved references stay within the same snapshot. External or unresolved links remain in the Markdown.
 
 ## Keep source content static
 

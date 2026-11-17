@@ -45,6 +45,6 @@ Treat cursors as opaque values. They are not offsets for callers to construct.
 
 New-format snapshots store resolved links with positions and target IDs. A fetched page returns at most 100 references whose complete link occurrence lies within the visible Markdown. Each contains the original `href`, target `documentId`, and optional `sectionId`.
 
-Use those IDs with the same source selector to fetch the target offline. Reference following does not cross snapshots or fetch external URLs. Legacy snapshots can return an empty reference list even when their Markdown contains links.
+Use those IDs with the same source selector to fetch the target offline. Reference following does not cross snapshots or fetch external URLs.
 
 The exact public schemas and examples are in the [MCP Tool Reference](../mcp/tools.md).

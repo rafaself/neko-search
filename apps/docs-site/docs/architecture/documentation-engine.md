@@ -29,7 +29,7 @@ Build configuration defaults to a maximum chunk size of 4,000 characters. This i
 
 Link resolution runs against the complete corpus. Supported relative, route, and fragment targets are mapped to indexed document and section IDs within the same source. Link occurrence offsets let retrieval return only references completely visible in the current page of fetched Markdown.
 
-External and unresolved links stay in the document. They are not crawled. Legacy format-1 indexes remain readable but do not include the newer resolved-reference metadata.
+External and unresolved links stay in the document. They are not crawled. Every built index stores resolved references for links that target documents in the same corpus.
 
 ## 5. Write and validate the snapshot {#write-and-validate-snapshot}
 
@@ -45,4 +45,4 @@ When a compatible prior build exists, the indexer compares source content hashes
 
 ## Contributor guidance
 
-Keep source-specific behavior in an integration, shared static-document behavior in the engine, catalog activation in the CLI catalog layer, and MCP presentation at the transport boundary. Preserve format validation when changing stored data, and test compatibility and source isolation with the repository's fixtures.
+Keep source-specific behavior in an integration, shared static-document behavior in the engine, catalog activation in the CLI catalog layer, and MCP presentation at the transport boundary. Keep format validation current when stored data changes, and test source isolation with the repository's fixtures.
