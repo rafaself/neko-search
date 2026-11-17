@@ -51,7 +51,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4'
           preCommands: >-
-            if ! wrangler pages project list --json | jq -e 'any(.[]; .name == "nekosearch")' > /dev/null; then wrangler pages project create nekosearch --production-branch=main; fi
+            if ! npx --no-install wrangler pages project list --json | jq -e 'any(.[]; .name == "nekosearch")' > /dev/null; then npx --no-install wrangler pages project create nekosearch --production-branch=main; fi
           command: pages deploy apps/docs-site/.vitepress/dist --project-name=nekosearch --branch=main
 
       - name: Add deployment URL to the run summary
