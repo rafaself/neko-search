@@ -5,6 +5,7 @@
   "type": "module",
   "workspaces": [
     "apps/docs-indexer",
+    "apps/docs-site",
     "packages/documentation-engine"
   ],
   "bin": {
@@ -70,7 +71,11 @@
     "docs:ingest": "npm run build && node apps/docs-indexer/dist/cli.js ingest",
     "docs:build:mcp": "npm run build && node scripts/release/build-mcp-protocol-snapshot.mjs",
     "search:index": "npm run build && node apps/docs-indexer/dist/cli.js index",
-    "typecheck": "tsc --noEmit",
+    "docs:site:dev": "npm run dev --workspace @nestjs-docs/docs-site --",
+    "docs:site:build": "npm run build --workspace @nestjs-docs/docs-site",
+    "docs:site:preview": "npm run preview --workspace @nestjs-docs/docs-site --",
+    "docs:site:check": "npm run check --workspace @nestjs-docs/docs-site",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace @nestjs-docs/docs-site",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "npm run lint -- --fix",
     "format": "prettier --write .",

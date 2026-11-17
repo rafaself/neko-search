@@ -1,0 +1,18 @@
+{
+  "name": "@nestjs-docs/docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The NekoSearch documentation website.",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev .",
+    "build": "vitepress build .",
+    "preview": "vitepress preview .",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check-site.mjs"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4",
+    "vue": "^3.5.13"
+  }
+}

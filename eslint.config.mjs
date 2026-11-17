@@ -10,6 +10,8 @@ export default [
       'coverage/**',
       'node_modules/**',
       'apps/docs-indexer/dist/**',
+      'apps/docs-site/.vitepress/cache/**',
+      'apps/docs-site/.vitepress/dist/**',
       'packages/documentation-engine/dist/**',
     ],
   },

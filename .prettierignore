@@ -4,3 +4,5 @@ coverage/
 package-lock.json
 data/
 test/fixtures/
+apps/docs-site/.vitepress/cache/
+apps/docs-site/.vitepress/dist/
