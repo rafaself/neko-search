@@ -53,7 +53,7 @@ VitePress and Vue are development dependencies of the private site workspace. Th
 | Environment variable | Default                        | Purpose                                                                    |
 | -------------------- | ------------------------------ | -------------------------------------------------------------------------- |
 | `DOCS_SITE_BASE`     | `/`                            | Absolute deployment path, with leading and trailing slashes                |
-| `DOCS_SITE_URL`      | `https://nekosearch.github.io` | HTTP(S) deployment origin, without a path, credentials, query, or fragment |
+| `DOCS_SITE_URL`      | `https://nekosearch.pages.dev` | HTTP(S) deployment origin, without a path, credentials, query, or fragment |
 
 For a local build targeting a project site under a subpath, override both values:
 
@@ -63,15 +63,21 @@ DOCS_SITE_BASE=/nekosearch/ npm run docs:site:check
 DOCS_SITE_BASE=/nekosearch/ npm run docs:site:preview
 ```
 
-The production build emits canonical URLs, absolute sharing-image URLs, and a sitemap for `https://nekosearch.github.io/`. `DOCS_SITE_URL` can override that origin for a preview deployment.
+The production build emits canonical URLs, absolute sharing-image URLs, and a sitemap for `https://nekosearch.pages.dev/`. `DOCS_SITE_URL` can override that origin for a preview deployment.
 
-Keep the same base when building, checking, and previewing. The output uses `.html` page files so GitHub Pages can serve the clean routes without rewrite rules.
+Keep the same base when building, checking, and previewing. The output uses `.html` page files so static hosts can serve clean routes without rewrite rules.
 
-## Publish with GitHub Actions
+## Publish with Cloudflare Pages
 
-The **Publish documentation** workflow is manual. In the GitHub repository, open **Actions → Publish documentation → Run workflow** to build, validate, and publish the current branch to GitHub Pages. It never deploys on a push.
+The **Publish documentation** GitHub Actions workflow is manual. It builds and checks the site, then uploads the static output with Wrangler to the Cloudflare Pages project named `nekosearch`. It only publishes the `main` branch and never deploys on a push.
 
-The workflow is restricted to `nekosearch/nekosearch.github.io`, the GitHub Pages repository for `https://nekosearch.github.io/`. In that repository, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The workflow checks the repository before installing dependencies, so it fails safely if run from another repository. This source checkout is `rafaself/neko-search`; make the docs app, root npm workspace files, lockfile, and workflow available in the Pages repository before running it.
+Before the first deployment:
+
+1. Create a Cloudflare Pages **Direct Upload** project named `nekosearch` and set its production branch to `main`. The project name must be available in Cloudflare to receive the `nekosearch.pages.dev` address.
+2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit** permission.
+3. In the GitHub repository, add Actions secrets named `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` with the matching Cloudflare values.
+
+Then open **Actions → Publish documentation → Run workflow**, choose `main`, and start the run. Cloudflare Direct Upload projects cannot later be switched to Git integration, so keep this project on Direct Upload for manual workflow publishing. See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/) and [GitHub Actions setup](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
 
 ## Existing snapshot scripts
 

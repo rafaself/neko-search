@@ -7,21 +7,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: github-pages
+  group: cloudflare-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     env:
       DOCS_SITE_BASE: /
-      DOCS_SITE_URL: https://nekosearch.github.io
+      DOCS_SITE_URL: https://nekosearch.pages.dev
     steps:
-      - name: Check publishing repository
+      - name: Require the production branch
         shell: bash
         run: |
-          if [[ "$GITHUB_REPOSITORY" != "nekosearch/nekosearch.github.io" ]]; then
-            echo "::error::Publish this workflow from nekosearch/nekosearch.github.io to deploy to https://nekosearch.github.io/."
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Run this workflow from the main branch to publish https://nekosearch.pages.dev/."
             exit 1
           fi
 
@@ -43,24 +43,16 @@ jobs:
       - name: Check generated documentation site
         run: npm run docs:site:check
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
         with:
-          path: apps/docs-site/.vitepress/dist
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
+          command: pages deploy apps/docs-site/.vitepress/dist --project-name=nekosearch --branch=main
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v6
-
-      - name: Deploy documentation
-        id: deployment
-        uses: actions/deploy-pages@v5
+      - name: Add deployment URL to the run summary
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: echo "Documentation deployed to ${DEPLOYMENT_URL}" >> "$GITHUB_STEP_SUMMARY"
