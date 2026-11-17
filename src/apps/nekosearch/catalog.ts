@@ -216,7 +216,7 @@ export async function addSnapshot(
     );
   }
 
-  await activateSnapshot(snapshot, options, existingEntries, 'add', activation);
+  await activateSnapshot(snapshot, options, 'add', activation);
   return catalogEntry(
     { ...snapshot, databasePath: installedDatabasePath(snapshot, options) },
     'installed',
@@ -247,13 +247,10 @@ export async function updateSnapshot(
   }
   const expectedCurrent =
     activation.expectedCurrent ?? snapshotIdentity(current);
-  const changed = await activateSnapshot(
-    snapshot,
-    options,
-    existingEntries,
-    'update',
-    { ...activation, expectedCurrent },
-  );
+  const changed = await activateSnapshot(snapshot, options, 'update', {
+    ...activation,
+    expectedCurrent,
+  });
   const trackingRecipe =
     activation.trackingRecipe === null
       ? undefined
@@ -305,10 +302,7 @@ export async function removeSnapshot(
   let cleanupWarning: string | undefined;
 
   await withCatalogLock(catalogRoot, async () => {
-    const snapshots = await readRegistryForActivation(
-      catalogRoot,
-      existingEntries,
-    );
+    const snapshots = await readRegistryForActivation(catalogRoot);
     const currentIndex = snapshots.findIndex(
       (candidate) =>
         candidate.source === source && candidate.version === version,
@@ -336,7 +330,7 @@ export async function removeSnapshot(
       snapshot.source !== source ||
       snapshot.version !== version ||
       snapshot.revision !== current.revision ||
-      !isValidSnapshotStorageKey(current.directoryKey, snapshot)
+      current.directoryKey !== snapshotStorageKey(snapshot)
     ) {
       throw new Error('Catalog snapshot pointer identity is invalid');
     }
@@ -377,7 +371,6 @@ export async function removeSnapshot(
 async function activateSnapshot(
   snapshot: ValidatedSnapshot,
   options: CatalogOptions,
-  existingEntries: DocumentationCatalogEntry[],
   operation: 'add' | 'update',
   activation: SnapshotActivationOptions,
 ): Promise<boolean> {
@@ -435,10 +428,7 @@ async function activateSnapshot(
   }
   try {
     return await withCatalogLock(catalogRoot, async () => {
-      const snapshots = await readRegistryForActivation(
-        catalogRoot,
-        existingEntries,
-      );
+      const snapshots = await readRegistryForActivation(catalogRoot);
       const currentIndex = snapshots.findIndex(
         (entry) =>
           entry.source === snapshot.source &&
@@ -545,7 +535,6 @@ async function activateSnapshot(
 
 async function readRegistryForActivation(
   catalogRoot: string,
-  existingEntries: DocumentationCatalogEntry[],
 ): Promise<CatalogSnapshotPointer[]> {
   const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
   if (await pathExists(registryPath)) {
@@ -553,17 +542,7 @@ async function readRegistryForActivation(
     return parseCatalogRegistry(bytes).snapshots;
   }
 
-  // Older catalogs used identity-based directories without a registry. The
-  // process lock means this validated pre-lock view remains a safe baseline.
-  return existingEntries
-    .filter((entry) => entry.status === 'installed')
-    .map((entry) => ({
-      source: entry.source,
-      version: entry.version,
-      revision: entry.revision,
-      directoryKey: basename(dirname(entry.databasePath)),
-      ...(entry.trackingRecipe ? { trackingRecipe: entry.trackingRecipe } : {}),
-    }));
+  return [];
 }
 
 function sortPointers(
@@ -805,7 +784,7 @@ async function loadInstalledSnapshots(
         snapshot.source !== pointer.source ||
         snapshot.version !== pointer.version ||
         snapshot.revision !== pointer.revision ||
-        !isValidSnapshotStorageKey(pointer.directoryKey, snapshot)
+        pointer.directoryKey !== snapshotStorageKey(snapshot)
       ) {
         throw new Error('Catalog snapshot pointer identity is invalid');
       }
@@ -815,30 +794,7 @@ async function loadInstalledSnapshots(
     return entries;
   }
 
-  if (!(await pathExists(snapshotsDirectory))) return [];
-  await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
-
-  const entries: DocumentationCatalogEntry[] = [];
-  for (const name of (await readdir(snapshotsDirectory)).sort(compareStrings)) {
-    if (name.startsWith('.pending-')) continue;
-    if (!/^[a-f0-9]{64}$/u.test(name)) {
-      throw new Error('Catalog contains an unsafe snapshot directory name');
-    }
-    const directory = join(snapshotsDirectory, name);
-    await assertRealDirectory(directory, 'Installed snapshot directory');
-    const snapshot = await validateSnapshotDirectory(directory);
-    if (snapshotDirectoryKey(snapshot.source, snapshot.version) !== name) {
-      // A newly installed snapshot is renamed into place just before its
-      // registry pointer is committed. Readers can observe that short window
-      // while the registry does not exist yet. Content-addressed directories
-      // are not active without a pointer, so ignore a valid orphan here while
-      // retaining strict validation for legacy identity-keyed snapshots.
-      if (snapshotStorageKey(snapshot) === name) continue;
-      throw new Error('Installed snapshot directory identity is invalid');
-    }
-    entries.push(catalogEntry(snapshot, 'installed'));
-  }
-  return entries;
+  return [];
 }
 
 async function loadInstalledSnapshotByIdentity(
@@ -850,7 +806,6 @@ async function loadInstalledSnapshotByIdentity(
     await assertRealDirectory(catalogRoot, 'Catalog directory');
   }
   const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
-  const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
   if (await pathExists(registryPath)) {
     const registry = parseCatalogRegistry(
       await readRegularFile(registryPath, MAX_CATALOG_BYTES),
@@ -863,21 +818,7 @@ async function loadInstalledSnapshotByIdentity(
     return loadInstalledSnapshotPointer(catalogRoot, pointer);
   }
 
-  if (!(await pathExists(snapshotsDirectory))) return undefined;
-  await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
-  const directoryKey = snapshotDirectoryKey(source, version);
-  const directory = join(snapshotsDirectory, directoryKey);
-  if (!(await pathExists(directory))) return undefined;
-  await assertRealDirectory(directory, 'Installed snapshot directory');
-  const snapshot = await validateSnapshotDirectory(directory);
-  if (
-    snapshot.source !== source ||
-    snapshot.version !== version ||
-    snapshotDirectoryKey(snapshot.source, snapshot.version) !== directoryKey
-  ) {
-    throw new Error('Installed snapshot directory identity is invalid');
-  }
-  return catalogEntry(snapshot, 'installed');
+  return undefined;
 }
 
 async function loadInstalledSnapshotPointer(
@@ -896,7 +837,7 @@ async function loadInstalledSnapshotPointer(
     snapshot.source !== pointer.source ||
     snapshot.version !== pointer.version ||
     snapshot.revision !== pointer.revision ||
-    !isValidSnapshotStorageKey(pointer.directoryKey, snapshot)
+    pointer.directoryKey !== snapshotStorageKey(snapshot)
   ) {
     throw new Error('Catalog snapshot pointer identity is invalid');
   }
@@ -1388,12 +1329,6 @@ function sameProvenance(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function snapshotDirectoryKey(source: string, version: string): string {
-  return createHash('sha256')
-    .update(`${source}\0${version}`, 'utf8')
-    .digest('hex');
-}
-
 function snapshotStorageKey(snapshot: ValidatedSnapshot): string {
   return createHash('sha256')
     .update(
@@ -1401,16 +1336,6 @@ function snapshotStorageKey(snapshot: ValidatedSnapshot): string {
       'utf8',
     )
     .digest('hex');
-}
-
-function isValidSnapshotStorageKey(
-  directoryKey: string,
-  snapshot: ValidatedSnapshot,
-): boolean {
-  return (
-    directoryKey === snapshotDirectoryKey(snapshot.source, snapshot.version) ||
-    directoryKey === snapshotStorageKey(snapshot)
-  );
 }
 
 function installedDatabasePath(
