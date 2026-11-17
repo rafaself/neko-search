@@ -15,7 +15,8 @@ if (
   );
 }
 
-const configuredOrigin = process.env.DOCS_SITE_URL;
+const configuredOrigin =
+  process.env.DOCS_SITE_URL || 'https://nekosearch.github.io';
 const origin = configuredOrigin ? new URL(configuredOrigin) : undefined;
 if (
   origin &&
