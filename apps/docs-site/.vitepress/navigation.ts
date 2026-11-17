@@ -2,6 +2,7 @@ import type { DefaultTheme } from 'vitepress';
 
 export const sidebar = [
   {
+    collapsed: false,
     text: 'Getting Started',
     items: [
       { text: 'Introduction', link: '/' },
@@ -11,6 +12,7 @@ export const sidebar = [
     ],
   },
   {
+    collapsed: false,
     text: 'Guides',
     items: [
       { text: 'Documentation Sources', link: '/guides/documentation-sources' },
@@ -20,6 +22,7 @@ export const sidebar = [
     ],
   },
   {
+    collapsed: false,
     text: 'CLI',
     items: [
       { text: 'Overview', link: '/cli/overview' },
@@ -27,6 +30,7 @@ export const sidebar = [
     ],
   },
   {
+    collapsed: false,
     text: 'MCP',
     items: [
       { text: 'Overview', link: '/mcp/overview' },
@@ -35,6 +39,7 @@ export const sidebar = [
     ],
   },
   {
+    collapsed: false,
     text: 'Architecture',
     items: [
       { text: 'Overview', link: '/architecture/overview' },
@@ -46,6 +51,7 @@ export const sidebar = [
     ],
   },
   {
+    collapsed: false,
     text: 'Development',
     items: [
       { text: 'Contributing', link: '/development/contributing' },

@@ -19,8 +19,8 @@
     'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   --vp-code-font-size: 0.85em;
   --vp-layout-max-width: 1440px;
-  --vp-sidebar-width: 280px;
-  --vp-nav-height: 80px;
+  --vp-sidebar-width: 272px;
+  --vp-nav-height: 81px;
 }
 
 .dark {
@@ -71,21 +71,6 @@ body {
 .vp-doc div[class*='language-'] {
   border: 1px solid var(--vp-c-divider);
 }
-.neko-breadcrumbs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 24px;
-  font-size: 12px;
-  color: var(--vp-c-text-2);
-}
-.neko-breadcrumbs a:hover {
-  color: var(--vp-c-brand-1);
-}
-.neko-breadcrumbs [aria-current] {
-  color: var(--vp-c-text-1);
-}
-
 @media (min-width: 768px) and (max-width: 1100px) {
   .VPNavBar .VPNavBarSearch .DocSearch-Button {
     width: 40px;
@@ -129,7 +114,110 @@ body {
   :root {
     --vp-nav-height: 64px;
   }
-  .neko-breadcrumbs {
-    font-size: 11px;
+}
+
+/* Match the reference's thin scrollbars in the page and navigation panes. */
+:root {
+  --neko-scroll-thumb: #d4d4d8;
+}
+.dark {
+  --neko-scroll-thumb: #2e2e32;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--neko-scroll-thumb) transparent;
+}
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--neko-scroll-thumb);
+  border-radius: 2px;
+}
+
+/* One full-width header frame; the logo does not occupy the sidebar column. */
+@media (min-width: 960px) {
+  .VPNav .VPNavBar {
+    background: var(--vp-c-bg);
   }
+  .Layout div.VPNavBar.has-sidebar .wrapper {
+    width: calc(100% - 24px);
+    max-width: var(--vp-layout-max-width);
+    margin: 0 auto;
+    padding: 0 24px;
+    border-inline: 1px solid var(--vp-c-divider);
+    border-bottom: 1px solid var(--vp-c-divider);
+  }
+  .Layout div.VPNavBar.has-sidebar .container {
+    max-width: none;
+    gap: 40px;
+    height: calc(var(--vp-nav-height) - 1px);
+  }
+  .Layout div.VPNavBar.has-sidebar .container > .title {
+    position: static;
+    width: auto;
+    padding: 0;
+    background: transparent;
+    height: calc(var(--vp-nav-height) - 1px);
+  }
+  .Layout div.VPNavBar .VPNavBarTitle.has-sidebar .title {
+    border-bottom: 0;
+    height: calc(var(--vp-nav-height) - 1px);
+  }
+  .Layout div.VPNavBar.has-sidebar .content {
+    padding: 0;
+    min-width: 0;
+  }
+  .Layout div.VPNavBar.has-sidebar .content-body {
+    background: transparent;
+    height: calc(var(--vp-nav-height) - 1px);
+  }
+  .Layout div.VPNavBar.has-sidebar .divider {
+    display: none;
+  }
+  .Layout div.VPNavBar .VPNavBarMenuLink {
+    font-size: 16px;
+  }
+  .Layout div.VPNavBar .VPNavBarSearch {
+    padding: 0 12px;
+  }
+  .Layout div.VPNavBar .appearance::before,
+  .Layout div.VPNavBar .social-links::before {
+    display: none;
+  }
+
+  /* Sidebar scrolling stays below the header, separate from article scrolling. */
+  .Layout aside.VPSidebar {
+    top: var(--vp-nav-height);
+    left: max(12px, calc((100% - var(--vp-layout-max-width)) / 2));
+    width: var(--vp-sidebar-width);
+    padding: 20px 32px 96px;
+    border-inline: 1px solid var(--vp-c-divider);
+    background: var(--vp-c-bg);
+  }
+  .VPSidebar .curtain {
+    display: none;
+  }
+  .Layout div.VPContent.has-sidebar {
+    width: calc(100% - 24px);
+    max-width: var(--vp-layout-max-width);
+    margin: 0 auto;
+    padding-left: var(--vp-sidebar-width);
+    padding-right: 0;
+    border-inline: 1px solid var(--vp-c-divider);
+  }
+}
+.VPSidebar .VPSidebarItem.level-0 {
+  padding-bottom: 0;
+}
+.VPSidebar .group {
+  padding-top: 0;
+}
+.VPSidebar .group + .group {
+  margin-top: 16px;
+  padding-top: 16px;
 }
