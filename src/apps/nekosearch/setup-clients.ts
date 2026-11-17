@@ -69,11 +69,10 @@ export interface SetupClientStatus {
   scope: 'user' | 'project';
   target: string;
   reason?: string;
-}
-
-interface SetupClientInspection extends SetupClientStatus {
   replaceable?: boolean;
 }
+
+type SetupClientInspection = SetupClientStatus;
 
 export interface SetupClientOptions {
   homeDirectory?: string;
@@ -84,6 +83,7 @@ export interface SetupClientOptions {
   applicationPathExists?: (path: string) => boolean;
   runCodexCommand?: CodexCommandRunner;
   replaceConflictingCodex?: boolean;
+  removeConflictingCodex?: boolean;
 }
 
 export type SetupClientConfigurationResult = 'added' | 'unchanged';
@@ -323,6 +323,7 @@ export async function inspectSetupClients(
       scope: client.scope,
       target: client.target,
       ...(client.reason && { reason: client.reason }),
+      ...(client.replaceable && { replaceable: true }),
     };
     return publicStatus;
   });
@@ -384,26 +385,44 @@ function createCodexDefinition(): ClientDefinition {
             target,
           };
     }
+    const codexHome = codexHomeDirectory(options);
+    if (!existsSync(codexHome)) {
+      return {
+        id: 'codex',
+        label,
+        state: 'ready',
+        application: 'detected',
+        configuration: 'managed',
+        registration: 'missing',
+        setupMode: 'automatic',
+        scope: 'user',
+        target: 'Codex user MCP registry (managed by `codex mcp`)',
+      };
+    }
     try {
       const inspection = await inspectCodexMcp({
         serverCommand: options.serverCommand,
         codexCommand: command,
         ...(options.runCodexCommand && { runCommand: options.runCodexCommand }),
       });
+      const replaceable =
+        inspection.state === 'conflict' && inspection.replaceable;
       return {
         id: 'codex',
         label,
-        state: setupClientState(inspection.state),
+        state: replaceable
+          ? 'already-configured'
+          : setupClientState(inspection.state),
         application: 'detected',
         configuration: 'managed',
-        registration: registrationState(inspection.state),
+        registration: replaceable
+          ? 'configured'
+          : registrationState(inspection.state),
         setupMode: 'automatic',
         scope: 'user',
         target: 'Codex user MCP registry (managed by `codex mcp`)',
+        ...(replaceable && { replaceable: true }),
         ...(inspection.state === 'conflict' && { reason: inspection.reason }),
-        ...(inspection.state === 'conflict' && {
-          replaceable: inspection.replaceable,
-        }),
       };
     } catch (error) {
       return status(
@@ -429,6 +448,7 @@ function createCodexDefinition(): ClientDefinition {
     async configure(options) {
       const command = findExecutable('codex', options);
       if (!command) throw new Error('Codex CLI was not detected on PATH');
+      await mkdir(codexHomeDirectory(options), { recursive: true });
       const result = await configureCodexMcp({
         serverCommand: options.serverCommand,
         codexCommand: command,
@@ -442,11 +462,19 @@ function createCodexDefinition(): ClientDefinition {
       if (!command) throw new Error('Codex CLI was not detected on PATH');
       return removeCodexMcp({
         serverCommand: options.serverCommand,
+        force: options.removeConflictingCodex,
         codexCommand: command,
         ...(options.runCodexCommand && { runCommand: options.runCodexCommand }),
       });
     },
   };
+}
+
+function codexHomeDirectory(
+  options: Pick<ResolvedSetupClientOptions, 'environment' | 'homeDirectory'>,
+): string {
+  const configured = options.environment.CODEX_HOME?.trim();
+  return resolve(configured || join(options.homeDirectory, '.codex'));
 }
 
 function createJsonClientDefinition(

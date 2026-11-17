@@ -180,7 +180,7 @@ describe('nekosearch setup flow', () => {
     );
   });
 
-  it('starts configured providers checked and stages removal when unchecked', async () => {
+  it('starts a replaceable Codex registration checked and removes it when unchecked', async () => {
     const prompts = createPrompts({
       multiSelections: [[], ['cursor']],
       confirmations: [true],
@@ -203,6 +203,7 @@ describe('nekosearch setup flow', () => {
             state: 'already-configured',
             application: 'not-detected',
             registration: 'configured',
+            replaceable: true,
           },
           client('cursor', 'Cursor'),
         ]),
@@ -226,8 +227,53 @@ describe('nekosearch setup flow', () => {
       'Action: Remove NekoSearch configuration',
     );
     expect(configureClient).toHaveBeenCalledWith('cursor', expect.any(Object));
-    expect(removeClient).toHaveBeenCalledWith('codex', expect.any(Object));
+    expect(removeClient).toHaveBeenCalledWith(
+      'codex',
+      expect.objectContaining({ removeConflictingCodex: true }),
+    );
     expect(prompts.messages.at(-1)).toContain('Providers removed: Codex');
+  });
+
+  it('updates a checked replaceable Codex registration to the current CLI', async () => {
+    const prompts = createPrompts({
+      multiSelections: [[], ['codex']],
+      confirmations: [true],
+    });
+    const configureClient = jest
+      .fn<NonNullable<SetupDependencies['configureClient']>>()
+      .mockResolvedValue('added');
+    const removeClient =
+      jest.fn<NonNullable<SetupDependencies['removeClient']>>();
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () =>
+        Promise.resolve([
+          {
+            ...client('codex', 'Codex'),
+            state: 'already-configured',
+            registration: 'configured',
+            replaceable: true,
+          },
+        ]),
+      configureClient,
+      removeClient,
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
+    expect(prompts.messages.join('\n')).toContain(
+      'Action: Update NekoSearch registration',
+    );
+    expect(configureClient).toHaveBeenCalledWith(
+      'codex',
+      expect.objectContaining({ replaceConflictingCodex: true }),
+    );
+    expect(removeClient).not.toHaveBeenCalled();
+    expect(prompts.messages.at(-1)).toContain('Providers configured: Codex');
   });
 
   it('keeps a checked configured provider without showing a confirmation', async () => {

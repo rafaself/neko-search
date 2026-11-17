@@ -106,6 +106,21 @@ describe('NekoSearch Codex MCP configuration', () => {
     expect(registrations).toEqual([conflicting]);
   });
 
+  it('removes a replaceable registration when setup explicitly allows it', async () => {
+    const { registrations, calls, runCommand } = createCodexRunner([
+      stdioRegistration('/another/node', ['/another/cli.js', 'serve']),
+    ]);
+
+    await expect(
+      removeCodexMcp({ serverCommand, force: true, runCommand }),
+    ).resolves.toBe('removed');
+    expect(calls).toEqual([
+      ['mcp', 'list', '--json'],
+      ['mcp', 'remove', 'nekosearch'],
+    ]);
+    expect(registrations).toEqual([]);
+  });
+
   it('treats an already absent registration as unchanged', async () => {
     const { calls, runCommand } = createCodexRunner();
 

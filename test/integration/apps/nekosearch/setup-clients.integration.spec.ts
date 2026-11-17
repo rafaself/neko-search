@@ -309,9 +309,52 @@ describe('NekoSearch setup MCP client adapters', () => {
     });
   });
 
-  it('shows a replaceable legacy Codex registration for reviewed replacement', async () => {
+  it('offers Codex when its configured home is fresh and creates it on setup', async () => {
     const binDirectory = join(root, 'codex bin');
     mkdirSync(binDirectory);
+    const codexPath = join(binDirectory, 'codex');
+    writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
+    chmodSync(codexPath, 0o755);
+    const codexHome = join(root, 'fresh codex home');
+    const calls: string[][] = [];
+    const runCodexCommand = (_command: string, args: string[]) => {
+      calls.push(args);
+      return Promise.resolve({
+        stdout: args[1] === 'list' ? '[]' : '',
+        stderr: '',
+      });
+    };
+    const codexOptions = {
+      homeDirectory,
+      environment: { PATH: binDirectory, CODEX_HOME: codexHome },
+      platform: 'linux' as NodeJS.Platform,
+      serverCommand: command,
+      runCodexCommand,
+    };
+
+    const statuses = await inspectSetupClients(codexOptions);
+
+    expect(statuses.find(({ id }) => id === 'codex')).toMatchObject({
+      state: 'ready',
+      registration: 'missing',
+    });
+    expect(existsSync(codexHome)).toBe(false);
+    expect(calls).toEqual([]);
+
+    await expect(configureSetupClient('codex', codexOptions)).resolves.toBe(
+      'added',
+    );
+    expect(existsSync(codexHome)).toBe(true);
+    expect(calls).toEqual([
+      ['mcp', 'list', '--json'],
+      ['mcp', 'add', 'nekosearch', '--', command.command, ...command.args],
+    ]);
+  });
+
+  it('recognizes a replaceable legacy Codex registration as configured', async () => {
+    const binDirectory = join(root, 'codex bin');
+    mkdirSync(binDirectory);
+    mkdirSync(join(homeDirectory, '.codex'));
     const codexPath = join(binDirectory, 'codex');
     writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
     chmodSync(codexPath, 0o755);
@@ -349,13 +392,14 @@ describe('NekoSearch setup MCP client adapters', () => {
         {
           id: 'codex',
           label: 'Codex',
-          state: 'conflict',
+          state: 'already-configured',
           application: 'detected',
           configuration: 'managed',
-          registration: 'conflict',
+          registration: 'configured',
           setupMode: 'automatic',
           scope: 'user',
           target: 'Codex user MCP registry (managed by `codex mcp`)',
+          replaceable: true,
           reason:
             'Codex already has a different MCP registration named nekosearch',
         },

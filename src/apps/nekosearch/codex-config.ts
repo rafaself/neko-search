@@ -121,7 +121,10 @@ export async function removeCodexMcp(
     runCommand,
   });
   if (inspection.state === 'available') return 'unchanged';
-  if (inspection.state === 'conflict') {
+  if (
+    inspection.state === 'conflict' &&
+    (!options.force || !inspection.replaceable)
+  ) {
     throw new Error(
       `${inspection.reason}; refusing to remove a different MCP registration`,
     );

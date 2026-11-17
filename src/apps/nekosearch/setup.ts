@@ -298,7 +298,7 @@ export async function runSetup(
       (client) =>
         (client.state === 'ready' && selectedClientIds.has(client.id)) ||
         (client.state === 'already-configured' &&
-          !selectedClientIds.has(client.id)),
+          (client.replaceable || !selectedClientIds.has(client.id))),
     );
     if (selectedDocs.length === 0 && !hasProviderChanges) break;
     prompts.message(
@@ -348,11 +348,20 @@ export async function runSetup(
     for (const id of selectedClients) {
       const client = selectableClients.find((entry) => entry.id === id);
       const label = client?.label ?? id;
-      if (client?.state === 'already-configured') continue;
+      const replaceableCodex =
+        client?.id === 'codex' && client.replaceable === true;
+      if (client?.state === 'already-configured' && !replaceableCodex) {
+        continue;
+      }
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
       spinner.start(`Configuring ${label}`);
       try {
-        const result = await configureClient(id, clientOptions);
+        const result = await configureClient(
+          id,
+          replaceableCodex
+            ? { ...clientOptions, replaceConflictingCodex: true }
+            : clientOptions,
+        );
         if (result === 'added') {
           configuredClients.push(label);
           spinner.stop(`Configured ${label}`);
@@ -377,7 +386,12 @@ export async function runSetup(
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
       spinner.start(`Removing ${client.label}`);
       try {
-        const result = await removeClient(client.id, clientOptions);
+        const result = await removeClient(
+          client.id,
+          client.id === 'codex' && client.replaceable
+            ? { ...clientOptions, removeConflictingCodex: true }
+            : clientOptions,
+        );
         if (result === 'removed') {
           removedClients.push(client.label);
           spinner.stop(`Removed ${client.label}`);
@@ -624,7 +638,7 @@ function renderConfigurationPreview(
         `  ${client.label}`,
         `    Scope: ${client.scope === 'user' ? 'User' : 'Project'}`,
         `    Target: ${client.target}`,
-        `    Action: ${client.state === 'already-configured' ? 'Keep existing NekoSearch configuration' : 'Add NekoSearch'}`,
+        `    Action: ${client.replaceable ? 'Update NekoSearch registration' : client.state === 'already-configured' ? 'Keep existing NekoSearch configuration' : 'Add NekoSearch'}`,
       );
     }
     for (const client of removedClients) {
