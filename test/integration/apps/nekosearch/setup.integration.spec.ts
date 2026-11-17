@@ -164,6 +164,30 @@ describe('nekosearch setup flow', () => {
     );
   });
 
+  it('marks an already configured provider with a check in the choices', async () => {
+    const prompts = createPrompts({
+      multiSelections: [[], ['codex']],
+      confirmations: [true],
+    });
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () =>
+        Promise.resolve([
+          { id: 'codex', label: 'Codex', alreadyConfigured: true },
+        ]),
+      configureClient: () => Promise.resolve('unchanged'),
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.multiselectCalls[1]?.options).toEqual([
+      { value: 'codex', label: 'Codex', hint: '✓' },
+    ]);
+    expect(prompts.messages).toContain('Providers to configure: ✓ Codex');
+  });
+
   it('shows Codex when its legacy registration needs reviewed replacement', async () => {
     const prompts = createPrompts({
       multiSelections: [[], ['codex']],
@@ -369,7 +393,7 @@ describe('nekosearch setup flow', () => {
     expect(prompts.messages.at(-1)).toContain('mocked timeout');
   });
 
-  it('shows installed selectors without an added status label', async () => {
+  it('marks installed selectors with a check without added status text', async () => {
     const prompts = createPrompts({
       multiSelections: [[], []],
       confirmations: [true],
@@ -394,6 +418,7 @@ describe('nekosearch setup flow', () => {
         {
           value: 'nestjs@12',
           label: 'nestjs@12',
+          hint: '✓',
           disabled: true,
         },
       ]),

@@ -50,6 +50,24 @@ describe('setup terminal prompts', () => {
     input.destroy();
     output.stream.destroy();
   });
+
+  it('renders the installed and configured check marks beside their names', async () => {
+    const input = new PassThrough();
+    const output = createOutput();
+    const prompts = createSetupPromptApi(input, output.stream);
+    const selection = prompts.multiselect('Choose docs and providers', [
+      { value: 'nestjs@12', label: 'nestjs@12', hint: '✓', disabled: true },
+      { value: 'codex', label: 'Codex', hint: '✓' },
+    ]);
+
+    press(input, 'return', '\r');
+    await expect(selection).resolves.toEqual([]);
+    expect(output.text()).toContain('nestjs@12 (✓)');
+    expect(output.text()).toContain('Codex (✓)');
+
+    input.destroy();
+    output.stream.destroy();
+  });
 });
 
 function press(input: PassThrough, name: string, sequence: string): void {

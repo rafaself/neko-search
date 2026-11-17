@@ -828,6 +828,12 @@ async function loadInstalledSnapshots(
     await assertRealDirectory(directory, 'Installed snapshot directory');
     const snapshot = await validateSnapshotDirectory(directory);
     if (snapshotDirectoryKey(snapshot.source, snapshot.version) !== name) {
+      // A newly installed snapshot is renamed into place just before its
+      // registry pointer is committed. Readers can observe that short window
+      // while the registry does not exist yet. Content-addressed directories
+      // are not active without a pointer, so ignore a valid orphan here while
+      // retaining strict validation for legacy identity-keyed snapshots.
+      if (snapshotStorageKey(snapshot) === name) continue;
       throw new Error('Installed snapshot directory identity is invalid');
     }
     entries.push(catalogEntry(snapshot, 'installed'));

@@ -69,6 +69,19 @@ describe('NekoSearch snapshot catalog', () => {
     );
   });
 
+  it('ignores an unregistered content-addressed snapshot during activation', async () => {
+    await addSnapshot(snapshotDirectory, { catalogRoot });
+
+    // Activation renames the validated directory before atomically writing
+    // its registry pointer. Model a reader observing that interval.
+    rmSync(join(catalogRoot, 'catalog.json'));
+
+    const entries = await listCatalogIndexes({ catalogRoot });
+    expect(
+      entries.map(({ source, version }) => `${source}@${version}`),
+    ).toEqual(['mcp@2025-11-25']);
+  });
+
   it('removes an installed snapshot while preserving other entries and open readers', async () => {
     const added = await addSnapshot(snapshotDirectory, { catalogRoot });
     const otherSnapshot = join(root, 'other-snapshot');

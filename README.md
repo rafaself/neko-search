@@ -30,7 +30,7 @@ Run the interactive setup when you want to install curated docs and register thi
 nekosearch setup
 ```
 
-Setup first asks which curated documentation snapshots you want, then lists supported MCP providers detected on your machine. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`. Already installed snapshots remain disabled and show only their `source@version` selector. If Codex has an older NekoSearch registration, setup marks it for replacement in the choice and final review.
+Setup first asks which curated documentation snapshots you want, then lists supported MCP providers detected on your machine. Already installed snapshots and already configured providers have a check mark beside their selector or name. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`. If Codex has an older NekoSearch registration, setup marks it for replacement in the choice and final review.
 
 Before it changes anything, setup shows a final overview of the documentation and providers selected. Downloads, local indexing, and provider configuration begin only after you confirm. If a docs download or provider configuration fails, setup reports the failure and continues with the remaining selected operations. It preserves unrelated values and supported comments; other conflicts and unparseable files remain untouched. Re-running setup leaves matching registrations unchanged. On a non-interactive terminal it exits before reading or writing configuration and before downloading docs.
 

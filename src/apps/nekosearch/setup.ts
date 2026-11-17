@@ -149,6 +149,7 @@ export async function runSetup(
     return {
       value: selector,
       label: selector,
+      ...(installed && { hint: '✓' }),
       disabled: installed || !catalogReadable,
     };
   });
@@ -213,7 +214,7 @@ export async function runSetup(
           ({ id, label, alreadyConfigured, requiresReplacement }) => ({
             value: id,
             label,
-            ...(alreadyConfigured && { hint: 'already configured' }),
+            ...(alreadyConfigured && { hint: '✓' }),
             ...(requiresReplacement && {
               hint: 'replace existing NekoSearch registration',
             }),
@@ -243,8 +244,7 @@ export async function runSetup(
           const client = selectableClients.find((entry) => entry.id === id);
           if (client?.requiresReplacement)
             return `${client.label} (replace existing NekoSearch registration)`;
-          if (client?.alreadyConfigured)
-            return `${client.label} (already configured)`;
+          if (client?.alreadyConfigured) return `✓ ${client.label}`;
           return client?.label ?? id;
         }),
       )}`,
