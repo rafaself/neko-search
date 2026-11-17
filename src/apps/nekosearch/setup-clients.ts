@@ -1,4 +1,10 @@
-import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { lstat, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import {
   delimiter,
@@ -26,6 +32,18 @@ import type { NekosearchStdioCommand } from './mcp-command.js';
 type SetupClientAvailability =
   'already configured' | 'available' | 'not detected' | 'conflict';
 
+export type SetupClientState =
+  'ready' | 'already-configured' | 'conflict' | 'not-detected' | 'manual-only';
+
+export type SetupClientApplicationState =
+  'detected' | 'not-detected' | 'manual-only';
+
+export type SetupClientConfigurationState =
+  'available' | 'missing' | 'unsafe' | 'unreadable' | 'managed' | 'unknown';
+
+export type SetupClientRegistrationState =
+  'missing' | 'configured' | 'conflict' | 'unknown';
+
 export type SetupClientId =
   | 'codex'
   | 'claude-code'
@@ -42,13 +60,17 @@ export type SetupClientId =
 export interface SetupClientStatus {
   id: SetupClientId;
   label: string;
-  alreadyConfigured?: boolean;
-  requiresReplacement?: boolean;
+  state: SetupClientState;
+  application: SetupClientApplicationState;
+  configuration: SetupClientConfigurationState;
+  registration: SetupClientRegistrationState;
+  setupMode: 'automatic' | 'manual';
+  scope: 'user' | 'project';
+  target: string;
+  reason?: string;
 }
 
 interface SetupClientInspection extends SetupClientStatus {
-  state: SetupClientAvailability;
-  reason?: string;
   replaceable?: boolean;
 }
 
@@ -58,6 +80,7 @@ export interface SetupClientOptions {
   platform?: NodeJS.Platform;
   serverCommand: NekosearchStdioCommand;
   commandExists?: (command: string) => boolean;
+  applicationPathExists?: (path: string) => boolean;
   runCodexCommand?: CodexCommandRunner;
   replaceConflictingCodex?: boolean;
 }
@@ -78,12 +101,16 @@ interface ResolvedSetupClientOptions extends SetupClientOptions {
   environment: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   commandExists: (command: string) => boolean;
+  applicationPathExists: (path: string) => boolean;
 }
 
 interface JsonClientDefinition {
   id: SetupClientId;
   label: string;
   commands: string[];
+  application?: DesktopApplication;
+  detectApplication?: (options: ResolvedSetupClientOptions) => boolean;
+  manualOnly?: boolean;
   configPath(options: ResolvedSetupClientOptions): string;
   registrationPath: string[];
   createRegistration(command: NekosearchStdioCommand): Record<string, unknown>;
@@ -91,6 +118,12 @@ interface JsonClientDefinition {
     registration: Record<string, unknown>,
     command: NekosearchStdioCommand,
   ): boolean;
+}
+
+interface DesktopApplication {
+  product: string;
+  executable: string;
+  windowsDirectory?: string;
 }
 
 const JSON_CLIENTS: JsonClientDefinition[] = [
@@ -115,6 +148,7 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     id: 'cursor',
     label: 'Cursor',
     commands: ['cursor'],
+    application: { product: 'Cursor', executable: 'Cursor' },
     configPath: ({ homeDirectory }) =>
       join(homeDirectory, '.cursor', 'mcp.json'),
     registrationPath: ['mcpServers', 'nekosearch'],
@@ -145,7 +179,10 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
   {
     id: 'github-copilot',
     label: 'GitHub Copilot CLI + VS Code Copilot Global',
-    commands: ['copilot', 'code', 'code-insiders'],
+    commands: ['copilot'],
+    detectApplication: (options) =>
+      isVsCodeInstalled(options) &&
+      hasVsCodeExtension('github.copilot', options),
     configPath: ({ homeDirectory, environment }) =>
       join(
         environment.COPILOT_HOME || join(homeDirectory, '.copilot'),
@@ -166,7 +203,10 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
   {
     id: 'cline',
     label: 'Cline',
-    commands: ['cline'],
+    commands: [],
+    detectApplication: (options) =>
+      isVsCodeInstalled(options) &&
+      hasVsCodeExtension('saoudrizwan.claude-dev', options),
     configPath: ({ homeDirectory, environment }) =>
       environment.CLINE_MCP_SETTINGS_PATH ||
       join(
@@ -192,6 +232,7 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     id: 'kiro',
     label: 'Kiro',
     commands: ['kiro'],
+    application: { product: 'Kiro', executable: 'Kiro' },
     configPath: ({ homeDirectory }) =>
       join(homeDirectory, '.kiro', 'settings', 'mcp.json'),
     registrationPath: ['mcpServers', 'nekosearch'],
@@ -207,6 +248,7 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     id: 'zed',
     label: 'Zed',
     commands: ['zed'],
+    application: { product: 'Zed', executable: 'zed' },
     configPath: zedSettingsPath,
     registrationPath: ['context_servers', 'nekosearch'],
     createRegistration: (command) => ({
@@ -220,7 +262,8 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
   {
     id: 'junie',
     label: 'Junie',
-    commands: ['junie'],
+    commands: [],
+    manualOnly: true,
     configPath: ({ homeDirectory }) =>
       join(homeDirectory, '.junie', 'mcp', 'mcp.json'),
     registrationPath: ['mcpServers', 'nekosearch'],
@@ -236,6 +279,7 @@ const JSON_CLIENTS: JsonClientDefinition[] = [
     id: 'antigravity',
     label: 'Google Antigravity',
     commands: ['agy'],
+    application: { product: 'Antigravity', executable: 'antigravity' },
     configPath: ({ homeDirectory }) =>
       join(homeDirectory, '.gemini', 'config', 'mcp_config.json'),
     registrationPath: ['mcpServers', 'nekosearch'],
@@ -262,27 +306,21 @@ export async function inspectSetupClients(
   const inspections = await Promise.all(
     CLIENTS.map((client) => client.inspect(resolved)),
   );
-  return inspections
-    .filter(
-      (client) =>
-        client.state === 'available' ||
-        (client.id === 'codex' &&
-          (client.state === 'already configured' ||
-            (client.state === 'conflict' && client.replaceable === true))),
-    )
-    .map(({ id, label, state, replaceable }) => ({
-      id,
-      label,
-      ...(id === 'codex' &&
-        state === 'already configured' && {
-          alreadyConfigured: true,
-        }),
-      ...(id === 'codex' &&
-        state === 'conflict' &&
-        replaceable === true && {
-          requiresReplacement: true,
-        }),
-    }));
+  return inspections.map((client) => {
+    const publicStatus: SetupClientStatus = {
+      id: client.id,
+      label: client.label,
+      state: client.state,
+      application: client.application,
+      configuration: client.configuration,
+      registration: client.registration,
+      setupMode: client.setupMode,
+      scope: client.scope,
+      target: client.target,
+      ...(client.reason && { reason: client.reason }),
+    };
+    return publicStatus;
+  });
 }
 
 export async function configureSetupClient(
@@ -302,7 +340,35 @@ function createCodexDefinition(): ClientDefinition {
     options: ResolvedSetupClientOptions,
   ): Promise<SetupClientInspection> => {
     const command = findExecutable('codex', options);
-    if (!command) return status('codex', label, 'not detected');
+    const target = join(options.homeDirectory, '.codex', 'config.toml');
+    if (!command) {
+      return isDesktopApplicationInstalled(
+        { product: 'Codex', executable: 'Codex' },
+        options,
+      )
+        ? {
+            id: 'codex',
+            label,
+            state: 'manual-only',
+            application: 'detected',
+            configuration: 'managed',
+            registration: 'unknown',
+            setupMode: 'manual',
+            scope: 'user',
+            target,
+          }
+        : {
+            id: 'codex',
+            label,
+            state: 'not-detected',
+            application: 'not-detected',
+            configuration: 'unknown',
+            registration: 'unknown',
+            setupMode: 'automatic',
+            scope: 'user',
+            target,
+          };
+    }
     try {
       const inspection = await inspectCodexMcp({
         serverCommand: options.serverCommand,
@@ -312,7 +378,13 @@ function createCodexDefinition(): ClientDefinition {
       return {
         id: 'codex',
         label,
-        state: inspection.state,
+        state: setupClientState(inspection.state),
+        application: 'detected',
+        configuration: 'managed',
+        registration: registrationState(inspection.state),
+        setupMode: 'automatic',
+        scope: 'user',
+        target: 'Codex user MCP registry (managed by `codex mcp`)',
         ...(inspection.state === 'conflict' && { reason: inspection.reason }),
         ...(inspection.state === 'conflict' && {
           replaceable: inspection.replaceable,
@@ -324,6 +396,14 @@ function createCodexDefinition(): ClientDefinition {
         label,
         'conflict',
         `Could not inspect the Codex registration safely: ${errorMessage(error)}`,
+        {
+          application: 'detected',
+          configuration: 'managed',
+          registration: 'unknown',
+          setupMode: 'automatic',
+          scope: 'user',
+          target: 'Codex user MCP registry (managed by `codex mcp`)',
+        },
       );
     }
   };
@@ -351,6 +431,30 @@ function createJsonClientDefinition(
   const inspect = async (
     options: ResolvedSetupClientOptions,
   ): Promise<SetupClientInspection> => {
+    if (definition.manualOnly) {
+      let target = 'Client MCP settings';
+      try {
+        target = safeConfigPath(definition.configPath(options));
+      } catch {
+        // The generic manual target remains useful when app config paths conflict.
+      }
+      return {
+        id: definition.id,
+        label: definition.label,
+        state: 'manual-only',
+        application: 'manual-only',
+        configuration: 'unknown',
+        registration: 'unknown',
+        setupMode: 'manual',
+        scope: 'user',
+        target,
+      };
+    }
+    const applicationDetected =
+      definition.commands.some((name) => options.commandExists(name)) ||
+      (definition.application !== undefined &&
+        isDesktopApplicationInstalled(definition.application, options)) ||
+      definition.detectApplication?.(options) === true;
     let filePath: string;
     try {
       filePath = safeConfigPath(definition.configPath(options));
@@ -358,30 +462,17 @@ function createJsonClientDefinition(
       return status(
         definition.id,
         definition.label,
-        'conflict',
+        applicationDetected ? 'conflict' : 'not detected',
         errorMessage(error),
+        {
+          application: applicationDetected ? 'detected' : 'not-detected',
+          configuration: 'unsafe',
+          registration: 'unknown',
+          setupMode: 'automatic',
+          scope: 'user',
+          target: `${definition.label} user configuration`,
+        },
       );
-    }
-    let fileExists: boolean;
-    try {
-      await lstat(filePath);
-      fileExists = true;
-    } catch (error) {
-      if (!isMissingFile(error)) {
-        return status(
-          definition.id,
-          definition.label,
-          'conflict',
-          `Cannot inspect ${filePath}: ${errorMessage(error)}`,
-        );
-      }
-      fileExists = false;
-    }
-    if (
-      !fileExists &&
-      !definition.commands.some((name) => options.commandExists(name))
-    ) {
-      return status(definition.id, definition.label, 'not detected');
     }
     const inspected = await inspectJsonRegistration(
       filePath,
@@ -390,12 +481,20 @@ function createJsonClientDefinition(
         definition.matchesRegistration(registration, command),
       options.serverCommand,
     );
-    return status(
-      definition.id,
-      definition.label,
-      inspected.state,
-      inspected.reason,
-    );
+    return {
+      id: definition.id,
+      label: definition.label,
+      state: applicationDetected
+        ? setupClientState(inspected.state)
+        : 'not-detected',
+      application: applicationDetected ? 'detected' : 'not-detected',
+      configuration: inspected.configuration,
+      registration: inspected.registration,
+      setupMode: 'automatic',
+      scope: 'user',
+      target: filePath,
+      ...(inspected.reason && { reason: inspected.reason }),
+    };
   };
   return {
     id: definition.id,
@@ -421,41 +520,44 @@ function createGrokDefinition(): ClientDefinition {
   const inspect = async (
     options: ResolvedSetupClientOptions,
   ): Promise<SetupClientInspection> => {
+    const applicationDetected = options.commandExists('grok');
     let filePath: string;
     try {
       filePath = configPath(options);
     } catch (error) {
-      return status(id, label, 'conflict', errorMessage(error));
+      return status(
+        id,
+        label,
+        applicationDetected ? 'conflict' : 'not detected',
+        errorMessage(error),
+        {
+          application: applicationDetected ? 'detected' : 'not-detected',
+          configuration: 'unsafe',
+          registration: 'unknown',
+          setupMode: 'automatic',
+          scope: 'user',
+          target: 'Grok Build user configuration',
+        },
+      );
     }
-    let fileExists = false;
-    try {
-      const info = await lstat(filePath);
-      if (!info.isFile() || info.isSymbolicLink()) {
-        return status(
-          id,
-          label,
-          'conflict',
-          `${filePath} is not a regular config file`,
-        );
-      }
-      fileExists = true;
-    } catch (error) {
-      if (!isMissingFile(error)) {
-        return status(
-          id,
-          label,
-          'conflict',
-          `Cannot inspect ${filePath}: ${errorMessage(error)}`,
-        );
-      }
-    }
-    if (!fileExists && !options.commandExists('grok'))
-      return status(id, label, 'not detected');
     const inspected = await inspectTomlRegistration(
       filePath,
       options.serverCommand,
     );
-    return status(id, label, inspected.state, inspected.reason);
+    return {
+      id,
+      label,
+      state: applicationDetected
+        ? setupClientState(inspected.state)
+        : 'not-detected',
+      application: applicationDetected ? 'detected' : 'not-detected',
+      configuration: inspected.configuration,
+      registration: inspected.registration,
+      setupMode: 'automatic',
+      scope: 'user',
+      target: filePath,
+      ...(inspected.reason && { reason: inspected.reason }),
+    };
   };
   return {
     id,
@@ -471,25 +573,55 @@ async function inspectJsonRegistration(
   registrationPath: string[],
   matches: JsonClientDefinition['matchesRegistration'],
   command: NekosearchStdioCommand,
-): Promise<{ state: SetupClientAvailability; reason?: string }> {
+): Promise<{
+  state: SetupClientAvailability;
+  configuration: SetupClientConfigurationState;
+  registration: SetupClientRegistrationState;
+  reason?: string;
+}> {
   const read = await readJsoncFile(filePath);
-  if (read.state === 'missing') return { state: 'available' };
+  if (read.state === 'missing') {
+    return {
+      state: 'available',
+      configuration: 'missing',
+      registration: 'missing',
+    };
+  }
   if (read.state === 'conflict')
-    return { state: 'conflict', reason: read.reason };
+    return {
+      state: 'conflict',
+      configuration: read.configuration,
+      registration: 'unknown',
+      reason: read.reason,
+    };
   const parent = getPath(read.value, registrationPath.slice(0, -1));
   if (parent !== undefined && !isRecord(parent)) {
     return {
       state: 'conflict',
+      configuration: 'available',
+      registration: 'conflict',
       reason: `The ${registrationPath[0]} setting in ${filePath} is not an object`,
     };
   }
   const existing = getPath(read.value, registrationPath);
-  if (existing === undefined) return { state: 'available' };
+  if (existing === undefined) {
+    return {
+      state: 'available',
+      configuration: 'available',
+      registration: 'missing',
+    };
+  }
   if (isRecord(existing) && matches(existing, command)) {
-    return { state: 'already configured' };
+    return {
+      state: 'already configured',
+      configuration: 'available',
+      registration: 'configured',
+    };
   }
   return {
     state: 'conflict',
+    configuration: 'available',
+    registration: 'conflict',
     reason: `A different ${registrationPath.at(-1)} MCP entry already exists in ${filePath}; it was left unchanged`,
   };
 }
@@ -551,10 +683,15 @@ async function installJsonRegistration(
 }
 
 async function readJsoncFile(filePath: string): Promise<
-  | { state: 'missing' }
-  | { state: 'conflict'; reason: string }
+  | { state: 'missing'; configuration: 'missing' }
+  | {
+      state: 'conflict';
+      configuration: 'unsafe' | 'unreadable';
+      reason: string;
+    }
   | {
       state: 'readable';
+      configuration: 'available';
       text: string;
       value: Record<string, unknown>;
       mode: number;
@@ -564,15 +701,19 @@ async function readJsoncFile(filePath: string): Promise<
   try {
     info = await lstat(filePath);
   } catch (error) {
-    if (isMissingFile(error)) return { state: 'missing' };
+    if (isMissingFile(error)) {
+      return { state: 'missing', configuration: 'missing' };
+    }
     return {
       state: 'conflict',
+      configuration: 'unreadable',
       reason: `Cannot inspect ${filePath}: ${errorMessage(error)}`,
     };
   }
   if (!info.isFile() || info.isSymbolicLink()) {
     return {
       state: 'conflict',
+      configuration: 'unsafe',
       reason: `${filePath} is not a regular config file`,
     };
   }
@@ -582,6 +723,7 @@ async function readJsoncFile(filePath: string): Promise<
   } catch (error) {
     return {
       state: 'conflict',
+      configuration: 'unreadable',
       reason: `Cannot read ${filePath}: ${errorMessage(error)}`,
     };
   }
@@ -594,34 +736,57 @@ async function readJsoncFile(filePath: string): Promise<
     const first = errors[0];
     return {
       state: 'conflict',
+      configuration: 'unsafe',
       reason: `Cannot safely edit ${filePath}: ${first ? printParseErrorCode(first.error) : 'invalid JSONC'}`,
     };
   }
   if (!isRecord(value)) {
     return {
       state: 'conflict',
+      configuration: 'unsafe',
       reason: `Cannot safely edit ${filePath}: the root value is not an object`,
     };
   }
-  return { state: 'readable', text, value, mode: info.mode & 0o777 };
+  return {
+    state: 'readable',
+    configuration: 'available',
+    text,
+    value,
+    mode: info.mode & 0o777,
+  };
 }
 
 async function inspectTomlRegistration(
   filePath: string,
   command: NekosearchStdioCommand,
-): Promise<{ state: SetupClientAvailability; reason?: string }> {
+): Promise<{
+  state: SetupClientAvailability;
+  configuration: SetupClientConfigurationState;
+  registration: SetupClientRegistrationState;
+  reason?: string;
+}> {
   try {
     const info = await lstat(filePath);
     if (!info.isFile() || info.isSymbolicLink()) {
       return {
         state: 'conflict',
+        configuration: 'unsafe',
+        registration: 'unknown',
         reason: `${filePath} is not a regular config file`,
       };
     }
   } catch (error) {
-    if (isMissingFile(error)) return { state: 'available' };
+    if (isMissingFile(error)) {
+      return {
+        state: 'available',
+        configuration: 'missing',
+        registration: 'missing',
+      };
+    }
     return {
       state: 'conflict',
+      configuration: 'unreadable',
+      registration: 'unknown',
       reason: `Cannot inspect ${filePath}: ${errorMessage(error)}`,
     };
   }
@@ -629,27 +794,55 @@ async function inspectTomlRegistration(
   try {
     text = await readFile(filePath, 'utf8');
   } catch (error) {
-    if (isMissingFile(error)) return { state: 'available' };
+    if (isMissingFile(error)) {
+      return {
+        state: 'available',
+        configuration: 'missing',
+        registration: 'missing',
+      };
+    }
     return {
       state: 'conflict',
+      configuration: 'unreadable',
+      registration: 'unknown',
       reason: `Cannot read ${filePath}: ${errorMessage(error)}`,
     };
   }
   const parsed = parseSafeToml(text, filePath);
-  if (parsed.state === 'conflict') return parsed;
+  if (parsed.state === 'conflict') {
+    return {
+      ...parsed,
+      configuration: 'unsafe',
+      registration: 'unknown',
+    };
+  }
   const parent = parsed.value.mcp_servers;
   if (parent !== undefined && !isRecord(parent)) {
     return {
       state: 'conflict',
+      configuration: 'available',
+      registration: 'conflict',
       reason: `The mcp_servers setting in ${filePath} is not a table`,
     };
   }
   const existing = isRecord(parent) ? parent.nekosearch : undefined;
-  if (existing === undefined) return { state: 'available' };
+  if (existing === undefined) {
+    return {
+      state: 'available',
+      configuration: 'available',
+      registration: 'missing',
+    };
+  }
   return isRecord(existing) && tomlRegistrationMatches(existing, command)
-    ? { state: 'already configured' }
+    ? {
+        state: 'already configured',
+        configuration: 'available',
+        registration: 'configured',
+      }
     : {
         state: 'conflict',
+        configuration: 'available',
+        registration: 'conflict',
         reason: `A different nekosearch MCP entry already exists in ${filePath}; it was left unchanged`,
       };
 }
@@ -830,7 +1023,118 @@ function resolveOptions(
       options.commandExists ??
       ((command) =>
         findExecutable(command, { environment, platform }) !== undefined),
+    applicationPathExists:
+      options.applicationPathExists ??
+      ((path) => isExecutableApplicationPath(path, platform)),
   };
+}
+
+function isDesktopApplicationInstalled(
+  application: DesktopApplication,
+  options: ResolvedSetupClientOptions,
+): boolean {
+  return desktopApplicationPaths(application, options).some((path) =>
+    options.applicationPathExists(path),
+  );
+}
+
+function desktopApplicationPaths(
+  application: DesktopApplication,
+  options: Pick<
+    ResolvedSetupClientOptions,
+    'homeDirectory' | 'environment' | 'platform'
+  >,
+): string[] {
+  const { product, executable } = application;
+  if (options.platform === 'darwin') {
+    return [
+      join('/Applications', `${product}.app`, 'Contents', 'MacOS', executable),
+      join(
+        options.homeDirectory,
+        'Applications',
+        `${product}.app`,
+        'Contents',
+        'MacOS',
+        executable,
+      ),
+    ];
+  }
+  if (options.platform === 'win32') {
+    const programName = application.windowsDirectory ?? product;
+    const binary = `${executable}.exe`;
+    const localPrograms = join(
+      options.environment.LOCALAPPDATA ||
+        join(options.homeDirectory, 'AppData', 'Local'),
+      'Programs',
+      programName,
+      binary,
+    );
+    return [
+      localPrograms,
+      ...(options.environment.ProgramFiles
+        ? [join(options.environment.ProgramFiles, programName, binary)]
+        : []),
+      ...(options.environment['ProgramFiles(x86)']
+        ? [join(options.environment['ProgramFiles(x86)'], programName, binary)]
+        : []),
+    ];
+  }
+  return [
+    `/usr/bin/${executable}`,
+    `/usr/local/bin/${executable}`,
+    `/opt/${product}/${executable}`,
+    join(options.homeDirectory, '.local', 'bin', executable),
+  ];
+}
+
+function isVsCodeInstalled(options: ResolvedSetupClientOptions): boolean {
+  return (
+    options.commandExists('code') ||
+    options.commandExists('code-insiders') ||
+    isDesktopApplicationInstalled(
+      {
+        product: 'Visual Studio Code',
+        executable: 'Code',
+        windowsDirectory: 'Microsoft VS Code',
+      },
+      options,
+    )
+  );
+}
+
+function hasVsCodeExtension(
+  extensionId: string,
+  options: ResolvedSetupClientOptions,
+): boolean {
+  const roots = [
+    join(options.homeDirectory, '.vscode', 'extensions'),
+    join(options.homeDirectory, '.vscode-insiders', 'extensions'),
+    join(options.homeDirectory, '.vscode-oss', 'extensions'),
+  ];
+  const prefix = extensionId.toLowerCase();
+  return roots.some((directory) => {
+    try {
+      return readdirSync(directory).some((entry) => {
+        const candidate = entry.toLowerCase();
+        return candidate === prefix || candidate.startsWith(`${prefix}-`);
+      });
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isExecutableApplicationPath(
+  path: string,
+  platform: NodeJS.Platform,
+): boolean {
+  try {
+    if (!statSync(path).isFile()) return false;
+    if (platform !== 'win32') accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function findExecutable(
@@ -924,8 +1228,60 @@ function status(
   label: string,
   state: SetupClientAvailability,
   reason?: string,
+  details?: Partial<
+    Pick<
+      SetupClientStatus,
+      | 'application'
+      | 'configuration'
+      | 'registration'
+      | 'setupMode'
+      | 'scope'
+      | 'target'
+    >
+  >,
 ): SetupClientInspection {
-  return { id, label, state, ...(reason && { reason }) };
+  return {
+    id,
+    label,
+    state: setupClientState(state),
+    application:
+      details?.application ??
+      (state === 'not detected' ? 'not-detected' : 'detected'),
+    configuration: details?.configuration ?? 'unknown',
+    registration: details?.registration ?? registrationState(state),
+    setupMode: details?.setupMode ?? 'automatic',
+    scope: details?.scope ?? 'user',
+    target: details?.target ?? `${label} user configuration`,
+    ...(reason && { reason }),
+  };
+}
+
+function setupClientState(state: SetupClientAvailability): SetupClientState {
+  switch (state) {
+    case 'available':
+      return 'ready';
+    case 'already configured':
+      return 'already-configured';
+    case 'conflict':
+      return 'conflict';
+    case 'not detected':
+      return 'not-detected';
+  }
+}
+
+function registrationState(
+  state: SetupClientAvailability,
+): SetupClientRegistrationState {
+  switch (state) {
+    case 'available':
+      return 'missing';
+    case 'already configured':
+      return 'configured';
+    case 'conflict':
+      return 'conflict';
+    case 'not detected':
+      return 'unknown';
+  }
 }
 
 function getPath(value: unknown, path: string[]): unknown {

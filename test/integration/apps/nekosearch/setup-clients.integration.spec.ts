@@ -73,9 +73,15 @@ describe('NekoSearch setup MCP client adapters', () => {
     await expect(configureSetupClient('cursor', options())).resolves.toBe(
       'unchanged',
     );
-    expect(
-      (await inspectSetupClients(options())).some(({ id }) => id === 'cursor'),
-    ).toBe(false);
+    const cursor = (await inspectSetupClients(options())).find(
+      ({ id }) => id === 'cursor',
+    );
+    expect(cursor).toMatchObject({
+      state: 'not-detected',
+      application: 'not-detected',
+      configuration: 'available',
+      registration: 'configured',
+    });
     expect(readFileSync(configPath, 'utf8')).toBe(updated);
     expect(existsSync(`${configPath}.nekosearch-setup.lock`)).toBe(false);
     expect(readdirNames(join(homeDirectory, '.cursor'))).toEqual(['mcp.json']);
@@ -95,7 +101,12 @@ describe('NekoSearch setup MCP client adapters', () => {
     const malformed = '{\n  "mcpServers": {\n';
     writeFileSync(configPath, malformed);
     const statuses = await inspectSetupClients(options());
-    expect(statuses.some(({ id }) => id === 'cursor')).toBe(false);
+    expect(statuses.find(({ id }) => id === 'cursor')).toMatchObject({
+      state: 'not-detected',
+      application: 'not-detected',
+      configuration: 'unsafe',
+      registration: 'unknown',
+    });
     await expect(configureSetupClient('cursor', options())).rejects.toThrow(
       /Cannot safely edit/u,
     );
@@ -261,9 +272,13 @@ describe('NekoSearch setup MCP client adapters', () => {
       serverCommand: command,
     });
 
-    expect(statuses).toEqual([
-      { id: 'antigravity', label: 'Google Antigravity' },
-    ]);
+    expect(statuses.find(({ id }) => id === 'antigravity')).toMatchObject({
+      id: 'antigravity',
+      label: 'Google Antigravity',
+      state: 'ready',
+      application: 'detected',
+      registration: 'missing',
+    });
   });
 
   it('shows a replaceable legacy Codex registration for reviewed replacement', async () => {
@@ -301,13 +316,23 @@ describe('NekoSearch setup MCP client adapters', () => {
       runCodexCommand,
     };
 
-    await expect(inspectSetupClients(codexOptions)).resolves.toEqual([
-      {
-        id: 'codex',
-        label: 'Codex',
-        requiresReplacement: true,
-      },
-    ]);
+    await expect(inspectSetupClients(codexOptions)).resolves.toEqual(
+      expect.arrayContaining([
+        {
+          id: 'codex',
+          label: 'Codex',
+          state: 'conflict',
+          application: 'detected',
+          configuration: 'managed',
+          registration: 'conflict',
+          setupMode: 'automatic',
+          scope: 'user',
+          target: 'Codex user MCP registry (managed by `codex mcp`)',
+          reason:
+            'Codex already has a different MCP registration named nekosearch',
+        },
+      ]),
+    );
 
     await expect(
       configureSetupClient('codex', {

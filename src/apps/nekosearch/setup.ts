@@ -31,6 +31,11 @@ export interface SetupChoice<T extends string> {
   disabled?: boolean;
 }
 
+export type SetupGroupedChoices<T extends string> = Record<
+  string,
+  SetupChoice<T>[]
+>;
+
 export interface SetupSpinner {
   start(message: string): void;
   message(message: string): void;
@@ -39,6 +44,8 @@ export interface SetupSpinner {
 }
 
 export const SETUP_BACK = Symbol('setup-back');
+const SHOW_UNDETECTED_SETUP_INSTRUCTIONS = '__nekosearch_show_undetected_setup';
+const NOT_DETECTED_SUMMARY = '__nekosearch_not_detected_summary';
 
 export interface SetupPromptApi {
   intro(message: string): void;
@@ -52,6 +59,11 @@ export interface SetupPromptApi {
     options: SetupChoice<T>[],
     initialValues?: readonly T[],
   ): Promise<T[] | symbol>;
+  groupMultiselect<T extends string>(
+    message: string,
+    groups: SetupGroupedChoices<T>,
+    initialValues?: readonly T[],
+  ): Promise<T[] | symbol>;
   confirm(message: string): Promise<boolean | symbol>;
   spinner(plain: boolean): SetupSpinner;
   cancel(message: string): void;
@@ -61,6 +73,8 @@ export interface SetupTerminalState {
   stdinIsTTY: boolean;
   stdoutIsTTY: boolean;
   term?: string;
+  ci?: boolean;
+  accessible?: boolean;
 }
 
 export interface SetupDependencies {
@@ -80,10 +94,16 @@ export interface SetupDependencies {
 export async function runSetup(
   dependencies: SetupDependencies = {},
 ): Promise<number> {
-  const terminal = dependencies.terminal ?? {
-    stdinIsTTY: Boolean(process.stdin.isTTY),
-    stdoutIsTTY: Boolean(process.stdout.isTTY),
-    term: process.env.TERM,
+  const terminal = {
+    stdinIsTTY:
+      dependencies.terminal?.stdinIsTTY ?? Boolean(process.stdin.isTTY),
+    stdoutIsTTY:
+      dependencies.terminal?.stdoutIsTTY ?? Boolean(process.stdout.isTTY),
+    term: dependencies.terminal?.term ?? process.env.TERM,
+    ci: dependencies.terminal?.ci ?? isEnvironmentFlag(process.env.CI),
+    accessible:
+      dependencies.terminal?.accessible ??
+      accessibleEnvironmentPreference(process.env.ACCESSIBLE),
   };
   const output = dependencies.writeOutput ?? defaultWriteOutput;
   if (!terminal.stdinIsTTY || !terminal.stdoutIsTTY) {
@@ -97,7 +117,14 @@ export async function runSetup(
     return 2;
   }
 
-  const prompts = dependencies.prompts ?? createSetupPromptApi();
+  const prompts =
+    dependencies.prompts ??
+    createSetupPromptApi(
+      process.stdin,
+      process.stdout,
+      process.stderr,
+      terminal.accessible,
+    );
   const serverCommand =
     dependencies.serverCommand ??
     createNekosearchStdioCommand(
@@ -120,12 +147,9 @@ export async function runSetup(
   let selectedDocs: string[] = [];
   let selectedClients: SetupClientId[] = [];
   let selectableClients: SetupClientStatus[] = [];
-  let stage: 'docs' | 'clients' | 'review' = 'docs';
-  let cancelled = false;
   let applyChanges = false;
 
   prompts.intro('NekoSearch setup');
-  prompts.message('Step 1 of 3: choose documentation snapshots');
   let catalogEntries: DocumentationCatalogEntry[] = [];
   let catalogReadable = true;
   try {
@@ -153,9 +177,25 @@ export async function runSetup(
       disabled: installed || !catalogReadable,
     };
   });
+  const canChooseDocs =
+    catalogReadable && docChoices.some((choice) => !choice.disabled);
+  if (!catalogReadable) {
+    prompts.message(
+      'Documentation selection is unavailable; provider setup can continue.',
+    );
+  } else if (recipes.length === 0) {
+    prompts.message('No curated documentation snapshots are available.');
+  } else if (!canChooseDocs) {
+    prompts.message(
+      'All curated documentation snapshots are already installed.',
+    );
+  }
+  let stage: 'docs' | 'clients' | 'review' = canChooseDocs ? 'docs' : 'clients';
+  const hasDocsStep = canChooseDocs;
 
-  while (!cancelled && !applyChanges) {
+  while (!applyChanges) {
     if (stage === 'docs') {
+      prompts.message('Step 1 of 3: choose documentation snapshots');
       const selection = await prompts.multiselect(
         'Select documentation (Space toggles, Enter continues)',
         docChoices,
@@ -164,8 +204,7 @@ export async function runSetup(
       if (prompts.isBack(selection)) continue;
       if (prompts.isCancel(selection)) {
         prompts.cancel('Setup cancelled. No changes were made.');
-        cancelled = true;
-        continue;
+        return 130;
       }
       const selectableDocs = new Set(
         docChoices
@@ -180,77 +219,93 @@ export async function runSetup(
     }
 
     if (stage === 'clients') {
-      prompts.message('Step 2 of 3: choose MCP providers');
+      prompts.message(
+        `Step ${hasDocsStep ? '2 of 3' : '1 of 2'}: choose MCP providers`,
+      );
+      let inspectionFailed = false;
       try {
         selectableClients = await inspectClients(clientOptions);
       } catch (error) {
-        failedClients.push(`provider discovery: ${errorMessage(error)}`);
+        const message = `Could not inspect MCP providers: ${errorMessage(error)}. Provider configuration was skipped.`;
+        prompts.error(message);
+        failedClients.push(message);
         selectableClients = [];
+        inspectionFailed = true;
       }
-      const selectableIds = new Set(selectableClients.map(({ id }) => id));
-      selectedClients = selectedClients.filter((id) => selectableIds.has(id));
-
-      if (selectableClients.length === 0) {
-        prompts.message('No supported MCP providers were detected.');
-        const continueToReview = await prompts.confirm(
-          'Continue to review? (Backspace returns to documentation)',
-        );
-        if (prompts.isBack(continueToReview) || continueToReview === false) {
-          stage = 'docs';
-          continue;
-        }
-        if (prompts.isCancel(continueToReview)) {
-          prompts.cancel('Setup cancelled. No changes were made.');
-          cancelled = true;
-          continue;
-        }
+      if (inspectionFailed) {
+        selectedClients = [];
         stage = 'review';
         continue;
       }
 
-      const selection = await prompts.multiselect(
-        'Select providers (Space toggles, Enter continues; Backspace returns to documentation)',
-        selectableClients.map(
-          ({ id, label, alreadyConfigured, requiresReplacement }) => ({
-            value: id,
-            label,
-            ...(alreadyConfigured && { hint: '✓' }),
-            ...(requiresReplacement && {
-              hint: 'replace existing NekoSearch registration',
-            }),
-          }),
-        ),
-        selectedClients,
-      );
-      if (prompts.isBack(selection)) {
-        stage = 'docs';
-        continue;
+      prompts.message(formatProviderSummary(selectableClients));
+      const readyClients = selectableClients.filter(isBulkConfigurableClient);
+      const groups = buildClientGroups(selectableClients);
+      if (Object.values(groups).some((options) => options.some(isEnabled))) {
+        const selection = await prompts.groupMultiselect(
+          'Select providers to configure (Space toggles; Enter continues)',
+          groups,
+          selectedClients.filter((id) =>
+            readyClients.some((client) => client.id === id),
+          ),
+        );
+        if (prompts.isBack(selection)) {
+          stage = hasDocsStep ? 'docs' : 'clients';
+          continue;
+        }
+        if (prompts.isCancel(selection)) {
+          prompts.cancel('Setup cancelled. No changes were made.');
+          return 130;
+        }
+        const selected = new Set(selection);
+        selectedClients = readyClients
+          .filter((client) => selected.has(client.id))
+          .map(({ id }) => id);
+        const selectedManual = selectableClients.filter(
+          (client) =>
+            clientState(client) === 'manual-only' && selected.has(client.id),
+        );
+        const showUndetectedInstructions = selected.has(
+          SHOW_UNDETECTED_SETUP_INSTRUCTIONS,
+        );
+        if (selectedManual.length > 0 || showUndetectedInstructions) {
+          prompts.message(
+            renderManualInstructions(
+              [...selectedManual],
+              showUndetectedInstructions
+                ? selectableClients.filter(
+                    (client) => clientState(client) === 'not-detected',
+                  )
+                : [],
+              serverCommand,
+            ),
+          );
+        }
+      } else {
+        selectedClients = [];
+        prompts.message(
+          selectableClients.length === 0
+            ? 'No supported MCP providers were detected.'
+            : 'No supported MCP providers are ready to configure.',
+        );
       }
-      if (prompts.isCancel(selection)) {
-        prompts.cancel('Setup cancelled. No changes were made.');
-        cancelled = true;
-        continue;
-      }
-      selectedClients = selection.filter((id) => selectableIds.has(id));
       stage = 'review';
       continue;
     }
 
-    prompts.message('Step 3 of 3: review');
-    prompts.message(`Documentation to install: ${listOrNone(selectedDocs)}`);
+    if (selectedDocs.length === 0 && selectedClients.length === 0) break;
     prompts.message(
-      `Providers to configure: ${listOrNone(
-        selectedClients.map((id) => {
-          const client = selectableClients.find((entry) => entry.id === id);
-          if (client?.requiresReplacement)
-            return `${client.label} (replace existing NekoSearch registration)`;
-          if (client?.alreadyConfigured) return `✓ ${client.label}`;
-          return client?.label ?? id;
-        }),
-      )}`,
+      `Step ${hasDocsStep ? '3 of 3' : '2 of 2'}: review and confirm`,
+    );
+    prompts.message(
+      renderConfigurationPreview(
+        selectedDocs,
+        selectedClients,
+        selectableClients,
+      ),
     );
     const approved = await prompts.confirm(
-      'Confirm and apply these changes? (Backspace returns to provider selection)',
+      'Proceed with these changes? (Backspace returns to provider selection)',
     );
     if (prompts.isBack(approved)) {
       stage = 'clients';
@@ -258,8 +313,7 @@ export async function runSetup(
     }
     if (prompts.isCancel(approved) || !approved) {
       prompts.cancel('Setup cancelled. No changes were made.');
-      cancelled = true;
-      continue;
+      return 130;
     }
     applyChanges = true;
   }
@@ -267,8 +321,8 @@ export async function runSetup(
   if (applyChanges) {
     for (const selector of selectedDocs) {
       const [source, version] = splitSelector(selector);
-      const spinner = prompts.spinner(terminal.term === 'dumb');
-      spinner.start(`${selector}: preparing snapshot`);
+      const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
+      spinner.start(`${selector}: installing snapshot`);
       try {
         await install(source, version, 'add', {
           onProgress: (phase) =>
@@ -286,23 +340,13 @@ export async function runSetup(
     for (const id of selectedClients) {
       const client = selectableClients.find((entry) => entry.id === id);
       const label = client?.label ?? id;
-      const replacing = client?.requiresReplacement === true;
-      const spinner = prompts.spinner(terminal.term === 'dumb');
-      spinner.start(
-        replacing ? `Replacing ${label} registration` : `Configuring ${label}`,
-      );
+      const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
+      spinner.start(`Configuring ${label}`);
       try {
-        const result = await configureClient(id, {
-          ...clientOptions,
-          ...(replacing && { replaceConflictingCodex: true }),
-        });
+        const result = await configureClient(id, clientOptions);
         if (result === 'added') {
           configuredClients.push(label);
-          spinner.stop(
-            replacing
-              ? `Replaced ${label} registration`
-              : `Configured ${label}`,
-          );
+          spinner.stop(`Configured ${label}`);
         } else {
           unchangedClients.push(label);
           spinner.stop(`${label} is already configured`);
@@ -322,30 +366,40 @@ export async function runSetup(
       configuredClients,
       unchangedClients,
       failedClients,
-      cancelled,
       applyChanges,
     }),
   );
-  return failedDocs.length > 0 || failedClients.length > 0
-    ? 1
-    : cancelled
-      ? 130
-      : 0;
+  return failedDocs.length > 0 || failedClients.length > 0 ? 1 : 0;
 }
 
 export function createSetupPromptApi(
   input: Readable = process.stdin,
   output: Writable = process.stdout,
+  errorOutput: Writable = process.stderr,
+  accessible?: boolean,
 ): SetupPromptApi {
   const isCancel = (value: unknown): value is symbol => clack.isCancel(value);
+  const promptOptions = {
+    input,
+    output,
+    ...(accessible !== undefined && { accessible }),
+  };
   const withBackspace = async <T>(
     prompt: (signal: AbortSignal) => Promise<T | symbol>,
   ): Promise<T | symbol> => promptWithBackspace(input, prompt);
   return {
-    intro: (message) => clack.intro(styleText('bold', message)),
-    message: (message) => clack.log.message(message),
-    error: (message) => clack.log.error(message),
-    outro: (message) => clack.outro(message),
+    intro: (message) =>
+      clack.intro(styleText('bold', message), {
+        output,
+        ...(accessible !== undefined && { accessible }),
+      }),
+    message: (message) => clack.log.message(message, promptOptions),
+    error: (message) =>
+      clack.log.error(message, {
+        ...promptOptions,
+        output: errorOutput,
+      }),
+    outro: (message) => clack.outro(message, promptOptions),
     isCancel,
     isBack: (value) => value === SETUP_BACK,
     multiselect: <T extends string>(
@@ -362,6 +416,7 @@ export function createSetupPromptApi(
             >[0]['options'],
             input,
             output,
+            ...(accessible !== undefined && { accessible }),
             initialValues,
             required: false,
             showInstructions: true,
@@ -369,20 +424,54 @@ export function createSetupPromptApi(
           }),
         ),
       ),
+    groupMultiselect: <T extends string>(
+      message: string,
+      groups: SetupGroupedChoices<T>,
+      initialValues?: readonly T[],
+    ) =>
+      withBackspace((signal) =>
+        withDynamicGroupMultiselectInstructions(
+          input,
+          groups,
+          initialValues,
+          () =>
+            clack.groupMultiselect<T>({
+              message,
+              options: groups as unknown as Parameters<
+                typeof clack.groupMultiselect<T>
+              >[0]['options'],
+              input,
+              output,
+              ...(accessible !== undefined && { accessible }),
+              ...(initialValues && { initialValues: [...initialValues] }),
+              required: false,
+              selectableGroups: true,
+              groupSpacing: 1,
+              showInstructions: true,
+              signal,
+            }),
+        ),
+      ),
     confirm: (message) =>
       withBackspace((signal) =>
-        clack.confirm({ message, input, output, signal }),
+        clack.confirm({ message, ...promptOptions, signal }),
       ),
     spinner: (plain) => {
       if (plain) {
+        const write = (message: string): void => {
+          errorOutput.write(`${message}\n`);
+        };
         return {
-          start: (message) => process.stderr.write(message),
-          message: (message) => process.stderr.write(`\r${message}`),
-          stop: (message) => process.stderr.write(`\r${message}\n`),
-          error: (message) => process.stderr.write(`\r${message}\n`),
+          start: write,
+          message: write,
+          stop: write,
+          error: write,
         };
       }
-      const spinner = clack.spinner();
+      const spinner = clack.spinner({
+        output: errorOutput,
+        ...(accessible !== undefined && { accessible }),
+      });
       return {
         start: (message) => spinner.start(message),
         message: (message) => spinner.message(message),
@@ -390,7 +479,11 @@ export function createSetupPromptApi(
         error: (message) => spinner.error(message),
       };
     },
-    cancel: (message) => clack.cancel(message),
+    cancel: (message) =>
+      clack.cancel(message, {
+        output: errorOutput,
+        ...(accessible !== undefined && { accessible }),
+      }),
   };
 }
 
@@ -400,15 +493,12 @@ function renderSummary(summary: {
   configuredClients: string[];
   unchangedClients: string[];
   failedClients: string[];
-  cancelled: boolean;
   applyChanges: boolean;
 }): string {
   const lines = [
-    summary.cancelled
-      ? 'Setup cancelled. No changes were made.'
-      : summary.applyChanges
-        ? 'Setup finished.'
-        : 'Setup finished with no changes.',
+    summary.applyChanges
+      ? 'Setup finished.'
+      : 'Setup finished with no changes.',
     `Documentation installed: ${listOrNone(summary.installedDocs)}`,
     `Documentation failures: ${listOrNone(summary.failedDocs)}`,
     `Providers configured: ${listOrNone(summary.configuredClients)}`,
@@ -416,6 +506,197 @@ function renderSummary(summary: {
     `Provider failures: ${listOrNone(summary.failedClients)}`,
   ];
   return lines.join('\n');
+}
+
+type SetupClientSelection =
+  | SetupClientId
+  | typeof SHOW_UNDETECTED_SETUP_INSTRUCTIONS
+  | typeof NOT_DETECTED_SUMMARY;
+
+function clientState(client: SetupClientStatus): SetupClientStatus['state'] {
+  return client.state;
+}
+
+function isBulkConfigurableClient(client: SetupClientStatus): boolean {
+  return (
+    clientState(client) === 'ready' &&
+    client.application === 'detected' &&
+    client.setupMode === 'automatic' &&
+    ['available', 'missing', 'managed'].includes(client.configuration) &&
+    client.registration === 'missing'
+  );
+}
+
+function isEnabled(choice: SetupChoice<SetupClientSelection>): boolean {
+  return choice.disabled !== true;
+}
+
+function formatProviderSummary(clients: SetupClientStatus[]): string {
+  const counts = {
+    ready: clients.filter(isBulkConfigurableClient).length,
+    configured: clients.filter(
+      (client) => clientState(client) === 'already-configured',
+    ).length,
+    conflicts: clients.filter((client) => clientState(client) === 'conflict')
+      .length,
+    undetected: clients.filter(
+      (client) => clientState(client) === 'not-detected',
+    ).length,
+    manual: clients.filter((client) => clientState(client) === 'manual-only')
+      .length,
+  };
+  return `Providers: ${counts.ready} ready; ${counts.configured} already configured; ${counts.conflicts} conflicts; ${counts.undetected} not detected; ${counts.manual} manual only.`;
+}
+
+function buildClientGroups(
+  clients: SetupClientStatus[],
+): SetupGroupedChoices<SetupClientSelection> {
+  const groups: SetupGroupedChoices<SetupClientSelection> = {};
+  const addGroup = (
+    label: string,
+    options: SetupChoice<SetupClientSelection>[],
+  ): void => {
+    if (options.length > 0) groups[label] = options;
+  };
+
+  addGroup(
+    'Ready to configure',
+    clients.filter(isBulkConfigurableClient).map((client) => ({
+      value: client.id,
+      label: client.label,
+      hint: client.scope === 'user' ? 'User' : 'Project',
+    })),
+  );
+  addGroup(
+    'Already configured',
+    clients
+      .filter((client) => clientState(client) === 'already-configured')
+      .map((client) => ({
+        value: client.id,
+        label: client.label,
+        hint: '✓ configured',
+        disabled: true,
+      })),
+  );
+  addGroup(
+    'Conflicts',
+    clients
+      .filter((client) => clientState(client) === 'conflict')
+      .map((client) => ({
+        value: client.id,
+        label: client.label,
+        hint: client.reason
+          ? shorten(client.reason, 42)
+          : 'Resolve the existing configuration first',
+        disabled: true,
+      })),
+  );
+
+  const other: SetupChoice<SetupClientSelection>[] = clients
+    .filter((client) => clientState(client) === 'manual-only')
+    .map((client) => ({
+      value: client.id,
+      label: client.label,
+      hint: 'Manual only',
+    }));
+  const undetectedCount = clients.filter(
+    (client) => clientState(client) === 'not-detected',
+  ).length;
+  if (undetectedCount > 0) {
+    other.push({
+      value: NOT_DETECTED_SUMMARY,
+      label: `${undetectedCount} other supported ${undetectedCount === 1 ? 'client was' : 'clients were'} not detected`,
+      disabled: true,
+    });
+    other.push({
+      value: SHOW_UNDETECTED_SETUP_INSTRUCTIONS,
+      label: 'Show manual setup instructions',
+    });
+  }
+  addGroup('Other supported clients', other);
+  return groups;
+}
+
+function renderManualInstructions(
+  manualClients: SetupClientStatus[],
+  undetectedClients: SetupClientStatus[],
+  serverCommand: NekosearchStdioCommand,
+): string {
+  const clients = [...manualClients, ...undetectedClients];
+  const lines = [
+    'Manual setup instructions',
+    'Add a local stdio MCP server named NekoSearch with:',
+    `  Command: ${serverCommand.command}`,
+    `  Arguments: ${JSON.stringify(serverCommand.args)}`,
+    'Configuration locations used by NekoSearch setup:',
+  ];
+  for (const client of clients) {
+    lines.push(
+      `  ${client.label} — ${client.scope === 'user' ? 'User' : 'Project'}: ${client.target}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function renderConfigurationPreview(
+  selectedDocs: string[],
+  selectedClientIds: SetupClientId[],
+  clients: SetupClientStatus[],
+): string {
+  const selectedClients = selectedClientIds
+    .map((id) => clients.find((client) => client.id === id))
+    .filter((client): client is SetupClientStatus => client !== undefined);
+  const lines = [
+    'Changes to be applied',
+    'Documentation:',
+    ...selectedDocs.map((selector) => `  ${selector}`),
+  ];
+  if (selectedDocs.length === 0) lines.push('  none');
+  lines.push('MCP clients:');
+  if (selectedClients.length === 0) {
+    lines.push('  none');
+  } else {
+    for (const client of selectedClients) {
+      lines.push(
+        `  ${client.label}`,
+        `    Scope: ${client.scope === 'user' ? 'User' : 'Project'}`,
+        `    Target: ${client.target}`,
+        `    Action: Add NekoSearch`,
+      );
+    }
+  }
+  lines.push('Existing configurations will be preserved.');
+  return lines.join('\n');
+}
+
+function shorten(value: string, maximumLength: number): string {
+  return value.length > maximumLength
+    ? `${value.slice(0, maximumLength - 1)}…`
+    : value;
+}
+
+function isPlainProgressTerminal(terminal: SetupTerminalState): boolean {
+  return (
+    terminal.term?.toLowerCase() === 'dumb' ||
+    terminal.ci === true ||
+    terminal.accessible === true
+  );
+}
+
+function isEnvironmentFlag(value: string | undefined): boolean {
+  return (
+    value !== undefined &&
+    value !== '' &&
+    value !== '0' &&
+    value.toLowerCase() !== 'false'
+  );
+}
+
+function accessibleEnvironmentPreference(
+  value: string | undefined,
+): boolean | undefined {
+  if (value === undefined) return undefined;
+  return isEnvironmentFlag(value);
 }
 
 async function promptWithBackspace<T>(
@@ -507,6 +788,95 @@ async function withDynamicMultiselectInstructions<T extends string>(
     input.off('keypress', onKeypress);
     instructions.splice(0, instructions.length, ...originalInstructions);
   }
+}
+
+async function withDynamicGroupMultiselectInstructions<T extends string>(
+  input: Readable,
+  groups: SetupGroupedChoices<T>,
+  initialValues: readonly T[] | undefined,
+  prompt: () => Promise<T[] | symbol>,
+): Promise<T[] | symbol> {
+  const instructions = clack.MULTISELECT_INSTRUCTIONS;
+  const originalInstructions = [...instructions];
+  const selected = new Set(initialValues ?? []);
+  const options = Object.entries(groups).flatMap(([group, choices]) => [
+    {
+      value: group,
+      label: group,
+      group: true as const,
+      choices,
+      disabled: choices.every((choice) => choice.disabled),
+    },
+    ...choices.map((choice) => ({ ...choice, group })),
+  ]);
+  let cursor = 0;
+
+  const updateInstructions = (): void => {
+    const focused = options[cursor];
+    let action = 'unavailable';
+    if (focused?.group === true) {
+      const enabled = focused.choices.filter((choice) => !choice.disabled);
+      if (enabled.length > 0) {
+        action = enabled.every((choice) => selected.has(choice.value))
+          ? 'unselect group'
+          : 'select group';
+      }
+    } else if (focused && !focused.disabled) {
+      action = selected.has(focused.value) ? 'unselect' : 'select';
+    }
+    instructions.splice(
+      0,
+      instructions.length,
+      originalInstructions[0] ?? `${styleText('dim', '↑/↓')} to navigate`,
+      `${styleText('dim', 'Space:')} ${action}`,
+      originalInstructions[2] ?? `${styleText('dim', 'Enter:')} confirm`,
+      `${styleText('dim', 'Backspace:')} go back`,
+    );
+  };
+
+  const onKeypress = (_character: string, key: Key): void => {
+    if (key.name === 'up' || key.name === 'left') {
+      cursor = moveGroupCursor(options.length, cursor, -1);
+    } else if (key.name === 'down' || key.name === 'right') {
+      cursor = moveGroupCursor(options.length, cursor, 1);
+    } else if (key.name === 'space') {
+      const focused = options[cursor];
+      if (focused?.group === true) {
+        const enabled = focused.choices.filter((choice) => !choice.disabled);
+        const fullySelected =
+          enabled.length > 0 &&
+          enabled.every((choice) => selected.has(choice.value));
+        for (const choice of enabled) {
+          if (fullySelected) selected.delete(choice.value);
+          else selected.add(choice.value);
+        }
+      } else if (focused && !focused.disabled) {
+        if (selected.has(focused.value)) selected.delete(focused.value);
+        else selected.add(focused.value);
+      }
+    } else {
+      return;
+    }
+    updateInstructions();
+  };
+
+  input.on('keypress', onKeypress);
+  updateInstructions();
+  try {
+    return await prompt();
+  } finally {
+    input.off('keypress', onKeypress);
+    instructions.splice(0, instructions.length, ...originalInstructions);
+  }
+}
+
+function moveGroupCursor(
+  optionCount: number,
+  cursor: number,
+  direction: -1 | 1,
+): number {
+  if (optionCount === 0) return cursor;
+  return (cursor + direction + optionCount) % optionCount;
 }
 
 function firstEnabledOption<T extends string>(

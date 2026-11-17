@@ -5,10 +5,14 @@ import {
   SETUP_BACK,
   type SetupDependencies,
   type SetupChoice,
+  type SetupGroupedChoices,
   type SetupPromptApi,
   type SetupSpinner,
 } from '../../../../src/apps/nekosearch/setup.js';
-import type { SetupClientId } from '../../../../src/apps/nekosearch/setup-clients.js';
+import type {
+  SetupClientId,
+  SetupClientStatus,
+} from '../../../../src/apps/nekosearch/setup-clients.js';
 import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
 
 const CANCELED = Symbol('canceled');
@@ -70,17 +74,19 @@ describe('nekosearch setup flow', () => {
       'configure:codex',
     ]);
     expect(prompts.confirmations).toEqual([
-      'Confirm and apply these changes? (Backspace returns to provider selection)',
+      'Proceed with these changes? (Backspace returns to provider selection)',
     ]);
-    expect(prompts.messages).toContain('Documentation to install: nestjs@12');
-    expect(prompts.messages).toContain('Providers to configure: Codex');
+    expect(prompts.messages.join('\n')).toContain(
+      'Changes to be applied\nDocumentation:\n  nestjs@12\nMCP clients:\n  Codex\n    Scope: User\n    Target: /codex/mcp.json\n    Action: Add NekoSearch\nExisting configurations will be preserved.',
+    );
     expect(prompts.messages.at(-1)).toContain(
       'Documentation installed: nestjs@12',
     );
     expect(prompts.spinnerCalls).toHaveLength(2);
+    expect(prompts.spinnerPlainCalls).toEqual([true, true]);
     expect(prompts.spinnerCalls[0]).toEqual(
       expect.arrayContaining([
-        'start:nestjs@12: preparing snapshot',
+        'start:nestjs@12: installing snapshot',
         'message:nestjs@12: resolving the upstream ref',
         'message:nestjs@12: downloading documentation',
         'message:nestjs@12: building the local index',
@@ -131,8 +137,8 @@ describe('nekosearch setup flow', () => {
     expect(result).toBe(0);
     expect(installed).toEqual(['nestjs@11']);
     expect(configured).toEqual(['codex']);
-    expect(prompts.multiselectCalls[2]?.initialValues).toEqual(['nestjs@12']);
-    expect(prompts.multiselectCalls[4]?.initialValues).toEqual(['codex']);
+    expect(prompts.multiselectCalls[1]?.initialValues).toEqual(['nestjs@12']);
+    expect(prompts.groupMultiselectCalls[2]?.initialValues).toEqual(['codex']);
   });
 
   it('shows the detected provider choices without state labels', async () => {
@@ -155,46 +161,17 @@ describe('nekosearch setup flow', () => {
     });
 
     expect(result).toBe(0);
-    expect(prompts.multiselectCalls[1]?.options).toEqual([
-      { value: 'codex', label: 'Codex' },
-    ]);
+    expect(
+      prompts.groupMultiselectCalls[0]?.groups['Ready to configure'],
+    ).toEqual([{ value: 'codex', label: 'Codex', hint: 'User' }]);
     expect(configured).toEqual(['codex']);
     expect(prompts.messages.join('\n')).not.toMatch(
       /:\s*(available|not detected|already configured|conflict)\b/u,
     );
   });
 
-  it('marks an already configured provider with a check in the choices', async () => {
-    const prompts = createPrompts({
-      multiSelections: [[], ['codex']],
-      confirmations: [true],
-    });
-    const result = await runSetup({
-      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
-      prompts,
-      serverCommand: SERVER_COMMAND,
-      listIndexes: () => Promise.resolve([]),
-      inspectClients: () =>
-        Promise.resolve([
-          { id: 'codex', label: 'Codex', alreadyConfigured: true },
-        ]),
-      configureClient: () => Promise.resolve('unchanged'),
-    });
-
-    expect(result).toBe(0);
-    expect(prompts.multiselectCalls[1]?.options).toEqual([
-      { value: 'codex', label: 'Codex', hint: '✓' },
-    ]);
-    expect(prompts.messages).toContain('Providers to configure: ✓ Codex');
-  });
-
-  it('shows Codex when its legacy registration needs reviewed replacement', async () => {
-    const prompts = createPrompts({
-      multiSelections: [[], ['codex']],
-      confirmations: [true],
-    });
-    let replacementApprovedForCodex = false;
-
+  it('marks an already configured provider disabled in its group', async () => {
+    const prompts = createPrompts({ multiSelections: [[], []] });
     const result = await runSetup({
       terminal: { stdinIsTTY: true, stdoutIsTTY: true },
       prompts,
@@ -203,29 +180,60 @@ describe('nekosearch setup flow', () => {
       inspectClients: () =>
         Promise.resolve([
           {
-            id: 'codex',
-            label: 'Codex',
-            requiresReplacement: true,
+            ...client('codex', 'Codex'),
+            state: 'already-configured',
+            registration: 'configured',
           },
+          client('cursor', 'Cursor'),
         ]),
-      configureClient: (_id, options) => {
-        replacementApprovedForCodex = options.replaceConflictingCodex === true;
-        return Promise.resolve('added');
-      },
     });
 
     expect(result).toBe(0);
-    expect(prompts.multiselectCalls[1]?.options).toEqual([
+    expect(
+      prompts.groupMultiselectCalls[0]?.groups['Already configured'],
+    ).toEqual([
       {
         value: 'codex',
         label: 'Codex',
-        hint: 'replace existing NekoSearch registration',
+        hint: '✓ configured',
+        disabled: true,
       },
     ]);
-    expect(prompts.messages).toContain(
-      'Providers to configure: Codex (replace existing NekoSearch registration)',
-    );
-    expect(replacementApprovedForCodex).toBe(true);
+    expect(prompts.messages.join('\n')).toContain('1 already configured');
+  });
+
+  it('keeps conflicts disabled in bulk setup', async () => {
+    const prompts = createPrompts({ multiSelections: [[], ['codex']] });
+    const configureClient =
+      jest.fn<NonNullable<SetupDependencies['configureClient']>>();
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () =>
+        Promise.resolve([
+          {
+            ...client('codex', 'Codex'),
+            state: 'conflict',
+            registration: 'conflict',
+            reason: 'legacy Codex registration exists',
+          },
+          client('cursor', 'Cursor'),
+        ]),
+      configureClient,
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.groupMultiselectCalls[0]?.groups.Conflicts).toEqual([
+      {
+        value: 'codex',
+        label: 'Codex',
+        hint: 'legacy Codex registration exists',
+        disabled: true,
+      },
+    ]);
+    expect(configureClient).not.toHaveBeenCalled();
   });
 
   it('does not name unavailable providers when none are detected', async () => {
@@ -253,6 +261,128 @@ describe('nekosearch setup flow', () => {
     expect(configureClient).not.toHaveBeenCalled();
   });
 
+  it('shows manual instructions for manual-only clients without configuring them', async () => {
+    const prompts = createPrompts({ multiSelections: [[], ['junie']] });
+    const junie: SetupClientStatus = {
+      id: 'junie',
+      label: 'Junie',
+      state: 'manual-only',
+      application: 'manual-only',
+      configuration: 'unknown',
+      registration: 'unknown',
+      setupMode: 'manual',
+      scope: 'user',
+      target: '/home/user/.junie/mcp/mcp.json',
+    };
+    const configureClient =
+      jest.fn<NonNullable<SetupDependencies['configureClient']>>();
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () => Promise.resolve([junie]),
+      configureClient,
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.messages.join('\n')).toContain('Manual setup instructions');
+    expect(prompts.messages.join('\n')).toContain(
+      'Junie — User: /home/user/.junie/mcp/mcp.json',
+    );
+    expect(configureClient).not.toHaveBeenCalled();
+  });
+
+  it('skips the docs prompt when all curated snapshots are installed', async () => {
+    const prompts = createPrompts();
+    const installedEntries = ['11', '12'].map(
+      (version) =>
+        ({
+          source: 'nestjs',
+          version,
+          revision: `fixture-${version}`,
+          status: 'installed',
+        }) as DocumentationCatalogEntry,
+    );
+    const install = jest.fn<NonNullable<SetupDependencies['install']>>();
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve(installedEntries),
+      inspectClients: () => Promise.resolve([]),
+      install,
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.messages).toContain(
+      'All curated documentation snapshots are already installed.',
+    );
+    expect(prompts.multiselectCalls).toHaveLength(0);
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('skips docs selection when the recipe list is empty', async () => {
+    const prompts = createPrompts();
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      recipes: [],
+      inspectClients: () => Promise.resolve([]),
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.messages).toContain(
+      'No curated documentation snapshots are available.',
+    );
+    expect(prompts.multiselectCalls).toHaveLength(0);
+  });
+
+  it('reports an unreadable catalog without showing disabled choices', async () => {
+    const prompts = createPrompts();
+    const install = jest.fn<NonNullable<SetupDependencies['install']>>();
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.reject(new Error('catalog permissions')),
+      inspectClients: () => Promise.resolve([]),
+      install,
+    });
+
+    expect(result).toBe(1);
+    expect(prompts.messages.join('\n')).toContain(
+      'Could not read the documentation catalog: catalog permissions',
+    );
+    expect(prompts.multiselectCalls).toHaveLength(0);
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('skips provider selection and configuration when client inspection fails', async () => {
+    const prompts = createPrompts();
+    const configureClient =
+      jest.fn<NonNullable<SetupDependencies['configureClient']>>();
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () => Promise.reject(new Error('provider read failed')),
+      configureClient,
+    });
+
+    expect(result).toBe(1);
+    expect(prompts.messages.join('\n')).toContain(
+      'Could not inspect MCP providers: provider read failed',
+    );
+    expect(prompts.groupMultiselectCalls).toHaveLength(0);
+    expect(configureClient).not.toHaveBeenCalled();
+  });
+
   it('lets users finish with no changes and performs no network or client writes', async () => {
     const install = jest.fn<NonNullable<SetupDependencies['install']>>();
     const configureClient =
@@ -275,8 +405,10 @@ describe('nekosearch setup flow', () => {
     expect(result).toBe(0);
     expect(install).not.toHaveBeenCalled();
     expect(configureClient).not.toHaveBeenCalled();
-    expect(prompts.messages).toContain('Documentation to install: none');
-    expect(prompts.messages).toContain('Providers to configure: none');
+    expect(prompts.messages.join('\n')).toContain(
+      'Setup finished with no changes.',
+    );
+    expect(prompts.confirmations).toHaveLength(0);
   });
 
   it('exits before catalog reads, downloads, client checks, or writes in non-TTY mode', async () => {
@@ -308,6 +440,9 @@ describe('nekosearch setup flow', () => {
     const install = jest.fn<NonNullable<SetupDependencies['install']>>();
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
+    const inspectClients = jest.fn(() =>
+      Promise.resolve([client('codex', 'Codex')]),
+    );
     const prompts = createPrompts({ multiSelections: [CANCELED] });
 
     const result = await runSetup({
@@ -316,11 +451,12 @@ describe('nekosearch setup flow', () => {
       serverCommand: SERVER_COMMAND,
       listIndexes: () => Promise.resolve([]),
       install,
-      inspectClients: () => Promise.resolve([client('codex', 'Codex')]),
+      inspectClients,
       configureClient,
     });
 
     expect(result).toBe(130);
+    expect(inspectClients).not.toHaveBeenCalled();
     expect(install).not.toHaveBeenCalled();
     expect(configureClient).not.toHaveBeenCalled();
   });
@@ -426,11 +562,18 @@ describe('nekosearch setup flow', () => {
   });
 });
 
-function client(
-  id: SetupClientId,
-  label: string,
-): { id: SetupClientId; label: string } {
-  return { id, label };
+function client(id: SetupClientId, label: string): SetupClientStatus {
+  return {
+    id,
+    label,
+    state: 'ready',
+    application: 'detected',
+    configuration: 'missing',
+    registration: 'missing',
+    setupMode: 'automatic',
+    scope: 'user',
+    target: `/${id}/mcp.json`,
+  };
 }
 
 interface PromptAnswers {
@@ -447,7 +590,13 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
     options: SetupChoice<string>[];
     initialValues: string[];
   }>;
+  groupMultiselectCalls: Array<{
+    message: string;
+    groups: SetupGroupedChoices<string>;
+    initialValues: string[];
+  }>;
   spinnerCalls: string[][];
+  spinnerPlainCalls: boolean[];
 } {
   const multiSelections = [...(answers.multiSelections ?? [])];
   const confirmationResults = [...(answers.confirmations ?? [])];
@@ -458,13 +607,21 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
     options: SetupChoice<string>[];
     initialValues: string[];
   }> = [];
+  const groupMultiselectCalls: Array<{
+    message: string;
+    groups: SetupGroupedChoices<string>;
+    initialValues: string[];
+  }> = [];
   const spinnerCalls: string[][] = [];
+  const spinnerPlainCalls: boolean[] = [];
 
   return {
     messages,
     confirmations,
     multiselectCalls,
+    groupMultiselectCalls,
     spinnerCalls,
+    spinnerPlainCalls,
     intro: (message) => messages.push(message),
     message: (message) => messages.push(message),
     error: (message) => messages.push(message),
@@ -483,12 +640,25 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
       });
       return Promise.resolve((multiSelections.shift() ?? []) as T[] | symbol);
     },
+    groupMultiselect: <T extends string>(
+      message: string,
+      groups: SetupGroupedChoices<T>,
+      initialValues: readonly T[] = [],
+    ) => {
+      groupMultiselectCalls.push({
+        message,
+        groups,
+        initialValues: [...initialValues],
+      });
+      return Promise.resolve((multiSelections.shift() ?? []) as T[] | symbol);
+    },
     confirm: (message) => {
       confirmations.push(message);
       answers.onConfirm?.();
       return Promise.resolve(confirmationResults.shift() ?? true);
     },
-    spinner: (): SetupSpinner => {
+    spinner: (plain): SetupSpinner => {
+      spinnerPlainCalls.push(plain);
       const events: string[] = [];
       spinnerCalls.push(events);
       return {
