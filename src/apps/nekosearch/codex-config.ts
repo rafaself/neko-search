@@ -27,6 +27,7 @@ export interface ConfigureCodexMcpOptions {
 }
 
 export type ConfigureCodexMcpResult = 'added' | 'replaced' | 'unchanged';
+export type RemoveCodexMcpResult = 'removed' | 'unchanged';
 
 export type CodexMcpInspection =
   | { state: 'available' }
@@ -105,6 +106,28 @@ export async function configureCodexMcp(
     runCommand,
   );
   return replaced ? 'replaced' : 'added';
+}
+
+/** Remove the Codex registration only when it still matches this installation. */
+export async function removeCodexMcp(
+  options: ConfigureCodexMcpOptions,
+): Promise<RemoveCodexMcpResult> {
+  assertServerCommand(options.serverCommand);
+  const codexCommand = options.codexCommand ?? 'codex';
+  const runCommand = options.runCommand ?? executeCodexCommand;
+  const inspection = await inspectCodexMcp({
+    serverCommand: options.serverCommand,
+    codexCommand,
+    runCommand,
+  });
+  if (inspection.state === 'available') return 'unchanged';
+  if (inspection.state === 'conflict') {
+    throw new Error(
+      `${inspection.reason}; refusing to remove a different MCP registration`,
+    );
+  }
+  await runCodex(codexCommand, ['mcp', 'remove', CODEX_MCP_NAME], runCommand);
+  return 'removed';
 }
 
 async function listCodexServers(

@@ -16,6 +16,7 @@ import { parse as parseToml } from 'smol-toml';
 import {
   configureSetupClient,
   inspectSetupClients,
+  removeSetupClient,
 } from '../../../../src/apps/nekosearch/setup-clients.js';
 import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
 
@@ -39,7 +40,7 @@ describe('NekoSearch setup MCP client adapters', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('preserves JSONC comments and unrelated settings and is idempotent', async () => {
+  it('preserves JSONC settings when adding and removing its registration', async () => {
     const configPath = join(homeDirectory, '.cursor', 'mcp.json');
     mkdirSync(join(homeDirectory, '.cursor'));
     const original = [
@@ -77,7 +78,7 @@ describe('NekoSearch setup MCP client adapters', () => {
       ({ id }) => id === 'cursor',
     );
     expect(cursor).toMatchObject({
-      state: 'not-detected',
+      state: 'already-configured',
       application: 'not-detected',
       configuration: 'available',
       registration: 'configured',
@@ -85,6 +86,21 @@ describe('NekoSearch setup MCP client adapters', () => {
     expect(readFileSync(configPath, 'utf8')).toBe(updated);
     expect(existsSync(`${configPath}.nekosearch-setup.lock`)).toBe(false);
     expect(readdirNames(join(homeDirectory, '.cursor'))).toEqual(['mcp.json']);
+
+    await expect(removeSetupClient('cursor', options())).resolves.toBe(
+      'removed',
+    );
+    const removed = readFileSync(configPath, 'utf8');
+    expect(removed).toContain('// Keep this comment.');
+    expect(removed).toContain('"unrelated": { "enabled": true }');
+    expect(parseJson(removed)).toMatchObject({
+      unrelated: { enabled: true },
+      mcpServers: { existing: { command: 'other' } },
+    });
+    expect(parseJson(removed)).not.toHaveProperty('mcpServers.nekosearch');
+    await expect(removeSetupClient('cursor', options())).resolves.toBe(
+      'unchanged',
+    );
   });
 
   it('does not replace conflicting or unparsable JSONC entries', async () => {
@@ -96,13 +112,16 @@ describe('NekoSearch setup MCP client adapters', () => {
     await expect(configureSetupClient('cursor', options())).rejects.toThrow(
       /different nekosearch MCP entry/u,
     );
+    await expect(removeSetupClient('cursor', options())).rejects.toThrow(
+      /no longer matches this NekoSearch setup/u,
+    );
     expect(readFileSync(configPath, 'utf8')).toBe(conflict);
 
     const malformed = '{\n  "mcpServers": {\n';
     writeFileSync(configPath, malformed);
     const statuses = await inspectSetupClients(options());
     expect(statuses.find(({ id }) => id === 'cursor')).toMatchObject({
-      state: 'not-detected',
+      state: 'conflict',
       application: 'not-detected',
       configuration: 'unsafe',
       registration: 'unknown',
@@ -162,6 +181,15 @@ describe('NekoSearch setup MCP client adapters', () => {
       configureSetupClient('grok-build', options({ GROK_HOME: grokHome })),
     ).resolves.toBe('unchanged');
     expect(readFileSync(configPath, 'utf8')).toBe(updated);
+    await expect(
+      removeSetupClient('grok-build', options({ GROK_HOME: grokHome })),
+    ).resolves.toBe('removed');
+    const removed = readFileSync(configPath, 'utf8');
+    expect(parseToml(removed)).toMatchObject({
+      other: { value: 'retained' },
+    });
+    expect(parseToml(removed)).not.toHaveProperty('mcp_servers.nekosearch');
+    expect(removed).toContain('# Keep this TOML comment.');
   });
 
   it('uses the shared Copilot CLI and VS Code Copilot Global user config', async () => {

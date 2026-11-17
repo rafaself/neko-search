@@ -19,6 +19,7 @@ import {
 import {
   configureSetupClient,
   inspectSetupClients,
+  removeSetupClient,
   type SetupClientId,
   type SetupClientOptions,
   type SetupClientStatus,
@@ -96,6 +97,7 @@ export interface SetupDependencies {
   install?: typeof installRemoteSnapshot;
   inspectClients?: typeof inspectSetupClients;
   configureClient?: typeof configureSetupClient;
+  removeClient?: typeof removeSetupClient;
   clientOptions?: Omit<SetupClientOptions, 'serverCommand'>;
 }
 
@@ -144,6 +146,7 @@ export async function runSetup(
   const install = dependencies.install ?? installRemoteSnapshot;
   const inspectClients = dependencies.inspectClients ?? inspectSetupClients;
   const configureClient = dependencies.configureClient ?? configureSetupClient;
+  const removeClient = dependencies.removeClient ?? removeSetupClient;
   const clientOptions = {
     ...dependencies.clientOptions,
     serverCommand,
@@ -151,10 +154,12 @@ export async function runSetup(
   const installedDocs: string[] = [];
   const failedDocs: string[] = [];
   const configuredClients: string[] = [];
+  const removedClients: string[] = [];
   const unchangedClients: string[] = [];
   const failedClients: string[] = [];
   let selectedDocs: string[] = [];
   let selectedClients: SetupClientId[] = [];
+  let providerSelectionInitialized = false;
   let selectableClients: SetupClientStatus[] = [];
   let applyChanges = false;
 
@@ -247,26 +252,22 @@ export async function runSetup(
         continue;
       }
 
-      const readyClients = selectableClients.filter(isBulkConfigurableClient);
-      const alreadyConfigured = selectableClients.filter(
-        (client) => client.state === 'already-configured',
-      );
-      if (alreadyConfigured.length > 0) {
-        prompts.message(
-          [
-            'Already configured:',
-            ...alreadyConfigured.map((client) => `  ✓ ${client.label}`),
-          ].join('\n'),
-        );
+      const setupChoices = selectableClients.filter(isSelectableProvider);
+      if (!providerSelectionInitialized) {
+        selectedClients = setupChoices
+          .filter((client) => client.state === 'already-configured')
+          .map(({ id }) => id);
+        providerSelectionInitialized = true;
       }
-      const groups = buildClientGroups(readyClients);
-      if (readyClients.length > 0) {
+      selectedClients = selectedClients.filter((id) =>
+        setupChoices.some((client) => client.id === id),
+      );
+      const groups = buildClientGroups(setupChoices);
+      if (setupChoices.length > 0) {
         const selection = await prompts.groupMultiselect(
-          'Select providers to configure (Space toggles; Enter continues)',
+          'Select providers for setup (uncheck configured providers to remove)',
           groups,
-          selectedClients.filter((id) =>
-            readyClients.some((client) => client.id === id),
-          ),
+          selectedClients,
         );
         if (prompts.isBack(selection)) {
           stage = hasDocsStep ? 'docs' : 'clients';
@@ -277,24 +278,29 @@ export async function runSetup(
           return 130;
         }
         const selected = new Set(selection);
-        selectedClients = readyClients
+        selectedClients = setupChoices
           .filter((client) => selected.has(client.id))
           .map(({ id }) => id);
       } else {
         selectedClients = [];
-        if (alreadyConfigured.length === 0) {
-          prompts.message(
-            selectableClients.length === 0
-              ? 'No supported MCP providers were detected.'
-              : 'No MCP providers are ready to configure.',
-          );
-        }
+        prompts.message(
+          selectableClients.length === 0
+            ? 'No supported MCP providers were detected.'
+            : 'No MCP providers are ready to configure.',
+        );
       }
       stage = 'review';
       continue;
     }
 
-    if (selectedDocs.length === 0 && selectedClients.length === 0) break;
+    const selectedClientIds = new Set(selectedClients);
+    const hasProviderChanges = selectableClients.some(
+      (client) =>
+        (client.state === 'ready' && selectedClientIds.has(client.id)) ||
+        (client.state === 'already-configured' &&
+          !selectedClientIds.has(client.id)),
+    );
+    if (selectedDocs.length === 0 && !hasProviderChanges) break;
     prompts.message(
       `Step ${hasDocsStep ? '3 of 3' : '2 of 2'}: review and confirm`,
     );
@@ -320,6 +326,7 @@ export async function runSetup(
   }
 
   if (applyChanges) {
+    const finalSelectedClientIds = new Set(selectedClients);
     for (const selector of selectedDocs) {
       const [source, version] = splitSelector(selector);
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
@@ -341,6 +348,7 @@ export async function runSetup(
     for (const id of selectedClients) {
       const client = selectableClients.find((entry) => entry.id === id);
       const label = client?.label ?? id;
+      if (client?.state === 'already-configured') continue;
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
       spinner.start(`Configuring ${label}`);
       try {
@@ -358,6 +366,30 @@ export async function runSetup(
         spinner.error(message);
       }
     }
+
+    for (const client of selectableClients) {
+      if (
+        client.state !== 'already-configured' ||
+        finalSelectedClientIds.has(client.id)
+      ) {
+        continue;
+      }
+      const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
+      spinner.start(`Removing ${client.label}`);
+      try {
+        const result = await removeClient(client.id, clientOptions);
+        if (result === 'removed') {
+          removedClients.push(client.label);
+          spinner.stop(`Removed ${client.label}`);
+        } else {
+          spinner.stop(`${client.label} was already unconfigured`);
+        }
+      } catch (error) {
+        const message = `Could not remove ${client.label}: ${errorMessage(error)}`;
+        failedClients.push(message);
+        spinner.error(message);
+      }
+    }
   }
 
   prompts.outro(
@@ -365,6 +397,14 @@ export async function runSetup(
       installedDocs,
       failedDocs,
       configuredClients,
+      removedClients,
+      keptClients: selectableClients
+        .filter(
+          (client) =>
+            client.state === 'already-configured' &&
+            selectedClients.includes(client.id),
+        )
+        .map(({ label }) => label),
       unchangedClients,
       failedClients,
       applyChanges,
@@ -493,6 +533,8 @@ function renderSummary(summary: {
   installedDocs: string[];
   failedDocs: string[];
   configuredClients: string[];
+  removedClients: string[];
+  keptClients: string[];
   unchangedClients: string[];
   failedClients: string[];
   applyChanges: boolean;
@@ -504,6 +546,8 @@ function renderSummary(summary: {
     `Documentation installed: ${listOrNone(summary.installedDocs)}`,
     `Documentation failures: ${listOrNone(summary.failedDocs)}`,
     `Providers configured: ${listOrNone(summary.configuredClients)}`,
+    `Providers removed: ${listOrNone(summary.removedClients)}`,
+    `Providers kept configured: ${listOrNone(summary.keptClients)}`,
     `Providers already configured: ${listOrNone(summary.unchangedClients)}`,
     `Provider failures: ${listOrNone(summary.failedClients)}`,
   ];
@@ -520,16 +564,29 @@ function isBulkConfigurableClient(client: SetupClientStatus): boolean {
   );
 }
 
+function isSelectableProvider(client: SetupClientStatus): boolean {
+  return (
+    isBulkConfigurableClient(client) ||
+    (client.state === 'already-configured' &&
+      client.registration === 'configured' &&
+      client.setupMode === 'automatic')
+  );
+}
+
 function buildClientGroups(
   clients: SetupClientStatus[],
 ): SetupGroupedChoices<SetupClientId> {
-  const readyClients = clients.filter(isBulkConfigurableClient);
-  if (readyClients.length === 0) return {};
+  if (clients.length === 0) return {};
   return {
-    'Ready to configure': readyClients.map((client) => ({
+    'MCP providers': clients.map((client) => ({
       value: client.id,
       label: client.label,
-      hint: client.scope === 'user' ? 'User' : 'Project',
+      hint:
+        client.state === 'already-configured'
+          ? 'Already configured'
+          : client.scope === 'user'
+            ? 'User'
+            : 'Project',
     })),
   };
 }
@@ -539,9 +596,19 @@ function renderConfigurationPreview(
   selectedClientIds: SetupClientId[],
   clients: SetupClientStatus[],
 ): string {
-  const selectedClients = selectedClientIds
-    .map((id) => clients.find((client) => client.id === id))
-    .filter((client): client is SetupClientStatus => client !== undefined);
+  const selectedIds = new Set(selectedClientIds);
+  const affectedClients = clients.filter(
+    (client) =>
+      (client.state === 'ready' && selectedIds.has(client.id)) ||
+      client.state === 'already-configured',
+  );
+  const selectedClients = affectedClients
+    .filter((client) => selectedIds.has(client.id))
+    .map((client) => client);
+  const removedClients = affectedClients.filter(
+    (client) =>
+      client.state === 'already-configured' && !selectedIds.has(client.id),
+  );
   const lines = [
     'Changes to be applied',
     'Documentation:',
@@ -549,7 +616,7 @@ function renderConfigurationPreview(
   ];
   if (selectedDocs.length === 0) lines.push('  none');
   lines.push('MCP clients:');
-  if (selectedClients.length === 0) {
+  if (selectedClients.length === 0 && removedClients.length === 0) {
     lines.push('  none');
   } else {
     for (const client of selectedClients) {
@@ -557,11 +624,19 @@ function renderConfigurationPreview(
         `  ${client.label}`,
         `    Scope: ${client.scope === 'user' ? 'User' : 'Project'}`,
         `    Target: ${client.target}`,
-        `    Action: Add NekoSearch`,
+        `    Action: ${client.state === 'already-configured' ? 'Keep existing NekoSearch configuration' : 'Add NekoSearch'}`,
+      );
+    }
+    for (const client of removedClients) {
+      lines.push(
+        `  ${client.label}`,
+        `    Scope: ${client.scope === 'user' ? 'User' : 'Project'}`,
+        `    Target: ${client.target}`,
+        `    Action: Remove NekoSearch configuration`,
       );
     }
   }
-  lines.push('Existing configurations will be preserved.');
+  lines.push('Other provider settings will be preserved.');
   return lines.join('\n');
 }
 

@@ -1,5 +1,6 @@
 import {
   configureCodexMcp,
+  removeCodexMcp,
   type CodexCommandRunner,
 } from '../../../../src/apps/nekosearch/codex-config.js';
 
@@ -71,6 +72,46 @@ describe('NekoSearch Codex MCP configuration', () => {
     await expect(
       configureCodexMcp({ serverCommand, runCommand }),
     ).resolves.toBe('unchanged');
+    expect(calls).toEqual([['mcp', 'list', '--json']]);
+  });
+
+  it('removes the matching registration through Codex MCP commands', async () => {
+    const { registrations, calls, runCommand } = createCodexRunner([
+      stdioRegistration(serverCommand.command, serverCommand.args),
+    ]);
+
+    await expect(removeCodexMcp({ serverCommand, runCommand })).resolves.toBe(
+      'removed',
+    );
+    expect(calls).toEqual([
+      ['mcp', 'list', '--json'],
+      ['mcp', 'remove', 'nekosearch'],
+    ]);
+    expect(registrations).toEqual([]);
+  });
+
+  it('refuses to remove a same-name registration with different settings', async () => {
+    const conflicting = stdioRegistration('/another/node', [
+      '/another/cli.js',
+      'serve',
+    ]);
+    const { registrations, calls, runCommand } = createCodexRunner([
+      conflicting,
+    ]);
+
+    await expect(removeCodexMcp({ serverCommand, runCommand })).rejects.toThrow(
+      /refusing to remove a different MCP registration/u,
+    );
+    expect(calls).toEqual([['mcp', 'list', '--json']]);
+    expect(registrations).toEqual([conflicting]);
+  });
+
+  it('treats an already absent registration as unchanged', async () => {
+    const { calls, runCommand } = createCodexRunner();
+
+    await expect(removeCodexMcp({ serverCommand, runCommand })).resolves.toBe(
+      'unchanged',
+    );
     expect(calls).toEqual([['mcp', 'list', '--json']]);
   });
 

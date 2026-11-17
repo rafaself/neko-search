@@ -87,7 +87,7 @@ describe('nekosearch setup flow', () => {
       'Proceed with these changes? (Backspace returns to provider selection)',
     ]);
     expect(prompts.messages.join('\n')).toContain(
-      'Changes to be applied\nDocumentation:\n  nestjs@12\nMCP clients:\n  Codex\n    Scope: User\n    Target: /codex/mcp.json\n    Action: Add NekoSearch\nExisting configurations will be preserved.',
+      'Changes to be applied\nDocumentation:\n  nestjs@12\nMCP clients:\n  Codex\n    Scope: User\n    Target: /codex/mcp.json\n    Action: Add NekoSearch\nOther provider settings will be preserved.',
     );
     expect(prompts.messages.at(-1)).toContain(
       'Documentation installed: nestjs@12',
@@ -171,19 +171,72 @@ describe('nekosearch setup flow', () => {
     });
 
     expect(result).toBe(0);
-    expect(
-      prompts.groupMultiselectCalls[0]?.groups['Ready to configure'],
-    ).toEqual([{ value: 'codex', label: 'Codex', hint: 'User' }]);
+    expect(prompts.groupMultiselectCalls[0]?.groups['MCP providers']).toEqual([
+      { value: 'codex', label: 'Codex', hint: 'User' },
+    ]);
     expect(configured).toEqual(['codex']);
     expect(prompts.messages.join('\n')).not.toMatch(
       /:\s*(available|not detected|already configured|conflict)\b/u,
     );
   });
 
-  it('shows already configured providers outside the selectable choices', async () => {
-    const prompts = createPrompts({ multiSelections: [[], []] });
+  it('starts configured providers checked and stages removal when unchecked', async () => {
+    const prompts = createPrompts({
+      multiSelections: [[], ['cursor']],
+      confirmations: [true],
+    });
+    const configureClient = jest
+      .fn<NonNullable<SetupDependencies['configureClient']>>()
+      .mockResolvedValue('added');
+    const removeClient = jest
+      .fn<NonNullable<SetupDependencies['removeClient']>>()
+      .mockResolvedValue('removed');
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () =>
+        Promise.resolve([
+          {
+            ...client('codex', 'Codex'),
+            state: 'already-configured',
+            application: 'not-detected',
+            registration: 'configured',
+          },
+          client('cursor', 'Cursor'),
+        ]),
+      configureClient,
+      removeClient,
+    });
+
+    expect(result).toBe(0);
+    expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
+      'MCP providers': [
+        {
+          value: 'codex',
+          label: 'Codex',
+          hint: 'Already configured',
+        },
+        { value: 'cursor', label: 'Cursor', hint: 'User' },
+      ],
+    });
+    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
+    expect(prompts.messages.join('\n')).toContain(
+      'Action: Remove NekoSearch configuration',
+    );
+    expect(configureClient).toHaveBeenCalledWith('cursor', expect.any(Object));
+    expect(removeClient).toHaveBeenCalledWith('codex', expect.any(Object));
+    expect(prompts.messages.at(-1)).toContain('Providers removed: Codex');
+  });
+
+  it('keeps a checked configured provider without showing a confirmation', async () => {
+    const prompts = createPrompts({ multiSelections: [[], ['codex']] });
     const configureClient =
       jest.fn<NonNullable<SetupDependencies['configureClient']>>();
+    const removeClient =
+      jest.fn<NonNullable<SetupDependencies['removeClient']>>();
+
     const result = await runSetup({
       terminal: { stdinIsTTY: true, stdoutIsTTY: true },
       prompts,
@@ -196,22 +249,48 @@ describe('nekosearch setup flow', () => {
             state: 'already-configured',
             registration: 'configured',
           },
-          client('cursor', 'Cursor'),
         ]),
       configureClient,
+      removeClient,
     });
 
     expect(result).toBe(0);
-    expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
-      'Ready to configure': [
-        { value: 'cursor', label: 'Cursor', hint: 'User' },
-      ],
-    });
-    expect(prompts.messages.join('\n')).toContain(
-      'Already configured:\n  ✓ Codex',
-    );
-    expect(prompts.messages.join('\n')).not.toContain('Already configured\n');
+    expect(prompts.groupMultiselectCalls[0]?.initialValues).toEqual(['codex']);
+    expect(prompts.confirmations).toEqual([]);
     expect(configureClient).not.toHaveBeenCalled();
+    expect(removeClient).not.toHaveBeenCalled();
+    expect(prompts.messages.at(-1)).toContain(
+      'Providers kept configured: Codex',
+    );
+  });
+
+  it('does not remove a configured provider when removal is declined', async () => {
+    const prompts = createPrompts({
+      multiSelections: [[], []],
+      confirmations: [false],
+    });
+    const removeClient =
+      jest.fn<NonNullable<SetupDependencies['removeClient']>>();
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () =>
+        Promise.resolve([
+          {
+            ...client('codex', 'Codex'),
+            state: 'already-configured',
+            registration: 'configured',
+          },
+        ]),
+      removeClient,
+    });
+
+    expect(result).toBe(130);
+    expect(prompts.confirmations).toHaveLength(1);
+    expect(removeClient).not.toHaveBeenCalled();
   });
 
   it('omits conflicting providers from the selectable choices', async () => {
@@ -238,13 +317,8 @@ describe('nekosearch setup flow', () => {
 
     expect(result).toBe(0);
     expect(prompts.groupMultiselectCalls[0]?.groups).toEqual({
-      'Ready to configure': [
-        { value: 'cursor', label: 'Cursor', hint: 'User' },
-      ],
+      'MCP providers': [{ value: 'cursor', label: 'Cursor', hint: 'User' }],
     });
-    expect(prompts.groupMultiselectCalls[0]?.groups).not.toHaveProperty(
-      'Conflicts',
-    );
     expect(configureClient).not.toHaveBeenCalled();
   });
 

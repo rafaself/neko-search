@@ -25,6 +25,7 @@ import { parse as parseToml } from 'smol-toml';
 import {
   configureCodexMcp,
   inspectCodexMcp,
+  removeCodexMcp,
   type CodexCommandRunner,
 } from './codex-config.js';
 import type { NekosearchStdioCommand } from './mcp-command.js';
@@ -86,6 +87,7 @@ export interface SetupClientOptions {
 }
 
 export type SetupClientConfigurationResult = 'added' | 'unchanged';
+export type SetupClientRemovalResult = 'removed' | 'unchanged';
 
 interface ClientDefinition {
   id: SetupClientId;
@@ -94,6 +96,9 @@ interface ClientDefinition {
   configure?(
     options: ResolvedSetupClientOptions,
   ): Promise<SetupClientConfigurationResult>;
+  remove?(
+    options: ResolvedSetupClientOptions,
+  ): Promise<SetupClientRemovalResult>;
 }
 
 interface ResolvedSetupClientOptions extends SetupClientOptions {
@@ -334,6 +339,16 @@ export async function configureSetupClient(
   return client.configure(resolveOptions(options));
 }
 
+export async function removeSetupClient(
+  id: SetupClientId,
+  options: SetupClientOptions,
+): Promise<SetupClientRemovalResult> {
+  const client = CLIENTS.find((candidate) => candidate.id === id);
+  if (!client) throw new Error(`Unknown MCP client ${id}`);
+  if (!client.remove) throw new Error(`${client.label} cannot be unconfigured`);
+  return client.remove(resolveOptions(options));
+}
+
 function createCodexDefinition(): ClientDefinition {
   const label = 'Codex';
   const inspect = async (
@@ -422,6 +437,15 @@ function createCodexDefinition(): ClientDefinition {
       });
       return result === 'unchanged' ? 'unchanged' : 'added';
     },
+    async remove(options) {
+      const command = findExecutable('codex', options);
+      if (!command) throw new Error('Codex CLI was not detected on PATH');
+      return removeCodexMcp({
+        serverCommand: options.serverCommand,
+        codexCommand: command,
+        ...(options.runCodexCommand && { runCommand: options.runCodexCommand }),
+      });
+    },
   };
 }
 
@@ -484,9 +508,7 @@ function createJsonClientDefinition(
     return {
       id: definition.id,
       label: definition.label,
-      state: applicationDetected
-        ? setupClientState(inspected.state)
-        : 'not-detected',
+      state: detectedClientState(applicationDetected, inspected.state),
       application: applicationDetected ? 'detected' : 'not-detected',
       configuration: inspected.configuration,
       registration: inspected.registration,
@@ -505,6 +527,14 @@ function createJsonClientDefinition(
         safeConfigPath(definition.configPath(options)),
         definition.registrationPath,
         definition.createRegistration(options.serverCommand),
+        (registration, command) =>
+          definition.matchesRegistration(registration, command),
+        options.serverCommand,
+      ),
+    remove: (options) =>
+      removeJsonRegistration(
+        safeConfigPath(definition.configPath(options)),
+        definition.registrationPath,
         (registration, command) =>
           definition.matchesRegistration(registration, command),
         options.serverCommand,
@@ -547,9 +577,7 @@ function createGrokDefinition(): ClientDefinition {
     return {
       id,
       label,
-      state: applicationDetected
-        ? setupClientState(inspected.state)
-        : 'not-detected',
+      state: detectedClientState(applicationDetected, inspected.state),
       application: applicationDetected ? 'detected' : 'not-detected',
       configuration: inspected.configuration,
       registration: inspected.registration,
@@ -565,7 +593,18 @@ function createGrokDefinition(): ClientDefinition {
     inspect,
     configure: (options) =>
       installTomlRegistration(configPath(options), options.serverCommand),
+    remove: (options) =>
+      removeTomlRegistration(configPath(options), options.serverCommand),
   };
+}
+
+function detectedClientState(
+  applicationDetected: boolean,
+  registrationState: SetupClientAvailability,
+): SetupClientState {
+  if (registrationState === 'already configured') return 'already-configured';
+  if (registrationState === 'conflict') return 'conflict';
+  return applicationDetected ? 'ready' : 'not-detected';
 }
 
 async function inspectJsonRegistration(
@@ -679,6 +718,55 @@ async function installJsonRegistration(
       current.state === 'missing' ? null : current.text,
     );
     return 'added';
+  });
+}
+
+async function removeJsonRegistration(
+  filePath: string,
+  registrationPath: string[],
+  matches: JsonClientDefinition['matchesRegistration'],
+  command: NekosearchStdioCommand,
+): Promise<SetupClientRemovalResult> {
+  return withConfigLock(filePath, async () => {
+    const current = await readJsoncFile(filePath);
+    if (current.state === 'missing') return 'unchanged';
+    if (current.state === 'conflict') throw new Error(current.reason);
+    const parent = getPath(current.value, registrationPath.slice(0, -1));
+    if (parent !== undefined && !isRecord(parent)) {
+      throw new Error(
+        `The ${registrationPath[0]} setting in ${filePath} is not an object`,
+      );
+    }
+    const existing = getPath(current.value, registrationPath);
+    if (existing === undefined) return 'unchanged';
+    if (!isRecord(existing) || !matches(existing, command)) {
+      throw new Error(
+        `The ${registrationPath.at(-1)} MCP entry in ${filePath} no longer matches this NekoSearch setup; it was left unchanged`,
+      );
+    }
+
+    const updated = applyEdits(
+      current.text,
+      modify(current.text, registrationPath, undefined, {
+        formattingOptions: { insertSpaces: true, tabSize: 2 },
+      }),
+    );
+    const errors: Parameters<typeof parseJsonc>[1] = [];
+    const parsed: unknown = parseJsonc(updated, errors, {
+      allowTrailingComma: true,
+      disallowComments: false,
+    });
+    if (
+      errors.length > 0 ||
+      !isRecord(parsed) ||
+      getPath(parsed, registrationPath) !== undefined
+    ) {
+      throw new Error(
+        `Could not safely remove the NekoSearch entry from ${filePath}`,
+      );
+    }
+    await writeConfigFile(filePath, updated, current.mode, current.text);
+    return 'removed';
   });
 }
 
@@ -902,6 +990,86 @@ async function installTomlRegistration(
     await writeConfigFile(filePath, updated, mode, originalText);
     return 'added';
   });
+}
+
+async function removeTomlRegistration(
+  filePath: string,
+  command: NekosearchStdioCommand,
+): Promise<SetupClientRemovalResult> {
+  return withConfigLock(filePath, async () => {
+    let text: string;
+    let mode: number;
+    try {
+      const info = await lstat(filePath);
+      if (!info.isFile() || info.isSymbolicLink()) {
+        throw new Error(`${filePath} is not a regular config file`);
+      }
+      mode = info.mode & 0o777;
+      text = await readFile(filePath, 'utf8');
+    } catch (error) {
+      if (isMissingFile(error)) return 'unchanged';
+      throw error;
+    }
+    const parsed = parseSafeToml(text, filePath);
+    if (parsed.state === 'conflict') throw new Error(parsed.reason);
+    const parent = parsed.value.mcp_servers;
+    if (parent !== undefined && !isRecord(parent)) {
+      throw new Error(`The mcp_servers setting in ${filePath} is not a table`);
+    }
+    const existing = isRecord(parent) ? parent.nekosearch : undefined;
+    if (existing === undefined) return 'unchanged';
+    if (!isRecord(existing) || !tomlRegistrationMatches(existing, command)) {
+      throw new Error(
+        `The nekosearch MCP entry in ${filePath} no longer matches this NekoSearch setup; it was left unchanged`,
+      );
+    }
+
+    const updated = removeTomlRegistrationSections(text, filePath);
+    const verified = parseSafeToml(updated, filePath);
+    if (verified.state === 'conflict') throw new Error(verified.reason);
+    const remainingParent = verified.value.mcp_servers;
+    if (
+      remainingParent !== undefined &&
+      (!isRecord(remainingParent) || remainingParent.nekosearch !== undefined)
+    ) {
+      throw new Error(
+        `Could not verify removal of the NekoSearch entry in ${filePath}`,
+      );
+    }
+    await writeConfigFile(filePath, updated, mode, text);
+    return 'removed';
+  });
+}
+
+function removeTomlRegistrationSections(
+  text: string,
+  filePath: string,
+): string {
+  const lines = text.match(/[^\n]*\n|[^\n]+$/gu) ?? [];
+  const headerPattern = /^\s*(\[\[?)\s*(.*?)\s*(\]\]?)\s*(?:#.*)?(?:\r?\n)?$/u;
+  let insideNekoSearch = false;
+  let foundNekoSearch = false;
+  const remaining: string[] = [];
+
+  for (const line of lines) {
+    const header = line.match(headerPattern);
+    if (header) {
+      const path = header[2]?.replace(/[\s"']/gu, '') ?? '';
+      insideNekoSearch =
+        header[1] === '[' &&
+        (path === 'mcp_servers.nekosearch' ||
+          path.startsWith('mcp_servers.nekosearch.'));
+      foundNekoSearch ||= insideNekoSearch;
+    }
+    if (!insideNekoSearch) remaining.push(line);
+  }
+
+  if (!foundNekoSearch) {
+    throw new Error(
+      `The NekoSearch entry in ${filePath} is not in a removable TOML table; it was left unchanged`,
+    );
+  }
+  return remaining.join('');
 }
 
 function parseSafeToml(
