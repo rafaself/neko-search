@@ -48,14 +48,14 @@ The source is Markdown under `apps/docs-site/docs`, with VitePress configuration
 
 VitePress and Vue are development dependencies of the private site workspace. They are not CLI runtime dependencies. The site uses VitePress's built-in local search; no search account, API key, backend, or database service is needed.
 
-## Configure a future deployment
+## Deployment configuration
 
-| Environment variable | Default | Purpose                                                                    |
-| -------------------- | ------- | -------------------------------------------------------------------------- |
-| `DOCS_SITE_BASE`     | `/`     | Absolute deployment path, with leading and trailing slashes                |
-| `DOCS_SITE_URL`      | Unset   | HTTP(S) deployment origin, without a path, credentials, query, or fragment |
+| Environment variable | Default                        | Purpose                                                                    |
+| -------------------- | ------------------------------ | -------------------------------------------------------------------------- |
+| `DOCS_SITE_BASE`     | `/`                            | Absolute deployment path, with leading and trailing slashes                |
+| `DOCS_SITE_URL`      | `https://nekosearch.github.io` | HTTP(S) deployment origin, without a path, credentials, query, or fragment |
 
-For example, this POSIX-shell command uses an illustrative domain, not an existing NekoSearch deployment:
+For a local build targeting a project site under a subpath, override both values:
 
 ```sh
 DOCS_SITE_URL=https://docs.example.com DOCS_SITE_BASE=/nekosearch/ npm run docs:site:build
@@ -63,9 +63,15 @@ DOCS_SITE_BASE=/nekosearch/ npm run docs:site:check
 DOCS_SITE_BASE=/nekosearch/ npm run docs:site:preview
 ```
 
-With an origin configured, the build emits canonical URLs, absolute sharing-image URLs, and a sitemap containing the base path. Without an origin, it omits those deployment-specific URLs and the sitemap. Titles, descriptions, theme metadata, and the local favicon remain configured.
+The production build emits canonical URLs, absolute sharing-image URLs, and a sitemap for `https://nekosearch.github.io/`. `DOCS_SITE_URL` can override that origin for a preview deployment.
 
-Keep the same base when building, checking, and previewing. The output uses `.html` page URLs so a future static host does not need extensionless-route rewrites. No deployment workflow is configured by the site.
+Keep the same base when building, checking, and previewing. The output uses `.html` page files so GitHub Pages can serve the clean routes without rewrite rules.
+
+## Publish with GitHub Actions
+
+The **Publish documentation** workflow is manual. In the GitHub repository, open **Actions → Publish documentation → Run workflow** to build, validate, and publish the current branch to GitHub Pages. It never deploys on a push.
+
+The workflow is restricted to `nekosearch/nekosearch.github.io`, the GitHub Pages repository for `https://nekosearch.github.io/`. In that repository, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The workflow checks the repository before installing dependencies, so it fails safely if run from another repository. This source checkout is `rafaself/neko-search`; make the docs app, root npm workspace files, lockfile, and workflow available in the Pages repository before running it.
 
 ## Existing snapshot scripts
 
