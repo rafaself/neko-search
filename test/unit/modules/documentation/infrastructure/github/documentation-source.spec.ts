@@ -1,13 +1,13 @@
 import {
-  DOCUMENTATION_SOURCES,
   downloadDocumentation,
   readContentAliases,
-  readHistoricalSourceIndex,
+  readTrackedMarkdownIndex,
   readSourceIndex,
   REPOSITORY,
   sourceUrl,
 } from '../../../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import { NESTJS_DOCUMENTATION_RECIPES } from '../../../../../../apps/docs-indexer/src/integrations/nestjs/source-recipes.js';
 import {
   revision,
   loadIngestionFixtures,
@@ -198,11 +198,11 @@ describe('source download', () => {
       'https://docs.nestjs.com/v11',
     ]);
     expect(requests.some((url) => url.includes('/commits/master'))).toBe(false);
-    expect(DOCUMENTATION_SOURCES['11'].ref).toEqual({
+    expect(NESTJS_DOCUMENTATION_RECIPES['11'].ref).toEqual({
       kind: 'tag',
       name: '11.0.0',
     });
-    expect(DOCUMENTATION_SOURCES['11']).toMatchObject({
+    expect(NESTJS_DOCUMENTATION_RECIPES['11']).toMatchObject({
       repository: REPOSITORY,
       contentDirectory: 'content',
       selection: { kind: 'tracked-markdown' },
@@ -335,8 +335,8 @@ describe('source download', () => {
     ).toThrow();
   });
 
-  it('maps the historical official Markdown tree to versioned canonical URLs', () => {
-    const entries = readHistoricalSourceIndex(
+  it('maps the tagged official Markdown tree to versioned canonical URLs', () => {
+    const entries = readTrackedMarkdownIndex(
       JSON.stringify({
         tree: [
           { path: 'content/introduction.md', type: 'blob' },
@@ -352,7 +352,7 @@ describe('source download', () => {
       'https://docs.nestjs.com/v11/techniques/database',
     ]);
     expect(() =>
-      readHistoricalSourceIndex(
+      readTrackedMarkdownIndex(
         JSON.stringify({
           tree: [{ path: 'content/../escape.md', type: 'blob' }],
         }),

@@ -27,7 +27,7 @@ describe('NestJS documentation source integration', () => {
     const revision11 = 'b'.repeat(40);
     const revision12 = 'c'.repeat(40);
     const treeRevision = 'd'.repeat(40);
-    const historicalPaths = [
+    const trackedMarkdownPaths = [
       'content/introduction.md',
       'content/components.md',
     ];
@@ -59,7 +59,7 @@ describe('NestJS documentation source integration', () => {
       if (url.endsWith(`/git/trees/${treeRevision}?recursive=1`)) {
         return Promise.resolve(
           Response.json({
-            tree: historicalPaths.map((path) => ({ path, type: 'blob' })),
+            tree: trackedMarkdownPaths.map((path) => ({ path, type: 'blob' })),
           }),
         );
       }

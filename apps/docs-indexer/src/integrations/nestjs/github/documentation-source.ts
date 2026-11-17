@@ -6,7 +6,6 @@ import {
 } from '../version/documentation-version.js';
 import {
   getNestJsDocumentationRecipe,
-  NESTJS_DOCUMENTATION_RECIPES,
   type NestJsDocumentationRecipe,
 } from '../source-recipes.js';
 import type {
@@ -23,12 +22,9 @@ const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_DOCUMENTS = 512;
 const routeSchema = z.string().regex(/^\/(?:[a-z0-9-]+(?:\/[a-z0-9-]+)*)?$/);
 
-/** Backward-compatible alias for source recipe consumers. */
-export const DOCUMENTATION_SOURCES = NESTJS_DOCUMENTATION_RECIPES;
-
 type DocumentationSourceEntry = Pick<SourceDocument, 'path' | 'canonicalUrl'>;
 
-// The historical branch predates the current generated content alias manifest.
+// The NestJS 11 tag publishes Markdown paths without the generated route manifest.
 const V11_CANONICAL_ROUTES: ReadonlyMap<string, string> = new Map([
   ['content/introduction.md', '/'],
   ['content/components.md', '/providers'],
@@ -209,13 +205,13 @@ export function readSourceIndex(
 }
 
 /** Use only tracked Markdown files in the official v11 source tree. */
-export function readHistoricalSourceIndex(
+export function readTrackedMarkdownIndex(
   treeSource: string,
   canonicalRoot = `${SITE}/v11`,
   contentDirectory = 'content',
 ): DocumentationSourceEntry[] {
   if (!/^[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/u.test(contentDirectory)) {
-    throw new Error('Unsafe historical content directory');
+    throw new Error('Unsafe documentation content directory');
   }
   const parsed: unknown = JSON.parse(treeSource);
   const tree = z
@@ -233,20 +229,20 @@ export function readHistoricalSourceIndex(
     .map(({ path }) => path)
     .sort();
   if (markdownPaths.length === 0 || markdownPaths.length > MAX_DOCUMENTS) {
-    throw new Error('Historical documentation tree is empty or too large');
+    throw new Error('Documentation tree is empty or too large');
   }
 
   const documents = new Map<string, DocumentationSourceEntry>();
   for (const path of markdownPaths) {
     const contentPath = path.slice(contentDirectory.length + 1);
     if (!/^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/u.test(contentPath)) {
-      throw new Error(`Unsafe historical content path: ${path}`);
+      throw new Error(`Unsafe documentation content path: ${path}`);
     }
     const fileRoute = `/${path.slice(contentDirectory.length + 1, -'.md'.length)}`;
     const route = V11_CANONICAL_ROUTES.get(path) ?? fileRoute;
     const safeRoute = routeSchema.parse(route);
     if (documents.has(path)) {
-      throw new Error(`Duplicate historical source document: ${path}`);
+      throw new Error(`Duplicate source document: ${path}`);
     }
     documents.set(path, {
       path,
@@ -327,7 +323,7 @@ export async function downloadDocumentation(
       `${API}/git/trees/${treeRevision}?recursive=1`,
       fetcher,
     );
-    entries = readHistoricalSourceIndex(
+    entries = readTrackedMarkdownIndex(
       tree,
       recipe.canonicalRoot,
       recipe.contentDirectory,
