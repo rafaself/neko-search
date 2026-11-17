@@ -47,7 +47,7 @@ async function resolveTarget(pathname) {
   );
   const candidates = pathname.endsWith('/')
     ? [join(path, 'index.html')]
-    : [path];
+    : [path, `${path}.html`, join(path, 'index.html')];
   for (const candidate of candidates) {
     try {
       if ((await stat(candidate)).isFile()) return candidate;
@@ -73,6 +73,20 @@ const idsByDocument = new Map(
     ),
   ]),
 );
+for (const [path, html] of documents) {
+  const headingIds = [
+    ...html.matchAll(/<h[1-6]\b[^>]*\bid=(['"])(.*?)\1/giu),
+  ].map((match) => decodeHtml(match[2]));
+  assert.equal(
+    new Set(headingIds).size,
+    headingIds.length,
+    `Duplicate heading IDs in ${relative(outputDirectory, path)}.`,
+  );
+  assert(
+    headingIds.every((id) => !/^_[0-9]+-/u.test(id)),
+    `Numbered headings need descriptive IDs in ${relative(outputDirectory, path)}.`,
+  );
+}
 const failures = [];
 let checked = 0;
 for (const [path, html] of documents) {

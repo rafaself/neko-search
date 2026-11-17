@@ -5,24 +5,25 @@ description: Connect an AI coding agent, discover a documentation source, and ma
 
 # Quick Start
 
-This walkthrough uses the bundled MCP reference, so your first search does not depend on downloading an optional source.
+This walkthrough uses the curated `nestjs@12` snapshot for its first search.
 
-## 1. Install NekoSearch
+## 1. Install NekoSearch {#install-nekosearch}
 
 ```sh
 npm install --global nekosearch
+nekosearch add nestjs@12
 nekosearch list
 ```
 
-Use a [supported Node.js version](./installation.md#requirements). The source list includes `mcp@2025-11-25`.
+Use a [supported Node.js version](./installation.md#requirements). Adding the NestJS snapshot requires HTTPS access to GitHub. The catalog also includes the bundled `mcp@2025-11-25` reference.
 
-## 2. Connect your agent
+## 2. Connect your agent {#connect-your-agent}
 
 ```sh
 nekosearch setup
 ```
 
-You can leave optional curated documentation unselected. Select a detected MCP client, then review and confirm the proposed changes. Setup configures the client to launch the installed Node executable with the NekoSearch CLI and its `serve` argument.
+Select a detected MCP client, then review and confirm the proposed changes. Setup recognizes the installed `nestjs@12` snapshot and configures the client to launch the installed Node executable with the NekoSearch CLI and its `serve` argument.
 
 Restart or reconnect your client as needed so it loads its MCP configuration. Your client launches the server; you do not need to keep a separate `nekosearch serve` terminal running.
 
@@ -34,7 +35,7 @@ nekosearch mcp configure codex
 
 See [Client Configuration](../mcp/client-configuration.md) if a client is not detected or needs manual configuration.
 
-## 3. Discover documentation
+## 3. Discover documentation {#discover-documentation}
 
 Ask your agent:
 
@@ -51,11 +52,11 @@ At the MCP tool boundary, the request is:
 
 Use the exact `selector` from the response in subsequent calls. Selectors identify sources and versions; revisions identify the contents of those snapshots.
 
-## 4. Search, then fetch
+## 4. Search, then fetch {#search-then-fetch}
 
 Ask your agent:
 
-> Search mcp@2025-11-25 for stdio transport. Fetch a matching section and cite its returned source URL and revision.
+> Search nestjs@12 for dependency injection providers. Fetch a matching section and cite its returned source URL and revision.
 
 The search tool arguments are:
 
@@ -63,8 +64,8 @@ The search tool arguments are:
 {
   "name": "search_docs",
   "arguments": {
-    "query": "stdio transport",
-    "sources": ["mcp@2025-11-25"],
+    "query": "dependency injection providers",
+    "sources": ["nestjs@12"],
     "limit": 3
   }
 }
@@ -76,27 +77,16 @@ For the next `fetch_docs` call, pass the result group's `selector`, a hit's `doc
 `list_docs`, `search_docs`, and `fetch_docs` are MCP tools invoked by the client. They are not NekoSearch CLI subcommands.
 :::
 
-## 5. Install your first additional source
+## 5. Add your own documentation {#add-your-own-documentation}
 
-Choose the option that fits your workflow:
+Install a local Markdown or MDX directory under its own source selector:
 
-::: code-group
-
-```sh [Local documentation]
-# Run in a project containing Markdown or MDX in ./docs
+```sh
 nekosearch add --dir ./docs --id my-api@1
 nekosearch list
 ```
 
-```sh [Curated NestJS]
-# Requires HTTPS access to GitHub
-nekosearch add nestjs@12
-nekosearch list
-```
-
-:::
-
-Restart the client's NekoSearch server after installation, then call `list_docs` again. A running server retains the indexes it opened at startup.
+Restart the client's NekoSearch server after installation, then call `list_docs` again. A running server retains the indexes it opened at startup. See [Documentation Sources](../guides/documentation-sources.md) for GitHub and snapshot installation options.
 
 ## If something is missing
 

@@ -111,7 +111,7 @@ Merge the appropriate entry into existing configuration. Keep command arguments 
 1. Restart or reconnect the MCP client after configuration changes.
 2. Inspect the client's server status and stderr logs if startup fails.
 3. Confirm that `list_docs`, `search_docs`, and `fetch_docs` are available.
-4. Call `list_docs` and make a [first search](../getting-started/quick-start.md#_4-search-then-fetch).
+4. Call `list_docs` and make a [first search](../getting-started/quick-start.md#search-then-fetch).
 
 A written registration is not proof of a successful connection. If Node has moved after a version-manager change, rerun setup or the Codex configuration command for the current installation.
 

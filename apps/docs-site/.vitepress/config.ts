@@ -38,6 +38,7 @@ export default defineConfig({
     'Build searchable documentation snapshots and give AI coding agents structured, source-scoped access through MCP.',
   lang: 'en-US',
   base,
+  cleanUrls: true,
   srcDir: './docs',
   appearance: 'dark',
   lastUpdated: true,
@@ -60,7 +61,7 @@ export default defineConfig({
     if (siteUrl && pageData.relativePath !== '404.md') {
       const path = pageData.relativePath
         .replace(/index\.md$/u, '')
-        .replace(/\.md$/u, '.html');
+        .replace(/\.md$/u, '');
       const url = new URL(path, siteUrl).href;
       head.push(
         ['link', { rel: 'canonical', href: url }],
