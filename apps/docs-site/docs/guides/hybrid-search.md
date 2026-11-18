@@ -18,6 +18,21 @@ Hybrid Search runs both retrievers independently within each selected snapshot. 
 
 Lexical search is always enabled. Semantic Search defaults to disabled. When it is enabled, every selected source must have a complete, compatible embedding set. Selecting a lexical-only snapshot, including the bundled `mcp@2025-11-25` reference, returns an actionable error; omit that source from the request or disable Semantic Search with `nekosearch embeddings disable`. The server never silently falls back to BM25 for an incomplete hybrid request.
 
+## Search benchmark results
+
+The `nestjs-hybrid-search-v2` evaluation measured 32 queries across NestJS 11 and 12, for 64 query/version evaluations. Queries covered exact classes, decorators, methods, configuration keys, framework concepts, ambiguous terms, and English and Portuguese natural-language questions. Each case has one relevant target page. The measurements below were recorded on November 18, 2026, using Linux x64, Node.js `24.22.2`, Transformers.js `4.3.2`, and ONNX Runtime Node `1.30.0`. The [evaluation script](https://github.com/rafaself/nekosearch/blob/main/scripts/evaluation/evaluate-search.mjs) blocks network access and uses local model files.
+
+| Retrieval | Recall@5 | MRR@10 | nDCG@10 | p50 latency | p95 latency |
+| --------- | -------: | -----: | ------: | ----------: | ----------: |
+| BM25      |    0.906 |  0.728 |   0.780 |      6.3 ms |     15.9 ms |
+| Hybrid    |    0.938 |  0.753 |   0.804 |    181.9 ms |    202.3 ms |
+
+For 11 exact-symbol queries evaluated against both versions (22 query/version evaluations), BM25 scored Recall@5 `1.000`, MRR@10 `0.812`, and nDCG@10 `0.860`; Hybrid scored `1.000`, `0.826`, and `0.871`. No exact-symbol target-rank regressions were measured after adding the literal-match safeguard.
+
+Results varied by query group. For ambiguous terminology, Hybrid Recall@5 and nDCG@10 improved from `0.800` to `0.900` and `0.726` to `0.747`, while MRR@10 declined from `0.700` to `0.663`. For technical concepts, Hybrid Recall@5 declined from `1.000` to `0.917`, MRR@10 from `0.882` to `0.854`, and nDCG@10 from `0.911` to `0.869`. These results describe this small evaluation set and do not establish a general quality advantage for Hybrid Search.
+
+Hybrid's higher latency includes one local query embedding plus both retrieval paths and fusion. Model initialization with the first query took `1,698 ms`; sampled document embedding throughput was `3.149` documents per second (24 sampled chunks from 2,960 snapshot chunks). Process RSS was `271,753,216` bytes before model load and peaked at `1,604,591,616` bytes during evaluation. These are observed measurements, not performance or hardware guarantees.
+
 ## Requirements and resource use
 
 - NekoSearch package support: Node.js `^24.15.0 || >=26.0.0`; Node.js 25 is outside the package engine range.
