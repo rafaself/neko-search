@@ -918,7 +918,7 @@ async function main() {
     const project = join(temporaryDirectory, 'isolated-project');
     await Promise.all([mkdir(packDirectory), mkdir(project)]);
 
-    const packed = JSON.parse(
+    const report = JSON.parse(
       run(
         'npm',
         [
@@ -931,6 +931,12 @@ async function main() {
         { env: npmEnvironment },
       ),
     );
+    assert.ok(
+      report && typeof report === 'object',
+      'npm pack must report tarball metadata',
+    );
+    // npm 11 reports an array; npm 12 keys the same metadata by package name.
+    const packed = Array.isArray(report) ? report : Object.values(report);
     assert.equal(packed.length, 1, 'npm pack should produce one tarball');
     const files = new Set(packed[0].files.map((file) => file.path));
     assert.ok(
@@ -955,6 +961,9 @@ async function main() {
       'dist/apps/nekosearch/providers/provider-runner.js',
       'dist/apps/nekosearch/providers/provider-registry.js',
       'dist/apps/nekosearch/providers/adapters/grok.adapter.js',
+      'dist/apps/nekosearch/providers/adapters/codex.adapter.js',
+      'dist/apps/nekosearch/providers/adapters/claude-code.adapter.js',
+      'dist/apps/nekosearch/providers/adapters/cursor.adapter.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
