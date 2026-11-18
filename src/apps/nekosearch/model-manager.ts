@@ -169,13 +169,13 @@ const PINNED_RELEASE: ModelRelease = {
 export function resolveModelDirectory(
   options: Pick<ModelManagerOptions, 'modelDirectory' | 'environment'> = {},
 ): string {
+  const environment = options.environment ?? process.env;
   const override =
-    options.modelDirectory?.trim() ||
-    options.environment?.NEKOSEARCH_MODEL_DIR?.trim();
+    options.modelDirectory?.trim() || environment.NEKOSEARCH_MODEL_DIR?.trim();
   return resolve(
     override ||
       join(
-        getUserDataDirectory(options.environment),
+        getUserDataDirectory(environment),
         'models',
         MODEL_ID,
         MODEL_VERSION,

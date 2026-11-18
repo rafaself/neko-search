@@ -10,8 +10,8 @@ import {
 import { SQLiteDocumentationStore } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/sqlite-documentation-store.js';
 import { SemanticRetriever } from '@nestjs-docs/documentation-engine/retrieval/retrievers/semantic-retriever.js';
 import {
+  hybridSearchRanking,
   LEXICAL_RETRIEVAL_TOP_K,
-  reciprocalRankFusion,
   SEMANTIC_RETRIEVAL_TOP_K,
 } from '@nestjs-docs/documentation-engine/retrieval/fusion/reciprocal-rank-fusion.js';
 import { fetchDocumentation } from '../../modules/documentation/mcp/documentation-tool-handlers.js';
@@ -272,7 +272,8 @@ export async function searchCatalogDocumentationWithSemantic(
       queryVector,
       SEMANTIC_RETRIEVAL_TOP_K,
     );
-    return reciprocalRankFusion(
+    return hybridSearchRanking(
+      input.query,
       lexicalRankings[index] ?? [],
       semanticResults,
       LEXICAL_RETRIEVAL_TOP_K,

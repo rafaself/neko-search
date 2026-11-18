@@ -666,7 +666,7 @@ describe('nekosearch setup flow', () => {
       {
         value: 'enable',
         label: 'Install now',
-        hint: 'Qwen3-Embedding-0.6B · approximately 614 MB',
+        hint: 'Qwen3-Embedding-0.6B · approximately 625 MB',
       },
       {
         value: 'disable',

@@ -329,12 +329,12 @@ export async function runSetup(
         `Step ${hasDocsStep ? '3' : '2'} of ${stepCount}: Semantic Search`,
       );
       const selection = await prompts.select(
-        'Enable Semantic Search? Qwen3-Embedding-0.6B download size: approximately 614 MB',
+        'Enable Semantic Search? Qwen3-Embedding-0.6B download size: approximately 625 MB',
         [
           {
             value: 'enable',
             label: semanticSearchEnabled ? 'Keep enabled' : 'Install now',
-            hint: 'Qwen3-Embedding-0.6B · approximately 614 MB',
+            hint: 'Qwen3-Embedding-0.6B · approximately 625 MB',
           },
           {
             value: 'disable',
@@ -797,7 +797,7 @@ function renderConfigurationPreview(
     lines.push(
       semanticSearchEnabled
         ? '  keep enabled'
-        : '  install Qwen3-Embedding-0.6B (~614 MB) and enable',
+        : '  install Qwen3-Embedding-0.6B (~625 MB) and enable',
     );
   } else {
     lines.push(

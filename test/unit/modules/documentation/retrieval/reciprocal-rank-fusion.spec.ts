@@ -1,5 +1,8 @@
 import type { DocumentationSearchResult } from '@nestjs-docs/documentation-engine/application/contracts/documentation-reader.contract.js';
-import { reciprocalRankFusion } from '@nestjs-docs/documentation-engine/retrieval/fusion/reciprocal-rank-fusion.js';
+import {
+  hybridSearchRanking,
+  reciprocalRankFusion,
+} from '@nestjs-docs/documentation-engine/retrieval/fusion/reciprocal-rank-fusion.js';
 
 describe('reciprocalRankFusion', () => {
   it('adds reciprocal rank contributions from both lists and breaks ties by chunk ID', () => {
@@ -38,16 +41,55 @@ describe('reciprocalRankFusion', () => {
   it('rejects an invalid result limit', () => {
     expect(() => reciprocalRankFusion([], [], 0)).toThrow(/positive integer/u);
   });
+
+  it('keeps an exact decorator match visible after semantic fusion', () => {
+    const exactMatch = searchResult(
+      'exact-match',
+      'The @Injectable() decorator makes this provider available.',
+    );
+    const sharedResults = Array.from({ length: 5 }, (_, index) =>
+      searchResult(`shared-${index}`),
+    );
+    const lexical = [exactMatch, ...sharedResults];
+    const semantic = [...sharedResults];
+    const fused = reciprocalRankFusion(lexical, semantic);
+
+    expect(fused[0]?.chunkId).not.toBe(exactMatch.chunkId);
+    const hybrid = hybridSearchRanking('@Injectable()', lexical, semantic);
+
+    expect(hybrid[0]?.chunkId).toBe(exactMatch.chunkId);
+    expect(hybrid[0]?.score).toBe(
+      fused.find(({ chunkId }) => chunkId === exactMatch.chunkId)?.score,
+    );
+  });
+
+  it('leaves natural-language queries in reciprocal-rank order', () => {
+    const lexical = [searchResult('lexical-only'), searchResult('shared')];
+    const semantic = [searchResult('semantic-only'), searchResult('shared')];
+
+    expect(
+      hybridSearchRanking(
+        'How does dependency injection work?',
+        lexical,
+        semantic,
+      ).map(({ chunkId }) => chunkId),
+    ).toEqual(
+      reciprocalRankFusion(lexical, semantic).map(({ chunkId }) => chunkId),
+    );
+  });
 });
 
-function searchResult(chunkId: string): DocumentationSearchResult {
+function searchResult(
+  chunkId: string,
+  excerpt = chunkId,
+): DocumentationSearchResult {
   return {
     chunkId,
     documentId: `document-${chunkId}`,
     title: chunkId,
     canonicalUrl: `https://docs.example/${chunkId}`,
     sourceRevision: 'test-revision',
-    excerpt: chunkId,
+    excerpt,
     score: 1,
   };
 }

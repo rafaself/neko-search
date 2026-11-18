@@ -73,7 +73,7 @@ For other ingestion options, read [Documentation Sources](./guides/documentation
 ## Explore the documentation
 
 - [Getting Started](./getting-started/installation.md): installation, your first search, and interactive setup.
-- [Guides](./guides/documentation-sources.md): documentation sources, snapshots, custom documentation, and updates.
+- [Guides](./guides/documentation-sources.md): documentation sources, snapshots, custom documentation, updates, and optional [Hybrid Search](./guides/hybrid-search.md).
 - [CLI Reference](./cli/commands.md): supported commands, arguments, options, and errors.
 - [MCP Tool Reference](./mcp/tools.md): tool inputs, structured output, pagination, and references.
 - [Architecture](./architecture/overview.md): the boundaries between the CLI, indexer, engine, catalog, and transport.

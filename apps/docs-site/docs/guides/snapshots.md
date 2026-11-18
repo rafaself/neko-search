@@ -37,7 +37,7 @@ With `enabled: false` or no config file, serving and snapshot builds remain lexi
 
 Incremental builds reuse vectors for unchanged chunks only when the complete model/pipeline metadata and the chunk ID and content match. Other chunks are regenerated. The completed vector table and manifest are validated before the snapshot is promoted or installed.
 
-Hybrid retrieval uses exact dot-product search over normalized Float32 vectors and combines its Top 50 with the lexical Top 50 using equal-weight reciprocal rank fusion (`k = 60`). Fusion is performed independently within each source/version snapshot; the existing source grouping and public result limit stay in effect. Lexical-only installed snapshots cannot be selected for hybrid search until you build their embeddings. The package-bundled MCP protocol snapshot retains lexical ranking because it is not user-managed.
+Hybrid retrieval uses exact dot-product search over normalized Float32 vectors and combines its Top 50 with the lexical Top 50 using equal-weight reciprocal rank fusion (`k = 60`). Fusion is performed independently within each source/version snapshot; the existing source grouping and public result limit stay in effect. Lexical-only installed snapshots cannot be selected for hybrid search until you build their embeddings. The package-bundled MCP protocol snapshot is lexical-only and must be omitted from a hybrid request. See [Local Embeddings and Hybrid Search](./hybrid-search.md) for installation, existing-source builds, requirements, and troubleshooting.
 
 ## Install a snapshot
 

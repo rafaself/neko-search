@@ -162,7 +162,7 @@ Manage the pinned Qwen3-Embedding-0.6B ONNX release independently from documenta
 
 | Subcommand | Behavior                                                                                                                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `install`  | Download the immutable v1.0.0 release, resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification.                                                            |
+| `install`  | Download the immutable v1.0.0 release (about 625 MB across its assets), resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification.                           |
 | `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                                                                                    |
 | `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. |
 

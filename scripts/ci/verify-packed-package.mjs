@@ -933,6 +933,12 @@ async function main() {
     );
     assert.equal(packed.length, 1, 'npm pack should produce one tarball');
     const files = new Set(packed[0].files.map((file) => file.path));
+    assert.ok(
+      [...files].every(
+        (path) => !/\.(?:onnx|onnx_data|safetensors|gguf)$/iu.test(path),
+      ),
+      'the npm tarball must not contain model weights',
+    );
     for (const path of [
       'data/mcp-protocol/corpus.json',
       'data/mcp-protocol/index.sqlite',
@@ -1184,6 +1190,18 @@ process.once('exit', () => {
       }),
     );
     const installedDependencyNames = collectDependencyNames(dependencyTree);
+    for (const optionalModelDependency of [
+      '@huggingface/transformers',
+      '@huggingface/tokenizers',
+      'onnxruntime-node',
+      'onnxruntime-web',
+      'sharp',
+    ]) {
+      assert.ok(
+        !installedDependencyNames.has(optionalModelDependency),
+        `${optionalModelDependency} must not be installed for lexical-only use`,
+      );
+    }
     assert.ok(
       [...installedDependencyNames].every(
         (name) => !name.startsWith('@nestjs/'),
@@ -1249,7 +1267,9 @@ process.once('exit', () => {
 
 function collectDependencyNames(tree, names = new Set()) {
   for (const [name, dependency] of Object.entries(tree.dependencies ?? {})) {
-    names.add(name);
+    if (Object.keys(dependency).length > 0 && dependency.missing !== true) {
+      names.add(name);
+    }
     collectDependencyNames(dependency, names);
   }
   return names;

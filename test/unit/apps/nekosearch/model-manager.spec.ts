@@ -8,12 +8,13 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   formatModelStatus,
   getModelStatus,
   installModel,
   removeModel,
+  resolveModelDirectory,
   type ModelManagerOptions,
   type ModelRelease,
 } from '../../../../src/apps/nekosearch/model-manager.js';
@@ -52,6 +53,31 @@ describe('local model manager', () => {
 
   afterEach(async () => {
     await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  it('respects the process model-directory override and explicit directory priority', () => {
+    const previousOverride = process.env.NEKOSEARCH_MODEL_DIR;
+    process.env.NEKOSEARCH_MODEL_DIR = join(temporaryDirectory, 'environment');
+    try {
+      expect(resolveModelDirectory()).toBe(
+        resolve(temporaryDirectory, 'environment'),
+      );
+      expect(resolveModelDirectory({ modelDirectory })).toBe(
+        resolve(modelDirectory),
+      );
+      expect(
+        resolveModelDirectory({
+          modelDirectory,
+          environment: { NEKOSEARCH_MODEL_DIR: '/tmp/from-options' },
+        }),
+      ).toBe(resolve(modelDirectory));
+    } finally {
+      if (previousOverride === undefined) {
+        delete process.env.NEKOSEARCH_MODEL_DIR;
+      } else {
+        process.env.NEKOSEARCH_MODEL_DIR = previousOverride;
+      }
+    }
   });
 
   it('resumes interrupted assets and activates only a complete verified install', async () => {

@@ -19,11 +19,13 @@ Setup is for curated sources. Use [`add --dir`, `add --github`, or `add --from`]
 
 ## Optional Semantic Search
 
-Setup offers **Install now** or **Skip for now** for Qwen3-Embedding-0.6B (approximately 614 MB). Skipping finishes setup normally, keeps Semantic Search disabled, and does not download the model or load the ML runtime. Lexical Search remains available.
+Setup offers **Install now** or **Skip for now** for Qwen3-Embedding-0.6B (approximately 625 MB across the release assets). Skipping finishes setup normally, keeps Semantic Search disabled, and does not download the model or load the ML runtime. Lexical Search remains available.
 
 If you choose **Install now**, setup checks that the optional local inference runtime is available before downloading the pinned model. After you confirm the review, it downloads and validates Qwen3, generates embeddings for already installed snapshots, validates them, and enables Semantic Search only when the model, runtime, and snapshots are ready. Newly selected documentation is then ingested with embeddings. If the runtime is missing, setup reports how to install it before downloading the model. If model installation or embedding generation fails, Semantic Search stays disabled; the installed model or completed snapshots can be reused on a later attempt.
 
 Use `nekosearch embeddings disable` to turn off Semantic Search later. This preserves the model and existing vectors. Model removal requires disabling Semantic Search first.
+
+For the complete later-install flow, supported runtime, storage paths, offline behavior, and troubleshooting steps, see [Local Embeddings and Hybrid Search](../guides/hybrid-search.md).
 
 ## Configure Grok Build CLI
 

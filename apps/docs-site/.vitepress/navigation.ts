@@ -17,6 +17,10 @@ export const sidebar = [
     items: [
       { text: 'Documentation Sources', link: '/guides/documentation-sources' },
       { text: 'Snapshots', link: '/guides/snapshots' },
+      {
+        text: 'Local Embeddings & Hybrid Search',
+        link: '/guides/hybrid-search',
+      },
       { text: 'Custom Documentation', link: '/guides/custom-documentation' },
       { text: 'Updating & Removing', link: '/guides/updating' },
     ],

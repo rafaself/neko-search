@@ -53,6 +53,8 @@ Search only the requested sources and return separate ranked groups.
 
 Selector strings are nonblank, exclude control characters, and have a maximum length of 321 characters. They are not fuzzy names or filesystem paths. Queries containing forbidden control characters fail engine validation; punctuation-only text can produce no matches.
 
+Retrieval mode is controlled globally by `search.semantic.enabled` in `nekosearch.yaml`; `search_docs` has no per-request retriever option. When disabled, search uses SQLite FTS5 + BM25 and does not load a model. When enabled, it embeds the query locally once and reuses that vector across the selected sources, then fuses BM25 and semantic rankings within each snapshot. Every selected source must have complete, compatible embeddings. Selecting the bundled lexical-only MCP snapshot in hybrid mode returns an actionable tool error; the server does not fall back silently. See [Local Embeddings and Hybrid Search](../guides/hybrid-search.md).
+
 ::: code-group
 
 ```json [Request]

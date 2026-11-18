@@ -1,6 +1,6 @@
 ---
 title: Retrieval
-description: Understand source-scoped full-text search, per-source ranking, bounded fetches, continuation cursors, and internal references.
+description: Understand source-scoped BM25 and hybrid retrieval, per-snapshot ranking, bounded fetches, continuation cursors, and internal references.
 ---
 
 # Retrieval
@@ -25,11 +25,11 @@ Snapshot builds may include one normalized 1024-dimensional Float32 vector for e
 
 Hybrid manifests record the supported Qwen3 model revision and ONNX artifact checksum along with dimensions, data type, pooling, normalization, query-instruction version, and embedding-pipeline version. Validation checks the metadata, exact Float32 BLOB size, vector normalization, and one-to-one chunk IDs against the corpus before promotion. Lexical-only snapshots omit both the metadata and the embeddings table.
 
-When `search.semantic.enabled` is false or absent, serving uses only FTS5/BM25 and does not load the embedding runtime. When enabled, the query encoder runs once for a request. Each selected user-installed snapshot checks that its embedding metadata matches the query space, then runs exact dot-product retrieval over normalized Float32 vectors. A user snapshot without compatible vectors is rejected with an instruction to build them. The package-bundled MCP protocol snapshot has no user-managed embedding lifecycle and retains its existing lexical ranking.
+When `search.semantic.enabled` is false or absent, serving uses only FTS5/BM25 and does not load the embedding runtime. When enabled, the query encoder runs once for a request. Each selected snapshot checks that its embedding metadata matches the query space, then runs exact dot-product retrieval over normalized Float32 vectors. A selected snapshot without compatible vectors is rejected with an instruction to build them; bundled snapshots are lexical-only and must be omitted from hybrid requests. NekoSearch never silently falls back to lexical retrieval when Semantic Search is enabled.
 
 ## Hybrid ranking
 
-For each snapshot, NekoSearch retrieves up to 50 lexical and 50 semantic candidates, then applies equal-weight reciprocal rank fusion with `k = 60`. RRF uses 1-based positions and breaks equal fused scores by chunk ID. Fusion never crosses snapshot boundaries. The catalog then keeps its existing source order and round-robin result allocation up to the public total limit of 10. BM25 and cosine scores are not compared directly.
+For each snapshot, NekoSearch retrieves up to 50 lexical and 50 semantic candidates, then applies equal-weight reciprocal rank fusion with `k = 60`. RRF uses 1-based positions and breaks equal fused scores by chunk ID. For a single-symbol query, if a lexical excerpt contains that exact identifier, its highest BM25 match is kept first after fusion; both retrievers still run and the result retains its RRF score. This narrow safeguard prevents semantic candidates from burying an exact API or decorator match. Fusion never crosses snapshot boundaries. The catalog then keeps its existing source order and round-robin result allocation up to the public total limit of 10. BM25 and cosine scores are not compared directly.
 
 ## Combining selected sources
 
@@ -60,3 +60,5 @@ New-format snapshots store resolved links with positions and target IDs. A fetch
 Use those IDs with the same source selector to fetch the target offline. Reference following does not cross snapshots or fetch external URLs.
 
 The exact public schemas and examples are in the [MCP Tool Reference](../mcp/tools.md).
+
+For model installation, resource requirements, embedding builds, configuration, and licensing, see [Local Embeddings and Hybrid Search](../guides/hybrid-search.md).

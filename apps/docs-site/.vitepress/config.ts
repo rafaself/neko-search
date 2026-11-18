@@ -113,11 +113,11 @@ export default defineConfig({
     outline: { level: [2, 3], label: 'On this page' },
     search: { provider: 'local' },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/rafaself/neko-search' },
+      { icon: 'github', link: 'https://github.com/rafaself/nekosearch' },
     ],
     editLink: {
       pattern:
-        'https://github.com/rafaself/neko-search/edit/main/apps/docs-site/docs/:path',
+        'https://github.com/rafaself/nekosearch/edit/main/apps/docs-site/docs/:path',
       text: 'Edit this page on GitHub',
     },
     docFooter: { prev: 'Previous page', next: 'Next page' },
