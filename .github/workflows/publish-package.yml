@@ -1,0 +1,93 @@
+name: Publish npm package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from package.json to publish, for example 0.0.4
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-package-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require the production branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Run this workflow from main to publish the package."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Verify the requested package version is new
+        id: release
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          package_version="$(node -p 'require("./package.json").version')"
+          if [[ "$REQUESTED_VERSION" != "$package_version" ]]; then
+            echo "::error::Requested version ${REQUESTED_VERSION} does not match package.json (${package_version})."
+            exit 1
+          fi
+
+          registry_status="$(curl --silent --show-error --output "$RUNNER_TEMP/npm-version-response.json" --write-out '%{http_code}' "https://registry.npmjs.org/nekosearch/${package_version}")"
+          case "$registry_status" in
+            404)
+              ;;
+            200)
+              echo "::error::nekosearch@${package_version} is already published."
+              exit 1
+              ;;
+            *)
+              echo "::error::Could not verify registry state (HTTP ${registry_status})."
+              exit 1
+              ;;
+          esac
+
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run checks
+        run: npm run check
+
+      - name: Build and verify package tarball
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          test -f "$RUNNER_TEMP/nekosearch-${PACKAGE_VERSION}.tgz"
+
+      - name: Publish with npm Trusted Publishing
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: npm publish "$RUNNER_TEMP/nekosearch-${PACKAGE_VERSION}.tgz" --access public
+
+      - name: Add package version to the run summary
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: echo "Published nekosearch@${PACKAGE_VERSION} to npm with GitHub Actions OIDC." >> "$GITHUB_STEP_SUMMARY"
