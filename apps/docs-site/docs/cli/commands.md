@@ -22,7 +22,7 @@ Print usage and network-access notes to stdout, then exit successfully. Invoking
 nekosearch setup
 ```
 
-Interactively choose curated snapshots and, when Grok Build CLI is detected, its user-level NekoSearch registration. No arguments or options are accepted. Changes start only after the final review and confirmation. Deselecting an existing matching Grok registration proposes removing it.
+Interactively choose curated snapshots, optionally install Qwen3 and enable Semantic Search, and when Grok Build CLI is detected choose its user-level NekoSearch registration. Model installation and embedding generation happen only after the final review and confirmation. Skipping the model keeps Semantic Search disabled and lexical search available. Deselecting an existing matching Grok registration proposes removing it.
 
 **Errors:** requires interactive stdin/stdout; Grok Build inspection conflicts and individual download/configuration failures are reported. Remaining confirmed operations can continue after a failure.
 
@@ -160,13 +160,13 @@ nekosearch model remove [--dir <model-dir>]
 
 Manage the pinned Qwen3-Embedding-0.6B ONNX release independently from documentation snapshots.
 
-| Subcommand | Behavior                                                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `install`  | Download the immutable v1.0.0 release, resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification. |
-| `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                         |
-| `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved.                                      |
+| Subcommand | Behavior                                                                                                                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `install`  | Download the immutable v1.0.0 release, resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification.                                                            |
+| `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                                                                                    |
+| `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. |
 
-The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. To enable inference, install it in the application directory that launches NekoSearch with `npm install --save-exact @huggingface/transformers@4.3.2`; it includes ONNX Runtime Node `1.30.0`. Inference is local-only and validated on Linux x64 with Node.js `24.22.2`.
+The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Set `NEKOSEARCH_MODEL_DIR` while running embedding commands or `serve` when you installed into an alternate directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. To enable inference, install it in the application directory that launches NekoSearch with `npm install --save-exact @huggingface/transformers@4.3.2`; it includes ONNX Runtime Node `1.30.0`. Inference is local-only and validated on Linux x64 with Node.js `24.22.2`.
 
 **Errors:** network or HTTP failures after retries, invalid release metadata/checksums, unmanaged target directory, incomplete managed files, and unsafe paths. A failed installation remains in a hidden staging directory and is not reported as installed. `remove` refuses directories without the matching NekoSearch ownership marker.
 
@@ -177,15 +177,17 @@ nekosearch embeddings build
 nekosearch embeddings build nestjs@12
 nekosearch embeddings status
 nekosearch embeddings status nestjs@12
+nekosearch embeddings enable
+nekosearch embeddings disable
 ```
 
 `build` generates vectors from the persisted canonical chunks in installed snapshots. With no selector it processes every installed source; a selector limits the operation to one snapshot. It does not revisit source repositories, redownload documentation, or repeat discovery and Markdown parsing. Install and verify Qwen3 first with `nekosearch model install`, and install the optional Transformers.js runtime for the current Node.js host.
 
 Each changed snapshot is staged, validated, and promoted through the catalog's atomic update path. Existing compatible complete embeddings are reused; repeated builds do not run inference again. Progress is reported per source and batch. An interruption before promotion leaves that source's active snapshot unchanged; completed sources from an all-source run remain complete and are skipped on retry.
 
-`status` reports each installed source's model compatibility, total chunks, embedded chunks, missing and invalid embeddings, completion percentage, and snapshot checksum integrity. Bundled snapshots are excluded from all-source builds and cannot be selected.
+`status` reports whether Semantic Search is configured, inference readiness, and each installed source's model compatibility, total chunks, embedded chunks, missing and invalid embeddings, completion percentage, and snapshot checksum integrity. Bundled snapshots are excluded from all-source builds and cannot be selected.
 
-To use these vectors at query time, set `search.semantic.enabled: true` in `nekosearch.yaml` (or the file named by `NEKOSEARCH_CONFIG`) and restart the NekoSearch server. `search_docs` then combines lexical Top 50 and semantic Top 50 per selected snapshot with equal-weight reciprocal rank fusion (`k = 60`). Every selected source must have vectors compatible with the local query encoder.
+`enable` verifies Qwen3 artifact integrity, the local inference runtime, and complete compatible embeddings for every installed snapshot before atomically setting `search.semantic.enabled: true` in `nekosearch.yaml` (or the file named by `NEKOSEARCH_CONFIG`). If vectors are missing or incompatible, build them first with the command shown in the error. With no installed sources, enabling is allowed for future ingestion. Restart the server after changing the setting. `disable` sets the flag to false without rebuilding snapshots, deleting vectors, or removing the model. Lexical Search is always enabled. When Semantic Search is enabled, `search_docs` combines lexical Top 50 and semantic Top 50 per selected snapshot with equal-weight reciprocal rank fusion (`k = 60`).
 
 **Errors:** unknown or bundled selectors, missing or corrupt model installation, unavailable inference runtime, incomplete vector output, invalid persisted corpus/index, and concurrent snapshot replacement.
 

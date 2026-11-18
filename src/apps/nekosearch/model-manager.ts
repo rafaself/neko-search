@@ -419,6 +419,16 @@ export async function removeModel(options: ModelManagerOptions = {}): Promise<{
   removed: boolean;
   preservedFiles: string[];
 }> {
+  const semanticSearch = await import('./semantic-search.js');
+  const configuration = await semanticSearch.loadSemanticSearchConfiguration({
+    environment: options.environment,
+  });
+  if (configuration.enabled) {
+    throw new Error(
+      `Cannot remove Qwen3 while Semantic Search is enabled in "${configuration.configPath}". Run \`nekosearch embeddings disable\` first; this preserves lexical search and existing embeddings.`,
+    );
+  }
+
   const release = options.release ?? PINNED_RELEASE;
   const modelDirectory = resolveModelDirectory(options);
   const initialStatus = await getModelStatus({

@@ -47,6 +47,28 @@ describe('setup terminal prompts', () => {
     output.stream.destroy();
   });
 
+  it('uses the initial Semantic Search choice in a single-select prompt', async () => {
+    const input = new PassThrough();
+    const output = createOutput();
+    const prompts = createSetupPromptApi(input, output.stream);
+    const selection = prompts.select(
+      'Enable Semantic Search?',
+      [
+        { value: 'install', label: 'Install now' },
+        { value: 'skip', label: 'Skip for now' },
+      ],
+      'skip',
+    );
+
+    press(input, 'return', '\r');
+    await expect(selection).resolves.toBe('skip');
+    expect(output.text()).toContain('Install now');
+    expect(output.text()).toContain('Skip for now');
+
+    input.destroy();
+    output.stream.destroy();
+  });
+
   it('maps Backspace to the previous step in selections and review', async () => {
     const input = new PassThrough();
     const output = createOutput();

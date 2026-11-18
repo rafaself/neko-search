@@ -183,6 +183,32 @@ describe('searchCatalogDocumentation', () => {
     expect(embedQuery).not.toHaveBeenCalled();
     expect(lexical).not.toHaveBeenCalled();
   });
+
+  it('keeps the bundled protocol snapshot lexical when hybrid search is enabled', async () => {
+    const lexical = jest.fn<SearchFunction>(() => [searchHit('mcp-protocol')]);
+    const bundled = runtime('mcp', '2025-11-25', lexical);
+    bundled.entry.status = 'bundled';
+    const embedQuery = jest.fn(() => {
+      const vector = new Float32Array(1024);
+      vector[0] = 1;
+      return Promise.resolve(vector);
+    });
+
+    const result = await searchCatalogDocumentationWithSemantic(
+      new Map([['mcp@2025-11-25', bundled]]),
+      { query: 'tools', sources: ['mcp@2025-11-25'] },
+      {
+        embeddingSpace: QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+        embedQuery,
+      },
+    );
+
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+    expect(lexical).toHaveBeenCalledWith('tools', 50);
+    expect(result.structuredContent.groups[0]?.results[0]?.chunkId).toBe(
+      'mcp-protocol-section',
+    );
+  });
 });
 
 function runtime(

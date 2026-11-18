@@ -33,11 +33,11 @@ search:
     enabled: false
 ```
 
-With `enabled: false` or no config file, serving and snapshot builds remain lexical and do not check for or load Qwen3. With `enabled: true`, first install the pinned model with `nekosearch model install` and install the optional Transformers.js runtime. New builds generate vectors locally, and serving uses hybrid retrieval for selected snapshots with compatible vectors. To prepare snapshots ingested earlier, run `nekosearch embeddings build` before enabling semantic search. These commands never install the model or call remote inference implicitly.
+With `enabled: false` or no config file, serving and snapshot builds remain lexical and do not check for or load Qwen3. Run `nekosearch embeddings enable` to validate the pinned model, runtime, and embeddings for installed snapshots before enabling hybrid retrieval. Missing vectors produce a source-specific `nekosearch embeddings build <source@version>` instruction. If no user snapshots are installed, enablement is allowed so future ingestion can generate vectors. New builds generate vectors locally when enabled. Run `nekosearch embeddings disable` to return to lexical-only retrieval while retaining the model and vectors. These commands never install the model or call remote inference implicitly.
 
 Incremental builds reuse vectors for unchanged chunks only when the complete model/pipeline metadata and the chunk ID and content match. Other chunks are regenerated. The completed vector table and manifest are validated before the snapshot is promoted or installed.
 
-Hybrid retrieval uses exact dot-product search over normalized Float32 vectors and combines its Top 50 with the lexical Top 50 using equal-weight reciprocal rank fusion (`k = 60`). Fusion is performed independently within each source/version snapshot; the existing source grouping and public result limit stay in effect. Lexical-only snapshots remain valid. If Semantic Search is enabled and a requested snapshot has not been embedded, NekoSearch asks you to build embeddings for that selector.
+Hybrid retrieval uses exact dot-product search over normalized Float32 vectors and combines its Top 50 with the lexical Top 50 using equal-weight reciprocal rank fusion (`k = 60`). Fusion is performed independently within each source/version snapshot; the existing source grouping and public result limit stay in effect. Lexical-only installed snapshots cannot be selected for hybrid search until you build their embeddings. The package-bundled MCP protocol snapshot retains lexical ranking because it is not user-managed.
 
 ## Install a snapshot
 

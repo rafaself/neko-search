@@ -34,6 +34,8 @@ describe('nekosearch CLI help', () => {
     expect(help).toContain('  model status [--dir <model-dir>]');
     expect(help).toContain('  model remove [--dir <model-dir>]');
     expect(help).toContain('  embeddings build [<source@version>]');
+    expect(help).toContain('  embeddings enable');
+    expect(help).toContain('  embeddings disable');
     expect(help).toContain('  embeddings status [<source@version>]');
     expect(help).toContain('  update nestjs@<major>');
   });

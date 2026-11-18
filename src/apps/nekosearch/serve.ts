@@ -48,7 +48,8 @@ interface CatalogSearchRuntime {
 }
 
 export interface SearchableCatalogRuntime {
-  entry: Pick<DocumentationCatalogEntry, 'source' | 'version' | 'revision'>;
+  entry: Pick<DocumentationCatalogEntry, 'source' | 'version' | 'revision'> &
+    Partial<Pick<DocumentationCatalogEntry, 'status'>>;
   documentation: Pick<DocumentationSearchService, 'search'>;
   semanticRetriever?: Pick<SemanticRetriever, 'embeddingSpace' | 'search'>;
 }
@@ -232,6 +233,7 @@ export async function searchCatalogDocumentationWithSemantic(
           queryEmbeddingSpace,
         ),
     )
+    .filter((runtime) => runtime.entry.status !== 'bundled')
     .map((runtime) => selectorFor(runtime.entry));
   if (incompatibleSources.length > 0) {
     throw new Error(
@@ -246,9 +248,9 @@ export async function searchCatalogDocumentationWithSemantic(
   const fusedRankings = selectedRuntimes.map((runtime, index) => {
     const semanticRetriever = runtime.semanticRetriever;
     if (!semanticRetriever) {
-      throw new Error(
-        `Semantic retriever is unavailable for ${selectorFor(runtime.entry)}`,
-      );
+      // The package-bundled MCP protocol snapshot has no user-managed
+      // embedding lifecycle; retain its established lexical ranking.
+      return lexicalRankings[index] ?? [];
     }
     const semanticResults = semanticRetriever.search(
       queryVector,

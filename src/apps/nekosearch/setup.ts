@@ -74,6 +74,11 @@ export interface SetupPromptApi {
     groups: SetupGroupedChoices<T>,
     initialValues?: readonly T[],
   ): Promise<T[] | symbol>;
+  select<T extends string>(
+    message: string,
+    options: SetupChoice<T>[],
+    initialValue?: T,
+  ): Promise<T | symbol>;
   confirm(message: string): Promise<boolean | symbol>;
   spinner(plain: boolean): SetupSpinner;
   cancel(message: string): void;
@@ -98,6 +103,11 @@ export interface SetupDependencies {
   inspectClients?: typeof inspectSetupClients;
   configureClient?: typeof configureSetupClient;
   removeClient?: typeof removeSetupClient;
+  readSemanticSearchEnabled?: () => Promise<boolean>;
+  installAndEnableSemanticSearch?: (
+    progress: (message: string) => void,
+  ) => Promise<void>;
+  disableSemanticSearch?: () => Promise<void>;
   clientOptions?: Omit<SetupClientOptions, 'serverCommand'>;
 }
 
@@ -147,6 +157,11 @@ export async function runSetup(
   const inspectClients = dependencies.inspectClients ?? inspectSetupClients;
   const configureClient = dependencies.configureClient ?? configureSetupClient;
   const removeClient = dependencies.removeClient ?? removeSetupClient;
+  const installAndEnableSemanticSearch =
+    dependencies.installAndEnableSemanticSearch ??
+    installAndEnableSemanticSearchByDefault;
+  const disableSemanticSearch =
+    dependencies.disableSemanticSearch ?? disableSemanticSearchByDefault;
   const clientOptions = {
     ...dependencies.clientOptions,
     serverCommand,
@@ -157,13 +172,29 @@ export async function runSetup(
   const removedClients: string[] = [];
   const unchangedClients: string[] = [];
   const failedClients: string[] = [];
+  const failedSemanticSearch: string[] = [];
   let selectedDocs: string[] = [];
   let selectedClients: SetupClientId[] = [];
   let providerSelectionInitialized = false;
   let selectableClients: SetupClientStatus[] = [];
+  let semanticSearchEnabled: boolean;
+  let selectedSemanticSearch: 'enable' | 'disable';
   let applyChanges = false;
 
   prompts.intro(SETUP_BANNER);
+  try {
+    semanticSearchEnabled = await (
+      dependencies.readSemanticSearchEnabled ??
+      readSemanticSearchEnabledByDefault
+    )();
+    selectedSemanticSearch = semanticSearchEnabled ? 'enable' : 'disable';
+  } catch (error) {
+    prompts.error(
+      `Could not read Semantic Search configuration: ${errorMessage(error)}. Fix the configuration before running setup.`,
+    );
+    prompts.outro('Setup stopped before making changes.');
+    return 1;
+  }
   let catalogEntries: DocumentationCatalogEntry[] = [];
   let catalogReadable = true;
   try {
@@ -204,12 +235,15 @@ export async function runSetup(
       'All curated documentation snapshots are already installed.',
     );
   }
-  let stage: 'docs' | 'clients' | 'review' = canChooseDocs ? 'docs' : 'clients';
+  let stage: 'docs' | 'clients' | 'semantic' | 'review' = canChooseDocs
+    ? 'docs'
+    : 'clients';
   const hasDocsStep = canChooseDocs;
+  const stepCount = hasDocsStep ? 4 : 3;
 
   while (!applyChanges) {
     if (stage === 'docs') {
-      prompts.message('Step 1 of 3: choose documentation snapshots');
+      prompts.message(`Step 1 of ${stepCount}: choose documentation snapshots`);
       const selection = await prompts.multiselect(
         'Select documentation (Space toggles, Enter continues)',
         docChoices,
@@ -234,7 +268,7 @@ export async function runSetup(
 
     if (stage === 'clients') {
       prompts.message(
-        `Step ${hasDocsStep ? '2 of 3' : '1 of 2'}: choose MCP providers`,
+        `Step ${hasDocsStep ? '2' : '1'} of ${stepCount}: choose MCP providers`,
       );
       let inspectionFailed = false;
       try {
@@ -248,7 +282,7 @@ export async function runSetup(
       }
       if (inspectionFailed) {
         selectedClients = [];
-        stage = 'review';
+        stage = 'semantic';
         continue;
       }
 
@@ -286,6 +320,39 @@ export async function runSetup(
         selectedClients = [];
         prompts.message(providerAvailabilityMessage(selectableClients));
       }
+      stage = 'semantic';
+      continue;
+    }
+
+    if (stage === 'semantic') {
+      prompts.message(
+        `Step ${hasDocsStep ? '3' : '2'} of ${stepCount}: Semantic Search`,
+      );
+      const selection = await prompts.select(
+        'Enable Semantic Search? Qwen3-Embedding-0.6B download size: approximately 614 MB',
+        [
+          {
+            value: 'enable',
+            label: semanticSearchEnabled ? 'Keep enabled' : 'Install now',
+            hint: 'Qwen3-Embedding-0.6B · approximately 614 MB',
+          },
+          {
+            value: 'disable',
+            label: semanticSearchEnabled ? 'Disable' : 'Skip for now',
+            hint: 'Lexical Search stays available',
+          },
+        ],
+        selectedSemanticSearch,
+      );
+      if (prompts.isBack(selection)) {
+        stage = 'clients';
+        continue;
+      }
+      if (prompts.isCancel(selection)) {
+        prompts.cancel('Setup cancelled. No changes were made.');
+        return 130;
+      }
+      selectedSemanticSearch = selection;
       stage = 'review';
       continue;
     }
@@ -297,15 +364,24 @@ export async function runSetup(
         (client.state === 'already-configured' &&
           !selectedClientIds.has(client.id)),
     );
-    if (selectedDocs.length === 0 && !hasProviderChanges) break;
+    const hasSemanticSearchChange =
+      (selectedSemanticSearch === 'enable') !== semanticSearchEnabled;
+    if (
+      selectedDocs.length === 0 &&
+      !hasProviderChanges &&
+      !hasSemanticSearchChange
+    )
+      break;
     prompts.message(
-      `Step ${hasDocsStep ? '3 of 3' : '2 of 2'}: review and confirm`,
+      `Step ${hasDocsStep ? '4' : '3'} of ${stepCount}: review and confirm`,
     );
     prompts.message(
       renderConfigurationPreview(
         selectedDocs,
         selectedClients,
         selectableClients,
+        selectedSemanticSearch,
+        semanticSearchEnabled,
       ),
     );
     const approved = await prompts.confirm(
@@ -324,6 +400,36 @@ export async function runSetup(
 
   if (applyChanges) {
     const finalSelectedClientIds = new Set(selectedClients);
+    if (selectedSemanticSearch === 'disable' && semanticSearchEnabled) {
+      const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
+      spinner.start('Disabling Semantic Search');
+      try {
+        await disableSemanticSearch();
+        semanticSearchEnabled = false;
+        spinner.stop(
+          'Disabled Semantic Search; model and existing embeddings were preserved',
+        );
+      } catch (error) {
+        const message = `Could not disable Semantic Search: ${errorMessage(error)}`;
+        failedSemanticSearch.push(message);
+        spinner.error(message);
+      }
+    } else if (selectedSemanticSearch === 'enable' && !semanticSearchEnabled) {
+      const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
+      spinner.start('Installing Qwen3 and enabling Semantic Search');
+      try {
+        await installAndEnableSemanticSearch((message) =>
+          spinner.message(message),
+        );
+        semanticSearchEnabled = true;
+        spinner.stop('Qwen3 installed; Semantic Search enabled');
+      } catch (error) {
+        const message = `Could not enable Semantic Search: ${errorMessage(error)}`;
+        failedSemanticSearch.push(message);
+        spinner.error(message);
+      }
+    }
+
     for (const selector of selectedDocs) {
       const [source, version] = splitSelector(selector);
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
@@ -404,10 +510,16 @@ export async function runSetup(
         .map(({ label }) => label),
       unchangedClients,
       failedClients,
+      semanticSearchEnabled,
+      failedSemanticSearch,
       applyChanges,
     }),
   );
-  return failedDocs.length > 0 || failedClients.length > 0 ? 1 : 0;
+  return failedDocs.length > 0 ||
+    failedClients.length > 0 ||
+    failedSemanticSearch.length > 0
+    ? 1
+    : 0;
 }
 
 export function createSetupPromptApi(
@@ -491,6 +603,24 @@ export function createSetupPromptApi(
             }),
         ),
       ),
+    select: <T extends string>(
+      message: string,
+      options: SetupChoice<T>[],
+      initialValue?: T,
+    ) =>
+      withBackspace((signal) =>
+        clack.select<T>({
+          message,
+          options: options as unknown as Parameters<
+            typeof clack.select<T>
+          >[0]['options'],
+          input,
+          output,
+          ...(accessible !== undefined && { accessible }),
+          ...(initialValue !== undefined && { initialValue }),
+          signal,
+        }),
+      ),
     confirm: (message) =>
       withBackspace((signal) =>
         clack.confirm({ message, ...promptOptions, signal }),
@@ -534,6 +664,8 @@ function renderSummary(summary: {
   keptClients: string[];
   unchangedClients: string[];
   failedClients: string[];
+  semanticSearchEnabled: boolean;
+  failedSemanticSearch: string[];
   applyChanges: boolean;
 }): string {
   const lines = [
@@ -547,6 +679,8 @@ function renderSummary(summary: {
     `Providers kept configured: ${listOrNone(summary.keptClients)}`,
     `Providers already configured: ${listOrNone(summary.unchangedClients)}`,
     `Provider failures: ${listOrNone(summary.failedClients)}`,
+    `Semantic Search: ${summary.semanticSearchEnabled ? 'enabled' : 'disabled'}`,
+    `Semantic Search failures: ${listOrNone(summary.failedSemanticSearch)}`,
   ];
   return lines.join('\n');
 }
@@ -614,6 +748,8 @@ function renderConfigurationPreview(
   selectedDocs: string[],
   selectedClientIds: SetupClientId[],
   clients: SetupClientStatus[],
+  selectedSemanticSearch: 'enable' | 'disable',
+  semanticSearchEnabled: boolean,
 ): string {
   const selectedIds = new Set(selectedClientIds);
   const affectedClients = clients.filter(
@@ -656,7 +792,55 @@ function renderConfigurationPreview(
     }
   }
   lines.push('Other provider settings will be preserved.');
+  lines.push('Semantic Search:');
+  if (selectedSemanticSearch === 'enable') {
+    lines.push(
+      semanticSearchEnabled
+        ? '  keep enabled'
+        : '  install Qwen3-Embedding-0.6B (~614 MB) and enable',
+    );
+  } else {
+    lines.push(
+      semanticSearchEnabled
+        ? '  disable and preserve model and embeddings'
+        : '  skip for now; keep disabled',
+    );
+  }
   return lines.join('\n');
+}
+
+async function readSemanticSearchEnabledByDefault(): Promise<boolean> {
+  const semanticSearch = await import('./semantic-search.js');
+  const configuration = await semanticSearch.loadSemanticSearchConfiguration();
+  return configuration.enabled;
+}
+
+async function installAndEnableSemanticSearchByDefault(
+  progress: (message: string) => void,
+): Promise<void> {
+  const modelManager = await import('./model-manager.js');
+  await modelManager.installModel({ progress });
+
+  const embeddings = await import('./embeddings.js');
+  await embeddings.buildDocumentationEmbeddings(undefined, {
+    onProgress: ({ selector, phase, completedChunks, totalChunks }) => {
+      if (phase === 'embedding') {
+        progress(
+          `${selector}: embedding ${completedChunks}/${totalChunks} chunks`,
+        );
+      } else if (phase === 'activated') {
+        progress(`${selector}: embeddings validated and activated`);
+      }
+    },
+  });
+
+  const semanticSearch = await import('./semantic-search.js');
+  await semanticSearch.enableSemanticSearch();
+}
+
+async function disableSemanticSearchByDefault(): Promise<void> {
+  const semanticSearch = await import('./semantic-search.js');
+  await semanticSearch.disableSemanticSearch();
 }
 
 function isPlainProgressTerminal(terminal: SetupTerminalState): boolean {

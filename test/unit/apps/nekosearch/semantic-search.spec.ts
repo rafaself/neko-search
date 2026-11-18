@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jest } from '@jest/globals';
@@ -6,6 +6,8 @@ import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-
 import { QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1 } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import type { ModelStatus } from '../../../../src/apps/nekosearch/model-manager.js';
 import {
+  disableSemanticSearch,
+  enableSemanticSearch,
   loadSemanticSearchConfiguration,
   resolveConfiguredEmbeddingProvider,
 } from '../../../../src/apps/nekosearch/semantic-search.js';
@@ -124,6 +126,100 @@ describe('semantic search configuration', () => {
     ).resolves.toBe(expectedProvider);
     expect(modelStatusReader).toHaveBeenCalledTimes(1);
     expect(embeddingProviderFactory).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables with no added documentation sources after verifying the model', async () => {
+    const result = await enableSemanticSearch({
+      cwd: directory,
+      environment: {},
+      modelStatusReader: () => Promise.resolve(modelStatus('installed')),
+      embeddingStatusesReader: () => Promise.resolve([]),
+    });
+
+    expect(result.enabled).toBe(true);
+    await expect(
+      loadSemanticSearchConfiguration({ cwd: directory, environment: {} }),
+    ).resolves.toMatchObject({ enabled: true });
+  });
+
+  it('refuses to enable until active snapshots have complete compatible vectors', async () => {
+    const configPath = join(directory, 'nekosearch.yaml');
+    const snapshotStatus = {
+      selector: 'nestjs@12',
+      modelCompatibility: 'compatible' as const,
+      totalChunks: 2,
+      embeddedChunks: 1,
+      missingEmbeddings: 1,
+      invalidEmbeddings: 0,
+      snapshotIntegrity: 'valid' as const,
+    };
+
+    await expect(
+      enableSemanticSearch({
+        cwd: directory,
+        environment: {},
+        modelStatusReader: () => Promise.resolve(modelStatus('installed')),
+        embeddingStatusesReader: () => Promise.resolve([snapshotStatus]),
+      }),
+    ).rejects.toThrow(/nekosearch embeddings build nestjs@12/iu);
+    await expect(readFile(configPath, 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('refuses snapshots generated in a different embedding space', async () => {
+    await expect(
+      enableSemanticSearch({
+        cwd: directory,
+        environment: {},
+        modelStatusReader: () => Promise.resolve(modelStatus('installed')),
+        embeddingStatusesReader: () =>
+          Promise.resolve([
+            {
+              selector: 'nestjs@11',
+              modelCompatibility: 'incompatible',
+              totalChunks: 4,
+              embeddedChunks: 4,
+              missingEmbeddings: 0,
+              invalidEmbeddings: 0,
+              snapshotIntegrity: 'valid',
+            },
+          ]),
+      }),
+    ).rejects.toThrow(/embedding space is incompatible/iu);
+  });
+
+  it('requires the pinned model and valid artifact integrity before enabling', async () => {
+    await expect(
+      enableSemanticSearch({
+        cwd: directory,
+        environment: {},
+        modelStatusReader: () => Promise.resolve(modelStatus('corrupt')),
+        embeddingStatusesReader: () => Promise.resolve([]),
+      }),
+    ).rejects.toThrow(/integrity-verified Qwen3/iu);
+  });
+
+  it('disables atomically while retaining configuration comments', async () => {
+    const configPath = join(directory, 'nekosearch.yaml');
+    await writeFile(
+      configPath,
+      '# local search settings\nsearch:\n  semantic:\n    enabled: true\n',
+      'utf8',
+    );
+
+    const result = await disableSemanticSearch({
+      cwd: directory,
+      environment: {},
+    });
+
+    expect(result.enabled).toBe(false);
+    await expect(readFile(configPath, 'utf8')).resolves.toContain(
+      '# local search settings',
+    );
+    await expect(readFile(configPath, 'utf8')).resolves.toContain(
+      'enabled: false',
+    );
   });
 
   it('requires a compatible inference runtime before building snapshots', async () => {

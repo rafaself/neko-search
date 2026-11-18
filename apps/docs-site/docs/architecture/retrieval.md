@@ -25,7 +25,7 @@ Snapshot builds may include one normalized 1024-dimensional Float32 vector for e
 
 Hybrid manifests record the supported Qwen3 model revision and ONNX artifact checksum along with dimensions, data type, pooling, normalization, query-instruction version, and embedding-pipeline version. Validation checks the metadata, exact Float32 BLOB size, vector normalization, and one-to-one chunk IDs against the corpus before promotion. Lexical-only snapshots omit both the metadata and the embeddings table.
 
-When `search.semantic.enabled` is false or absent, serving uses only FTS5/BM25 and does not load the embedding runtime. When enabled, the query encoder runs once for a request. Each selected snapshot checks that its embedding metadata matches the query space, then runs exact dot-product retrieval over normalized Float32 vectors. Snapshots without compatible vectors are rejected for that request with an instruction to build their embeddings.
+When `search.semantic.enabled` is false or absent, serving uses only FTS5/BM25 and does not load the embedding runtime. When enabled, the query encoder runs once for a request. Each selected user-installed snapshot checks that its embedding metadata matches the query space, then runs exact dot-product retrieval over normalized Float32 vectors. A user snapshot without compatible vectors is rejected with an instruction to build them. The package-bundled MCP protocol snapshot has no user-managed embedding lifecycle and retains its existing lexical ranking.
 
 ## Hybrid ranking
 

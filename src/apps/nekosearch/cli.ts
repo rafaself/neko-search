@@ -222,25 +222,96 @@ function runModelCommand(arguments_: string[]): void {
 function runEmbeddingsCommand(arguments_: string[]): void {
   const [operation, selector] = arguments_;
   if (
-    (operation !== 'build' && operation !== 'status') ||
+    (operation !== 'build' &&
+      operation !== 'status' &&
+      operation !== 'enable' &&
+      operation !== 'disable') ||
     arguments_.length > 2 ||
+    ((operation === 'enable' || operation === 'disable') &&
+      arguments_.length !== 1) ||
     (selector !== undefined && !isSourceSelector(selector))
   ) {
     process.stderr.write(
-      `nekosearch embeddings requires build [<source@version>] or status [<source@version>]\n${renderCliHelp()}`,
+      `nekosearch embeddings requires build [<source@version>], status [<source@version>], enable, or disable\n${renderCliHelp()}`,
     );
     process.exitCode = 2;
     return;
   }
 
-  if (operation === 'status') {
-    void import('./embeddings.js')
-      .then(async (embeddings) => {
-        const statuses =
-          await embeddings.getDocumentationEmbeddingStatuses(selector);
+  if (operation === 'enable') {
+    void import('./semantic-search.js')
+      .then(({ enableSemanticSearch }) => enableSemanticSearch())
+      .then((configuration) => {
         process.stdout.write(
-          `${embeddings.formatDocumentationEmbeddingStatuses(statuses)}\n`,
+          `Semantic Search enabled in ${configuration.configPath}. Lexical Search remains enabled.\n`,
         );
+      })
+      .catch((error: unknown) => {
+        process.stderr.write(
+          `nekosearch embeddings enable failed: ${formatError(error)}\n`,
+        );
+        process.exitCode = 1;
+      });
+    return;
+  }
+
+  if (operation === 'disable') {
+    void import('./semantic-search.js')
+      .then(({ disableSemanticSearch }) => disableSemanticSearch())
+      .then((configuration) => {
+        process.stdout.write(
+          `Semantic Search disabled in ${configuration.configPath}. Lexical Search remains enabled; the installed model and existing embeddings were preserved.\n`,
+        );
+      })
+      .catch((error: unknown) => {
+        process.stderr.write(
+          `nekosearch embeddings disable failed: ${formatError(error)}\n`,
+        );
+        process.exitCode = 1;
+      });
+    return;
+  }
+
+  if (operation === 'status') {
+    void Promise.all([
+      import('./embeddings.js'),
+      import('./semantic-search.js'),
+      import('./model-manager.js'),
+    ])
+      .then(async ([embeddings, semanticSearch, modelManager]) => {
+        const [statuses, configuration, modelStatus] = await Promise.all([
+          embeddings.getDocumentationEmbeddingStatuses(selector),
+          semanticSearch.loadSemanticSearchConfiguration(),
+          modelManager.getModelStatus(),
+        ]);
+        const allStatuses = selector
+          ? await embeddings.getDocumentationEmbeddingStatuses()
+          : statuses;
+        const invalidSnapshots = allStatuses.filter(
+          (status) =>
+            status.snapshotIntegrity !== 'valid' ||
+            status.modelCompatibility !== 'compatible' ||
+            status.missingEmbeddings > 0 ||
+            status.invalidEmbeddings > 0 ||
+            status.embeddedChunks !== status.totalChunks,
+        );
+        const runtimeReady =
+          modelStatus.installationState === 'installed' &&
+          modelStatus.artifactIntegrity === 'valid' &&
+          modelStatus.inferenceAvailable;
+        const ready =
+          !configuration.enabled ||
+          (runtimeReady && invalidSnapshots.length === 0);
+        process.stdout.write(
+          [
+            `Semantic Search: ${configuration.enabled ? 'enabled' : 'disabled'}`,
+            `Readiness: ${configuration.enabled ? (ready ? 'ready' : 'unavailable') : 'disabled'}`,
+            `Configuration: ${configuration.configPath}`,
+            `Qwen3: ${modelStatus.modelId} v${modelStatus.version} (${modelStatus.installationState}; revision ${modelStatus.upstreamRevision}; artifact integrity ${modelStatus.artifactIntegrity}; inference ${modelStatus.inferenceAvailable ? 'available' : 'unavailable'})`,
+            `${embeddings.formatDocumentationEmbeddingStatuses(statuses)}`,
+          ].join('\n') + '\n',
+        );
+        if (!ready) process.exitCode = 1;
       })
       .catch((error: unknown) => {
         process.stderr.write(

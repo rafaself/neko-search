@@ -165,6 +165,37 @@ describe('local model manager', () => {
     ).toBe('user-owned');
   });
 
+  it('blocks model removal while Semantic Search is enabled', async () => {
+    const options: ModelManagerOptions = {
+      modelDirectory,
+      release,
+      fetcher: (input) => {
+        const name =
+          new URL(requestUrl(input)).pathname.split('/').at(-1) ?? '';
+        const bytes = files.get(name);
+        if (!bytes) throw new Error(`Unexpected release asset ${name}`);
+        return Promise.resolve(new Response(bytes));
+      },
+      progress: () => undefined,
+    };
+    await installModel(options);
+    const configPath = join(temporaryDirectory, 'nekosearch.yaml');
+    await writeFile(
+      configPath,
+      'search:\n  semantic:\n    enabled: true\n',
+      'utf8',
+    );
+
+    await expect(
+      removeModel({
+        modelDirectory,
+        release,
+        environment: { NEKOSEARCH_CONFIG: configPath },
+      }),
+    ).rejects.toThrow(/nekosearch embeddings disable/iu);
+    expect((await getModelStatus(options)).installationState).toBe('installed');
+  });
+
   it('does not activate files whose downloaded checksum differs from the manifest', async () => {
     const corruptedFiles = new Map(files);
     corruptedFiles.set('tokenizer.json', Buffer.from('wrong checksum'));

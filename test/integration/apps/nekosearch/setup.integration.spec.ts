@@ -631,6 +631,124 @@ describe('nekosearch setup flow', () => {
     expect(prompts.messages.at(-1)).toContain('mocked timeout');
   });
 
+  it('skips model installation when Semantic Search is declined', async () => {
+    const prompts = createPrompts({
+      multiSelections: [['nestjs@12'], []],
+      selections: ['disable'],
+      confirmations: [true],
+    });
+    const installAndEnableSemanticSearch =
+      jest.fn<
+        NonNullable<SetupDependencies['installAndEnableSemanticSearch']>
+      >();
+    const installedDocs: string[] = [];
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () => Promise.resolve([]),
+      install: (source, version) => {
+        installedDocs.push(`${source}@${version}`);
+        return Promise.resolve({
+          entry: {} as DocumentationCatalogEntry,
+          changed: true,
+        });
+      },
+      installAndEnableSemanticSearch,
+    });
+
+    expect(result).toBe(0);
+    expect(installedDocs).toEqual(['nestjs@12']);
+    expect(installAndEnableSemanticSearch).not.toHaveBeenCalled();
+    expect(prompts.selectCalls[0]?.options).toEqual([
+      {
+        value: 'enable',
+        label: 'Install now',
+        hint: 'Qwen3-Embedding-0.6B · approximately 614 MB',
+      },
+      {
+        value: 'disable',
+        label: 'Skip for now',
+        hint: 'Lexical Search stays available',
+      },
+    ]);
+    expect(prompts.messages.at(-1)).toContain('Semantic Search: disabled');
+  });
+
+  it('installs and enables the model before ingesting selected documentation', async () => {
+    const prompts = createPrompts({
+      multiSelections: [['nestjs@12'], []],
+      selections: ['enable'],
+      confirmations: [true],
+    });
+    const events: string[] = [];
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () => Promise.resolve([]),
+      installAndEnableSemanticSearch: (progress) => {
+        events.push('semantic');
+        progress('Qwen3 download progress');
+        return Promise.resolve();
+      },
+      install: (source, version) => {
+        events.push(`docs:${source}@${version}`);
+        return Promise.resolve({
+          entry: {} as DocumentationCatalogEntry,
+          changed: true,
+        });
+      },
+    });
+
+    expect(result).toBe(0);
+    expect(events).toEqual(['semantic', 'docs:nestjs@12']);
+    expect(prompts.spinnerCalls[0]).toEqual([
+      'start:Installing Qwen3 and enabling Semantic Search',
+      'message:Qwen3 download progress',
+      'stop:Qwen3 installed; Semantic Search enabled',
+    ]);
+    expect(prompts.messages.at(-1)).toContain('Semantic Search: enabled');
+  });
+
+  it('disables Semantic Search on explicit setup choice without removing vectors or model', async () => {
+    const prompts = createPrompts({
+      selections: ['disable'],
+      confirmations: [true],
+    });
+    const disableSemanticSearch = jest.fn<
+      NonNullable<SetupDependencies['disableSemanticSearch']>
+    >(() => Promise.resolve());
+    const installAndEnableSemanticSearch =
+      jest.fn<
+        NonNullable<SetupDependencies['installAndEnableSemanticSearch']>
+      >();
+
+    const result = await runSetup({
+      terminal: { stdinIsTTY: true, stdoutIsTTY: true },
+      prompts,
+      serverCommand: SERVER_COMMAND,
+      listIndexes: () => Promise.resolve([]),
+      inspectClients: () => Promise.resolve([]),
+      readSemanticSearchEnabled: () => Promise.resolve(true),
+      disableSemanticSearch,
+      installAndEnableSemanticSearch,
+    });
+
+    expect(result).toBe(0);
+    expect(disableSemanticSearch).toHaveBeenCalledTimes(1);
+    expect(installAndEnableSemanticSearch).not.toHaveBeenCalled();
+    expect(prompts.messages.at(-1)).toContain('Semantic Search: disabled');
+    expect(prompts.spinnerCalls[0]).toEqual([
+      'start:Disabling Semantic Search',
+      'stop:Disabled Semantic Search; model and existing embeddings were preserved',
+    ]);
+  });
+
   it('marks installed selectors with a check without added status text', async () => {
     const prompts = createPrompts({
       multiSelections: [[], []],
@@ -681,6 +799,7 @@ function client(id: SetupClientId, label: string): SetupClientStatus {
 
 interface PromptAnswers {
   multiSelections?: (string[] | symbol)[];
+  selections?: (string | symbol)[];
   confirmations?: (boolean | symbol)[];
   onConfirm?: () => void;
 }
@@ -688,6 +807,11 @@ interface PromptAnswers {
 function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
   messages: string[];
   confirmations: string[];
+  selectCalls: Array<{
+    message: string;
+    options: SetupChoice<string>[];
+    initialValue?: string;
+  }>;
   multiselectCalls: Array<{
     message: string;
     options: SetupChoice<string>[];
@@ -702,9 +826,15 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
   spinnerPlainCalls: boolean[];
 } {
   const multiSelections = [...(answers.multiSelections ?? [])];
+  const selectionResults = [...(answers.selections ?? [])];
   const confirmationResults = [...(answers.confirmations ?? [])];
   const messages: string[] = [];
   const confirmations: string[] = [];
+  const selectCalls: Array<{
+    message: string;
+    options: SetupChoice<string>[];
+    initialValue?: string;
+  }> = [];
   const multiselectCalls: Array<{
     message: string;
     options: SetupChoice<string>[];
@@ -721,6 +851,7 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
   return {
     messages,
     confirmations,
+    selectCalls,
     multiselectCalls,
     groupMultiselectCalls,
     spinnerCalls,
@@ -754,6 +885,21 @@ function createPrompts(answers: PromptAnswers = {}): SetupPromptApi & {
         initialValues: [...initialValues],
       });
       return Promise.resolve((multiSelections.shift() ?? []) as T[] | symbol);
+    },
+    select: <T extends string>(
+      message: string,
+      options: SetupChoice<T>[],
+      initialValue?: T,
+    ) => {
+      selectCalls.push({
+        message,
+        options,
+        ...(initialValue !== undefined && { initialValue }),
+      });
+      return Promise.resolve(
+        (selectionResults.shift() ?? initialValue ?? options[0]?.value) as
+          T | symbol,
+      );
     },
     confirm: (message) => {
       confirmations.push(message);
