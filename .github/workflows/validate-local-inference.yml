@@ -27,27 +27,19 @@ jobs:
       - name: Install development dependencies
         run: npm ci
 
-      - name: Install the optional runtime in an isolated directory
-        run: |
-          runtime_dir="$RUNNER_TEMP/nekosearch-runtime"
-          mkdir -p "$runtime_dir"
-          npm install --prefix "$runtime_dir" --save-exact @huggingface/transformers@4.3.2
-          echo "NEKOSEARCH_QWEN3_RUNTIME_CWD=$runtime_dir" >> "$GITHUB_ENV"
-
-      - name: Build and install the pinned model
+      - name: Build and install the pinned runtime and model
         env:
+          XDG_DATA_HOME: ${{ runner.temp }}/nekosearch-data
           NEKOSEARCH_MODEL_DIR: ${{ runner.temp }}/nekosearch-model
         run: |
           npm run build
-          cd "$NEKOSEARCH_QWEN3_RUNTIME_CWD"
-          cli="$GITHUB_WORKSPACE/dist/apps/nekosearch/cli.js"
-          node "$cli" model status | tee "$RUNNER_TEMP/nekosearch-runtime-status"
-          grep -Fx 'Runtime available: yes' "$RUNNER_TEMP/nekosearch-runtime-status"
-          node "$cli" model install
-          node "$cli" model status
+          node dist/apps/nekosearch/cli.js model install
+          node dist/apps/nekosearch/cli.js model status | tee "$RUNNER_TEMP/nekosearch-model-status"
+          grep -F 'Available for inference: yes' "$RUNNER_TEMP/nekosearch-model-status"
 
       - name: Run real offline Qwen3 inference
         run: npm test -- --runTestsByPath test/integration/apps/nekosearch/local-qwen3-inference.integration.spec.ts
         env:
           NEKOSEARCH_RUN_QWEN3_INTEGRATION: '1'
+          XDG_DATA_HOME: ${{ runner.temp }}/nekosearch-data
           NEKOSEARCH_MODEL_DIR: ${{ runner.temp }}/nekosearch-model

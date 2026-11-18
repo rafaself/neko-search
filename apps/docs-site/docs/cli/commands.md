@@ -162,11 +162,11 @@ Manage the pinned Qwen3-Embedding-0.6B ONNX release independently from documenta
 
 | Subcommand | Behavior                                                                                                                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `install`  | Download the immutable v1.0.0 release (about 625 MB across its assets), resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification.                           |
+| `install`  | Install the pinned local inference runtime and the immutable v1.0.0 model release (about 625 MB for the model). Verify both before activating them.                                                                     |
 | `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                                                                                    |
 | `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. |
 
-The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Set `NEKOSEARCH_MODEL_DIR` while running embedding commands or `serve` when you installed into an alternate directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. To enable inference, install it in the application directory that launches NekoSearch with `npm install --save-exact @huggingface/transformers@4.3.2`; it includes ONNX Runtime Node `1.30.0`. Inference is local-only and requires Linux x64 with Node.js 24.15.0 or newer.
+The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Set `NEKOSEARCH_MODEL_DIR` while running embedding commands or `serve` when you installed into an alternate directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. `model install` and setup install it with ONNX Runtime Node `1.30.0` into the NekoSearch application-data directory. Inference is local-only and requires Linux x64 with Node.js 24.15.0 or newer.
 
 **Errors:** network or HTTP failures after retries, invalid release metadata/checksums, unmanaged target directory, incomplete managed files, and unsafe paths. A failed installation remains in a hidden staging directory and is not reported as installed. `remove` refuses directories without the matching NekoSearch ownership marker.
 
@@ -181,7 +181,7 @@ nekosearch embeddings enable
 nekosearch embeddings disable
 ```
 
-`build` generates vectors from the persisted canonical chunks in installed snapshots. With no selector it processes every installed source; a selector limits the operation to one snapshot. It does not revisit source repositories, redownload documentation, or repeat discovery and Markdown parsing. Install and verify Qwen3 first with `nekosearch model install`, and install the optional Transformers.js runtime for the current Node.js host.
+`build` generates vectors from the persisted canonical chunks in installed snapshots. With no selector it processes every installed source; a selector limits the operation to one snapshot. It does not revisit source repositories, redownload documentation, or repeat discovery and Markdown parsing. Install and verify Qwen3 and its runtime first with `nekosearch model install`.
 
 Each changed snapshot is staged, validated, and promoted through the catalog's atomic update path. Existing compatible complete embeddings are reused; repeated builds do not run inference again. Progress is reported per source and batch. An interruption before promotion leaves that source's active snapshot unchanged; completed sources from an all-source run remain complete and are skipped on retry.
 

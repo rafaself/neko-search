@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 const modelDirectory = process.env.NEKOSEARCH_MODEL_DIR;
@@ -20,10 +19,25 @@ globalThis.fetch = async () => {
   throw new Error('Network access is disabled during local model validation.');
 };
 
-const runtimeRequire = createRequire(
-  join(process.cwd(), 'nekosearch-runtime-loader.cjs'),
+const {
+  inspectRuntimeDirectory,
+  inspectTransformersRuntime,
+  resolveManagedRuntimeDirectory,
+} = await import(
+  new URL('../../dist/apps/nekosearch/transformers-runtime.js', import.meta.url)
 );
-const transformers = runtimeRequire('@huggingface/transformers');
+const runtime = inspectTransformersRuntime();
+if (!runtime.available) throw new Error(runtime.detail);
+const managedDirectory = resolveManagedRuntimeDirectory();
+const childWorkingDirectory = inspectRuntimeDirectory(managedDirectory)
+  ?.available
+  ? managedDirectory
+  : process.cwd();
+// Validate the subprocesses before opening the in-process model so the
+// two inference sessions never compete for memory.
+await validateMcpHybridSearch();
+
+const transformers = runtime.module;
 transformers.env.allowRemoteModels = false;
 transformers.env.allowLocalModels = true;
 const tokenizer = await transformers.AutoTokenizer.from_pretrained(
@@ -104,8 +118,6 @@ if (process.env.NEKOSEARCH_QWEN3_VECTOR_OUTPUT) {
 process.stdout.write(
   `Validated local Qwen3 tokenizer and inference at ${modelDirectory} without network access.\n`,
 );
-await validateMcpHybridSearch();
-
 async function validateMcpHybridSearch() {
   const root = await mkdtemp(join(tmpdir(), 'nekosearch-real-mcp-'));
   const invoke = promisify(execFile);
@@ -150,7 +162,7 @@ async function validateMcpHybridSearch() {
       ['embeddings', 'enable'],
     ]) {
       await invoke(process.execPath, ['--import', guard, cli, ...args], {
-        cwd: process.cwd(),
+        cwd: childWorkingDirectory,
         env,
         timeout: 50_000,
       });
@@ -160,7 +172,7 @@ async function validateMcpHybridSearch() {
       new StdioClientTransport({
         command: process.execPath,
         args: ['--import', guard, cli, 'serve'],
-        cwd: process.cwd(),
+        cwd: childWorkingDirectory,
         env,
       }),
     );

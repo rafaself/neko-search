@@ -187,7 +187,7 @@ function runModelCommand(arguments_: string[]): void {
     .then(async (modelManager) => {
       const options = directory ? { modelDirectory: directory } : {};
       if (operation === 'install') {
-        const result = await modelManager.installModel(options);
+        const result = await modelManager.installModelWithRuntime(options);
         process.stdout.write(
           result.alreadyInstalled
             ? `Qwen3-Embedding-0.6B ${result.modelDirectory} is already installed and verified.\n`

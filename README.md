@@ -30,7 +30,7 @@ Run the interactive setup when you want to install curated docs and register thi
 nekosearch setup
 ```
 
-Setup asks which curated documentation snapshots and MCP clients you want, then offers an optional Qwen3-Embedding-0.6B installation (~625 MB across all release assets). Skipping keeps Semantic Search disabled and avoids downloading the model or loading the ML runtime. Choosing installation checks the optional runtime before downloading Qwen3, validates the model and existing snapshot vectors before enabling, and ingests selected new docs with embeddings. Setup supports Codex, Claude Code, Cursor, and Grok Build when their executables are detected. Matching NekoSearch registrations start checked; conflicts are shown as disabled choices. Uncheck a verified registration to remove it after review. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`.
+Setup asks which curated documentation snapshots and MCP clients you want, then offers an optional Qwen3-Embedding-0.6B installation (~625 MB across all release assets). Skipping keeps Semantic Search disabled and avoids downloading the model or loading the ML runtime. Choosing **Install now** installs the pinned inference runtime and Qwen3 after confirmation. Setup builds and verifies vectors before enabling Semantic Search, then ingests selected new docs with embeddings. Setup supports Codex, Claude Code, Cursor, and Grok Build when their executables are detected. Matching NekoSearch registrations start checked; conflicts are shown as disabled choices. Uncheck a verified registration to remove it after review. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`.
 
 Before it changes anything, setup shows a final overview of the documentation, Semantic Search choice, and providers selected. Downloads, local indexing, and provider configuration begin only after you confirm. If model setup, docs download, or provider configuration fails, setup reports the failure and continues with remaining operations; Semantic Search is enabled only after model and snapshot validation succeeds. NekoSearch uses the client CLI for Codex, Claude Code, and Grok Build changes. For Cursor, it updates only the NekoSearch entry in the global MCP JSON file. Conflicting or unrecognized registrations remain untouched, and re-running setup leaves matching registrations unchanged. On a non-interactive terminal it exits before checking providers or downloading docs.
 
@@ -130,13 +130,7 @@ The default model directory is under the same persistent application-data root a
 
 Set `NEKOSEARCH_MODEL_DIR` or pass `--dir <model-dir>` to use an exact alternate model directory. Use the same override for `status` and `remove`; set `NEKOSEARCH_MODEL_DIR` when running embedding commands or `serve` with an alternate location. Removal requires the NekoSearch ownership marker and deletes only the release files it manages. Other files in that directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. Once removed, inference is reported unavailable until the model is installed again.
 
-The npm package does not download model weights or install the ML runtime for lexical-only users. Transformers.js is an optional peer dependency, pinned to `4.3.2`; it brings ONNX Runtime Node `1.30.0`. To enable local inference, install it alongside NekoSearch. For a project install, run this in the project directory:
-
-```sh
-npm install --save-exact @huggingface/transformers@4.3.2
-```
-
-For a global NekoSearch installation, use `npm install --global @huggingface/transformers@4.3.2` under the same Node.js installation. Verify readiness with `nekosearch model status`.
+A regular npm install is lexical only. Choose **Install now** in setup or run `nekosearch model install` to install Transformers.js `4.3.2`, ONNX Runtime Node `1.30.0`, and Qwen3 together. The command uses npm to verify and install the pinned runtime into the NekoSearch application data directory. A compatible runtime already available to the CLI is reused. Run `nekosearch model status` to check readiness.
 
 Inference reads only the versioned local model directory, disables Transformers.js remote models, uses CPU execution, and does not require a network connection. Inference requires Linux x64 and Node.js 24.15.0 or newer. Node.js 24.22.3, 25.9.0, and 26.13.1 passed offline inference with the same model. Use Node.js 26 LTS for new installations.
 
@@ -178,7 +172,7 @@ The dedicated real-inference Jest test is skipped in regular CI. Run it with `NE
 | `nekosearch serve`                                          | No              | Serves search and fetch tools over stdio using read-only SQLite connections.       |
 | `nekosearch mcp configure <provider>`                       | No              | Adds and verifies a user MCP registration.                                         |
 | `nekosearch mcp remove <provider>`                          | No              | Removes a matching NekoSearch user registration.                                   |
-| `nekosearch model install` / `model remove`                 | Yes for install | Installs or removes only NekoSearch-managed model release assets.                  |
+| `nekosearch model install` / `model remove`                 | Yes for install | Installs the pinned runtime and model. Removal deletes only managed model assets.  |
 | `nekosearch model status`                                   | No              | Verifies model checksums and reports inference readiness.                          |
 
 `remove` is offline and only removes installed snapshots; bundled snapshots cannot be removed. It removes the selector from the catalog and retires its active snapshot files. A running `serve` process keeps using the SQLite indexes it opened at startup; restart it to load catalog changes. If the filesystem cannot retire files still in use, the command reports a cleanup warning.

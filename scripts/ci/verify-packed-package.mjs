@@ -958,6 +958,8 @@ async function main() {
       'dist/apps/nekosearch/mcp-command.js',
       'dist/apps/nekosearch/setup.js',
       'dist/apps/nekosearch/setup-clients.js',
+      'dist/apps/nekosearch/install-transformers-runtime.js',
+      'dist/apps/nekosearch/semantic-runtime-lock.json',
       'dist/apps/nekosearch/providers/provider-runner.js',
       'dist/apps/nekosearch/providers/provider-registry.js',
       'dist/apps/nekosearch/providers/adapters/grok.adapter.js',

@@ -329,12 +329,12 @@ export async function runSetup(
         `Step ${hasDocsStep ? '3' : '2'} of ${stepCount}: Semantic Search`,
       );
       const selection = await prompts.select(
-        'Enable Semantic Search? Qwen3-Embedding-0.6B download size: approximately 625 MB',
+        'Enable Semantic Search? Reserve about 1.4 GB for Qwen3 and its runtime.',
         [
           {
             value: 'enable',
             label: semanticSearchEnabled ? 'Keep enabled' : 'Install now',
-            hint: 'Qwen3-Embedding-0.6B · approximately 625 MB',
+            hint: 'Qwen3 model (~625 MB) and inference runtime',
           },
           {
             value: 'disable',
@@ -416,13 +416,13 @@ export async function runSetup(
       }
     } else if (selectedSemanticSearch === 'enable' && !semanticSearchEnabled) {
       const spinner = prompts.spinner(isPlainProgressTerminal(terminal));
-      spinner.start('Installing Qwen3 and enabling Semantic Search');
+      spinner.start('Installing the runtime and Qwen3 for Semantic Search');
       try {
         await installAndEnableSemanticSearch((message) =>
           spinner.message(message),
         );
         semanticSearchEnabled = true;
-        spinner.stop('Qwen3 installed; Semantic Search enabled');
+        spinner.stop('Qwen3 and runtime ready. Semantic Search enabled');
       } catch (error) {
         const message = `Could not enable Semantic Search: ${errorMessage(error)}`;
         failedSemanticSearch.push(message);
@@ -797,7 +797,7 @@ function renderConfigurationPreview(
     lines.push(
       semanticSearchEnabled
         ? '  keep enabled'
-        : '  install Qwen3-Embedding-0.6B (~625 MB) and enable',
+        : '  install the inference runtime and Qwen3-Embedding-0.6B (~625 MB model), then enable',
     );
   } else {
     lines.push(
@@ -819,13 +819,7 @@ async function installAndEnableSemanticSearchByDefault(
   progress: (message: string) => void,
 ): Promise<void> {
   const modelManager = await import('./model-manager.js');
-  const runtimeStatus = await modelManager.getModelStatus();
-  if (!runtimeStatus.runtimeAvailable) {
-    throw new Error(
-      `The local inference runtime is unavailable. ${runtimeStatus.details.join(' ')} Runtime requirement: ${runtimeStatus.runtimeRequirement}. Run \`nekosearch model status\` to check readiness before setup downloads Qwen3.`,
-    );
-  }
-  await modelManager.installModel({ progress });
+  await modelManager.installModelWithRuntime({ progress });
 
   const embeddings = await import('./embeddings.js');
   await embeddings.buildDocumentationEmbeddings(undefined, {

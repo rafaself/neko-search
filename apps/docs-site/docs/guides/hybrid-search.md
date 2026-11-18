@@ -42,16 +42,7 @@ Hybrid's higher latency includes one local query embedding plus both retrieval p
 - Inference is CPU-only in this release. In the measured NestJS 11/12 evaluation, process RSS peaked at 1,604,591,616 bytes (about 1.50 GiB), compared with 271,753,216 bytes for BM25 before model load. This is an observed Linux x64 run, not a guaranteed minimum; actual memory use depends on the host and workload, and no official minimum RAM requirement is published.
 - Embeddings add one 4,096-byte Float32 BLOB per chunk, plus SQLite overhead. They do not copy document text.
 
-Model weights and the ML runtime are not included in the NekoSearch npm package. A lexical-only install does not install Transformers.js or download model files. The runtime is an optional, explicit install:
-
-```sh
-npm install --global nekosearch
-npm install --global @huggingface/transformers@4.3.2
-```
-
-For a project-local NekoSearch install, run `npm install --save-exact @huggingface/transformers@4.3.2` in the project directory from which you run the CLI. Transformers.js brings ONNX Runtime Node `1.30.0` as a dependency. The compatible Node.js host is required for inference, not for lexical search or model-file integrity checks.
-
-## Install and inspect Qwen3
+A lexical-only npm install skips the model and runtime. On Linux x64, choose **Install now** in setup or run `nekosearch model install` to install both together. The command installs the pinned Transformers.js `4.3.2` and ONNX Runtime Node `1.30.0` with npm under the application-data directory. npm verifies their package integrity using the bundled lockfile. An existing compatible runtime is reused.
 
 `nekosearch model install` downloads the fixed `qwen3-embedding-0.6b-v1.0.0` GitHub Release from [rafaself/nekosearch-models](https://github.com/rafaself/nekosearch-models/releases/tag/qwen3-embedding-0.6b-v1.0.0). It downloads only the selected Q8 ONNX model, its tokenizer/configuration, manifest, checksums, license, and notice. The model is pinned to upstream commit `c25a394dd583836952667c12f008335071b3f43d` in `onnx-community/Qwen3-Embedding-0.6B-ONNX`; it never follows a branch at install time.
 

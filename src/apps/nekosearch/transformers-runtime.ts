@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getUserDataDirectory } from './catalog.js';
 
 export const TRANSFORMERS_VERSION = '4.3.2';
 export const ONNX_RUNTIME_NODE_VERSION = '1.30.0';
@@ -74,73 +75,148 @@ export type TransformersRuntimeStatus =
       onnxRuntimeNodeVersion?: string;
     };
 
-/** Load only the optional Node runtime; model files are never resolved here. */
-export function inspectTransformersRuntime(): TransformersRuntimeStatus {
-  const requireCandidates = [
-    createRequire(fileURLToPath(import.meta.url)),
-    createRequire(join(process.cwd(), 'nekosearch-runtime-loader.cjs')),
-  ];
+export function resolveManagedRuntimeDirectory(
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  return join(
+    getUserDataDirectory(environment),
+    'runtimes',
+    `transformers-${TRANSFORMERS_VERSION}-onnx-${ONNX_RUNTIME_NODE_VERSION}`,
+  );
+}
 
-  for (const runtimeRequire of requireCandidates) {
-    let transformersEntry: string;
-    try {
-      transformersEntry = runtimeRequire.resolve(TRANSFORMERS_PACKAGE);
-    } catch (error) {
-      if (isModuleNotFound(error)) continue;
+export function getRuntimeHostProblem(): string | undefined {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  if (
+    process.platform !== 'linux' ||
+    process.arch !== 'x64' ||
+    major < 24 ||
+    (major === 24 && minor < 15)
+  ) {
+    return `Local Qwen3 inference requires Linux x64 with Node.js >=24.15.0. Current host: ${process.platform} ${process.arch}, Node.js ${process.versions.node}.`;
+  }
+  return undefined;
+}
+
+/** Load only the local runtime; model files are never resolved here. */
+export function inspectTransformersRuntime(
+  environment: NodeJS.ProcessEnv = process.env,
+): TransformersRuntimeStatus {
+  const persistent = inspectPersistentTransformersRuntime(environment);
+  if (persistent?.available) return persistent;
+  const workingDirectory = inspectRuntime(
+    createRequire(join(process.cwd(), 'nekosearch-runtime-loader.cjs')),
+  );
+  if (workingDirectory?.available) return workingDirectory;
+  if (persistent) return persistent;
+  if (workingDirectory) return workingDirectory;
+  return {
+    available: false,
+    detail: `Optional runtime @huggingface/transformers@${TRANSFORMERS_VERSION} is not installed. Run \`nekosearch model install\` or choose Install now in setup.`,
+  };
+}
+
+/** A runtime reachable regardless of the MCP client's working directory. */
+export function inspectPersistentTransformersRuntime(
+  environment: NodeJS.ProcessEnv,
+): TransformersRuntimeStatus | undefined {
+  const managed = inspectRuntimeDirectory(
+    resolveManagedRuntimeDirectory(environment),
+  );
+  if (managed?.available) return managed;
+  return (
+    inspectRuntime(createRequire(fileURLToPath(import.meta.url))) ?? managed
+  );
+}
+
+export function inspectRuntimeDirectory(
+  directory: string,
+): TransformersRuntimeStatus | undefined {
+  const modules = join(directory, 'node_modules');
+  // Avoid asking Node to resolve a package under a path that does not exist yet.
+  // Setup may create that path and load the runtime later in the same process.
+  if (!existsSync(join(modules, TRANSFORMERS_PACKAGE, 'package.json')))
+    return undefined;
+  return inspectRuntime(
+    createRequire(join(directory, 'package.json')),
+    realpathSync(modules),
+  );
+}
+
+function inspectRuntime(
+  runtimeRequire: NodeJS.Require,
+  managedModules?: string,
+): TransformersRuntimeStatus | undefined {
+  let transformersEntry: string;
+  try {
+    transformersEntry = runtimeRequire.resolve(TRANSFORMERS_PACKAGE);
+    if (managedModules && !isInside(managedModules, transformersEntry))
+      return undefined;
+  } catch (error) {
+    if (isModuleNotFound(error)) return undefined;
+    return {
+      available: false,
+      detail: `Could not locate the optional Transformers.js runtime: ${errorMessage(error)}`,
+    };
+  }
+  try {
+    const transformersManifest = readPackageManifest(
+      transformersEntry,
+      TRANSFORMERS_PACKAGE,
+    );
+    const onnxRuntimeRequire = createRequire(transformersEntry);
+    const onnxRuntimeEntry = onnxRuntimeRequire.resolve('onnxruntime-node');
+    if (managedModules && !isInside(managedModules, onnxRuntimeEntry)) {
+      throw new Error(
+        'The managed ONNX Runtime resolved outside its installation',
+      );
+    }
+    const onnxRuntimeManifest = readPackageManifest(
+      onnxRuntimeEntry,
+      'onnxruntime-node',
+    );
+    const transformersVersion = transformersManifest.version;
+    const onnxRuntimeNodeVersion = onnxRuntimeManifest.version;
+    if (
+      transformersVersion !== TRANSFORMERS_VERSION ||
+      onnxRuntimeNodeVersion !== ONNX_RUNTIME_NODE_VERSION
+    ) {
       return {
         available: false,
-        detail: `Could not locate the optional Transformers.js runtime: ${errorMessage(error)}`,
-      };
-    }
-    try {
-      const module = runtimeRequire(
-        TRANSFORMERS_PACKAGE,
-      ) as TransformersRuntimeModule;
-      const transformersManifest = readPackageManifest(
-        transformersEntry,
-        TRANSFORMERS_PACKAGE,
-      );
-      const onnxRuntimeRequire = createRequire(transformersEntry);
-      const onnxRuntimeEntry = onnxRuntimeRequire.resolve('onnxruntime-node');
-      const onnxRuntimeManifest = readPackageManifest(
-        onnxRuntimeEntry,
-        'onnxruntime-node',
-      );
-      const transformersVersion =
-        module.env?.version ?? transformersManifest.version;
-      const onnxRuntimeNodeVersion = onnxRuntimeManifest.version;
-
-      if (
-        transformersVersion !== TRANSFORMERS_VERSION ||
-        transformersManifest.version !== TRANSFORMERS_VERSION ||
-        onnxRuntimeNodeVersion !== ONNX_RUNTIME_NODE_VERSION
-      ) {
-        return {
-          available: false,
-          detail: `Expected @huggingface/transformers@${TRANSFORMERS_VERSION} with onnxruntime-node@${ONNX_RUNTIME_NODE_VERSION}; found @huggingface/transformers@${transformersVersion} with onnxruntime-node@${onnxRuntimeNodeVersion}`,
-          transformersVersion,
-          onnxRuntimeNodeVersion,
-        };
-      }
-
-      return {
-        available: true,
-        module,
+        detail: `Expected @huggingface/transformers@${TRANSFORMERS_VERSION} with onnxruntime-node@${ONNX_RUNTIME_NODE_VERSION}; found @huggingface/transformers@${transformersVersion} with onnxruntime-node@${onnxRuntimeNodeVersion}`,
         transformersVersion,
         onnxRuntimeNodeVersion,
       };
-    } catch (error) {
-      return {
-        available: false,
-        detail: `The optional local inference runtime could not be loaded: ${errorMessage(error)}`,
-      };
     }
+    const module = runtimeRequire(
+      transformersEntry,
+    ) as TransformersRuntimeModule;
+    onnxRuntimeRequire(onnxRuntimeEntry);
+    if (
+      module.env?.version !== TRANSFORMERS_VERSION ||
+      typeof module.pipeline !== 'function'
+    ) {
+      throw new Error(
+        'The installed Transformers.js runtime did not expose the expected API',
+      );
+    }
+    return {
+      available: true,
+      module,
+      transformersVersion,
+      onnxRuntimeNodeVersion,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      detail: `The optional local inference runtime could not be loaded: ${errorMessage(error)}`,
+    };
   }
+}
 
-  return {
-    available: false,
-    detail: `Optional runtime @huggingface/transformers@${TRANSFORMERS_VERSION} is not installed. Install it in the application directory that launches NekoSearch to enable local inference.`,
-  };
+function isInside(parent: string, child: string): boolean {
+  const rest = relative(parent, child);
+  return !!rest && !rest.startsWith('..') && !isAbsolute(rest);
 }
 
 function readPackageManifest(

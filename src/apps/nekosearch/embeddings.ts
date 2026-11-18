@@ -403,7 +403,7 @@ async function createInstalledLocalProvider(
       ? ` ${status.details.join('; ')}`
       : '';
     throw new Error(
-      `The local inference runtime is unavailable.${details} Install @huggingface/transformers@4.3.2 on a supported Node.js host before retrying.`,
+      `The local inference runtime is unavailable.${details} Run \`nekosearch model install\` to install the inference runtime.`,
     );
   }
   const runtime = await import('./local-qwen3-embedding-generator.js');

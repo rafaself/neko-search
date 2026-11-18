@@ -16,6 +16,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { getUserDataDirectory } from './catalog.js';
 import {
+  getRuntimeHostProblem,
   inspectTransformersRuntime,
   ONNX_RUNTIME_NODE_VERSION,
   TRANSFORMERS_VERSION,
@@ -183,6 +184,19 @@ export function resolveModelDirectory(
   );
 }
 
+export async function installModelWithRuntime(
+  options: ModelManagerOptions = {},
+): ReturnType<typeof installModel> {
+  const { installTransformersRuntime } =
+    await import('./install-transformers-runtime.js');
+  await installTransformersRuntime({
+    ...options,
+    progress:
+      options.progress ?? ((message) => process.stderr.write(`${message}\n`)),
+  });
+  return installModel(options);
+}
+
 export async function installModel(
   options: ModelManagerOptions = {},
 ): Promise<{ modelDirectory: string; alreadyInstalled: boolean }> {
@@ -305,7 +319,7 @@ export async function getModelStatus(
   const hostProblem = getRuntimeHostProblem();
   const runtime = hostProblem
     ? { available: false as const, detail: hostProblem }
-    : inspectTransformersRuntime();
+    : inspectTransformersRuntime(options.environment);
   const base: ModelStatus = {
     modelId: MODEL_ID,
     installationState: 'not-installed',
@@ -923,19 +937,6 @@ async function verifyModelFiles(
       throw new Error(`Artifact integrity check failed for ${artifact.name}`);
     }
   }
-}
-
-function getRuntimeHostProblem(): string | undefined {
-  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
-  if (
-    process.platform !== 'linux' ||
-    process.arch !== 'x64' ||
-    major < 24 ||
-    (major === 24 && minor < 15)
-  ) {
-    return `Local Qwen3 inference requires Linux x64 with Node.js >=24.15.0. Current host: ${process.platform} ${process.arch}, Node.js ${process.versions.node}.`;
-  }
-  return undefined;
 }
 
 function isManagedMarker(value: unknown, release: ModelRelease): boolean {

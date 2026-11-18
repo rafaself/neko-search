@@ -16,7 +16,7 @@ Install curated documentation, build from your own files, or ingest a directory 
 - **An MCP client with stdio support:** for agent integration. See [Client Configuration](../mcp/client-configuration.md).
 - **An interactive terminal:** when using `nekosearch setup`.
 
-Lexical search needs no model or ML runtime. Optional Qwen3 inference is available on Linux x64 with the same Node.js minimum. It requires the optional Transformers.js `4.3.2` runtime and downloads about 625 MB of model release assets on explicit installation. See [Local Embeddings and Hybrid Search](../guides/hybrid-search.md) for the full workflow and measured resource notes.
+Lexical search needs no model or ML runtime. Optional Qwen3 inference is available on Linux x64 with the same Node.js minimum. Setup or `nekosearch model install` installs the optional Transformers.js `4.3.2` runtime and downloads about 625 MB of model release assets. See [Local Embeddings and Hybrid Search](../guides/hybrid-search.md) for the full workflow and measured resource notes.
 
 SQLite support comes from Node.js. You do not need a separate database server, a Git installation for GitHub ingestion, or a search API key.
 

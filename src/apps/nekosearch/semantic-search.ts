@@ -158,7 +158,7 @@ export async function enableSemanticSearch(
       ? ` ${status.details.join('; ')}`
       : '';
     throw new Error(
-      `Semantic Search requires the local inference runtime.${details} Install the optional @huggingface/transformers@4.3.2 runtime on a supported Node.js host before enabling it.`,
+      `Semantic Search requires the local inference runtime.${details} Run \`nekosearch model install\` to install the optional @huggingface/transformers@4.3.2 runtime.`,
     );
   }
 
@@ -348,7 +348,7 @@ export async function resolveConfiguredEmbeddingProvider(
       ? ` ${status.details.join('; ')}`
       : '';
     throw new Error(
-      `Semantic Search is enabled in "${configuration.configPath}", but the local inference runtime is unavailable.${details} Install the optional @huggingface/transformers@4.3.2 runtime and use a supported Node.js host before retrying.`,
+      `Semantic Search is enabled in "${configuration.configPath}", but the local inference runtime is unavailable.${details} Run \`nekosearch model install\` to install the optional @huggingface/transformers@4.3.2 runtime.`,
     );
   }
 

@@ -666,7 +666,7 @@ describe('nekosearch setup flow', () => {
       {
         value: 'enable',
         label: 'Install now',
-        hint: 'Qwen3-Embedding-0.6B · approximately 625 MB',
+        hint: 'Qwen3 model (~625 MB) and inference runtime',
       },
       {
         value: 'disable',
@@ -708,9 +708,9 @@ describe('nekosearch setup flow', () => {
     expect(result).toBe(0);
     expect(events).toEqual(['semantic', 'docs:nestjs@12']);
     expect(prompts.spinnerCalls[0]).toEqual([
-      'start:Installing Qwen3 and enabling Semantic Search',
+      'start:Installing the runtime and Qwen3 for Semantic Search',
       'message:Qwen3 download progress',
-      'stop:Qwen3 installed; Semantic Search enabled',
+      'stop:Qwen3 and runtime ready. Semantic Search enabled',
     ]);
     expect(prompts.messages.at(-1)).toContain('Semantic Search: enabled');
   });

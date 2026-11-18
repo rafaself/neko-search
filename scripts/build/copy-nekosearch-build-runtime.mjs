@@ -22,3 +22,8 @@ for (const relativePath of runtimeFiles) {
   await mkdir(dirname(targetPath), { recursive: true });
   await copyFile(resolve(sourceRoot, relativePath), targetPath);
 }
+
+await copyFile(
+  resolve(root, 'src/apps/nekosearch/semantic-runtime-lock.json'),
+  resolve(root, 'dist/apps/nekosearch/semantic-runtime-lock.json'),
+);

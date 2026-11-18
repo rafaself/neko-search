@@ -36,15 +36,15 @@ Adding an existing selector fails rather than overwriting it. Only the curated N
 
 ## Network access
 
-| Command                                                                  | Uses network                                               |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `build`, `list`, `remove`, `add --dir`, `add --from`                     | No                                                         |
-| `model status`, `model remove`, `embeddings build/status/enable/disable` | No                                                         |
-| `model install`                                                          | Yes, downloads the pinned public GitHub Release assets     |
-| `status`                                                                 | No, unless `--check-upstream` explicitly requests checks   |
-| `serve`, `mcp configure <provider>`, `mcp remove <provider>`             | No NekoSearch documentation download                       |
-| `setup`                                                                  | Only for selected docs and model installation after review |
-| `add --github`, curated `add` and `update`                               | Yes, HTTPS to GitHub                                       |
+| Command                                                                  | Uses network                                                    |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `build`, `list`, `remove`, `add --dir`, `add --from`                     | No                                                              |
+| `model status`, `model remove`, `embeddings build/status/enable/disable` | No                                                              |
+| `model install`                                                          | Yes, downloads the pinned npm runtime and GitHub Release assets |
+| `status`                                                                 | No, unless `--check-upstream` explicitly requests checks        |
+| `serve`, `mcp configure <provider>`, `mcp remove <provider>`             | No NekoSearch documentation download                            |
+| `setup`                                                                  | Only for selected docs and model installation after review      |
+| `add --github`, curated `add` and `update`                               | Yes, HTTPS to GitHub                                            |
 
 The server does not expose HTTP or SSE transport. Your MCP client starts a child process and communicates with it over stdin/stdout. Logs go to stderr. Model inference and search use the installed local model and snapshots; `serve` never downloads model files.
 
