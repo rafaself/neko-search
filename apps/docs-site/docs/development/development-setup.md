@@ -17,9 +17,9 @@ npm ci
 npm run build
 ```
 
-The npm workspaces include the documentation engine, indexer, and private website. Keep `package-lock.json` as the dependency lockfile.
+The npm workspaces include the published NekoSearch CLI, private documentation engine, and private website. Keep `package-lock.json` as the dependency lockfile.
 
-The root build compiles the engine, indexer, and production CLI, and prepares the builder runtime needed by CLI commands. It does not download NestJS documentation or build the website.
+The root build compiles the documentation engine and the NekoSearch CLI. The CLI imports the engine’s snapshot builder and keeps its NestJS recipes under `apps/nekosearch/src/sources`. It does not download NestJS documentation or build the website.
 
 ```sh
 npm run start:nekosearch -- --help
@@ -81,6 +81,6 @@ Then open **Actions → Publish documentation → Run workflow**, choose `main`,
 
 ## Existing snapshot scripts
 
-The root commands `docs:build` and `docs:build:mcp` build package documentation snapshots and honor `nekosearch.yaml` or `NEKOSEARCH_CONFIG` for optional local embeddings. Semantic Search is disabled by default; enabling it requires the already installed model and optional inference runtime. The lower-level `docs:ingest` and `search:index` commands remain corpus/index maintenance tools. These commands are separate from the `docs:site:*` website scripts.
+Use `docs:build` for contributor snapshot builds that honor the local Semantic Search configuration. Use `docs:build:mcp` to regenerate the bundled protocol reference as a lexical snapshot from `apps/nekosearch/content/mcp-protocol`. Pass `-- --output <directory>` to `npm run docs:build:mcp` to inspect a regenerated snapshot before updating the bundled copy. The `docs:ingest` and `search:index` commands are corpus and index maintenance tools. These commands are separate from the `docs:site:*` website scripts.
 
-Use the public CLI's [`build`](../cli/commands.md#build) for portable local snapshots. Contributor-level indexer commands expose the specialized ingestion/build pipeline; inspect their command handlers and configuration schemas before changing them. Product website development does not require rebuilding external documentation snapshots.
+Use the public CLI's [`build`](../cli/commands.md#build) for portable local snapshots. Contributor commands live in `apps/nekosearch/src/maintenance`. To build and verify the npm tarball, run `npm run package:pack -- --pack-destination /tmp`. Product website development does not require rebuilding external documentation snapshots.

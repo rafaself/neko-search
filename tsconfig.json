@@ -10,8 +10,7 @@
     "paths": {
       "@nestjs-docs/documentation-engine/*": [
         "./packages/documentation-engine/src/modules/documentation/*"
-      ],
-      "@nestjs-docs/docs-indexer/*": ["./apps/docs-indexer/src/*"]
+      ]
     },
     "sourceMap": true,
     "removeComments": true,
@@ -23,8 +22,7 @@
     "skipLibCheck": true
   },
   "include": [
-    "src/**/*.ts",
-    "apps/docs-indexer/src/**/*.ts",
+    "apps/nekosearch/src/**/*.ts",
     "packages/documentation-engine/src/**/*.ts",
     "test/**/*.ts"
   ],

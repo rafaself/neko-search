@@ -1,25 +1,25 @@
 import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   PACKAGE_DESCRIPTION,
   PACKAGE_NAME,
   PACKAGE_VERSION,
   packageMetadataSchema,
-} from '../../dist/shared/config/package-metadata.js';
-import { validateSnapshotDirectory } from '../../dist/apps/nekosearch/catalog.js';
+} from '../../apps/nekosearch/dist/apps/nekosearch/package-metadata.js';
+import { validateSnapshotDirectory } from '../../apps/nekosearch/dist/apps/nekosearch/catalog.js';
 
-const rootDirectory = resolve(new URL('../../', import.meta.url).pathname);
+const repository = fileURLToPath(new URL('../../', import.meta.url));
 
-export async function verifyPackage(root = rootDirectory) {
+export async function verifyPackage(
+  root = resolve(repository, 'apps/nekosearch'),
+  engine = resolve(repository, 'packages/documentation-engine'),
+) {
   const packageMetadata = packageMetadataSchema.parse(
     JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')),
   );
   const engineMetadata = JSON.parse(
-    await readFile(
-      resolve(root, 'packages/documentation-engine/package.json'),
-      'utf8',
-    ),
+    await readFile(resolve(engine, 'package.json'), 'utf8'),
   );
   if (
     packageMetadata.name !== PACKAGE_NAME ||
@@ -38,20 +38,17 @@ export async function verifyPackage(root = rootDirectory) {
     'dist/apps/nekosearch/remote-snapshots.js',
     'dist/apps/nekosearch/serve.js',
     'dist/apps/nekosearch/build.js',
-    'dist/apps/nekosearch/package-documentation.js',
     'dist/apps/nekosearch/semantic-search.js',
     'dist/apps/nekosearch/embeddings.js',
-    'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
-    'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
-    'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
-    'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
-    'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
-    'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
-    'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
-    'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
-    'dist/modules/documentation/mcp/documentation-tool-handlers.js',
-    'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
-    'dist/shared/config/package-metadata.js',
+    'dist/apps/nekosearch/sources/nestjs/documentation.integration.js',
+    'dist/apps/nekosearch/sources/nestjs/github/documentation-source.js',
+    'dist/apps/nekosearch/sources/nestjs/nestjs-documentation-transformer.js',
+    'dist/apps/nekosearch/sources/nestjs/source-recipes.js',
+    'dist/apps/nekosearch/sources/nestjs/version/documentation-version.js',
+    'dist/apps/nekosearch/mcp/contracts/documentation-tools.contract.js',
+    'dist/apps/nekosearch/mcp/documentation-tool-handlers.js',
+    'dist/apps/nekosearch/mcp/presenters/documentation.presenter.js',
+    'dist/apps/nekosearch/package-metadata.js',
   ];
   await Promise.all(
     requiredFiles.map((path) => requireFile(resolve(root, path))),

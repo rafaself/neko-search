@@ -13,13 +13,13 @@ import { SemanticRetriever } from '@nestjs-docs/documentation-engine/retrieval/r
 import {
   PACKAGE_NAME,
   PACKAGE_VERSION,
-} from '../../../../src/shared/config/package-metadata.js';
+} from '../../../../apps/nekosearch/src/package-metadata.js';
 import {
   registerSearchDocsTool,
   type SearchableCatalogRuntime,
   type SemanticQueryEmbeddingProvider,
-} from '../../../../src/apps/nekosearch/serve.js';
-import type { CatalogSearchDocsOutput } from '../../../../src/apps/nekosearch/catalog-contract.js';
+} from '../../../../apps/nekosearch/src/serve.js';
+import type { CatalogSearchDocsOutput } from '../../../../apps/nekosearch/src/catalog-contract.js';
 import {
   createDocumentationTestIndex,
   createTestIndexManifest,

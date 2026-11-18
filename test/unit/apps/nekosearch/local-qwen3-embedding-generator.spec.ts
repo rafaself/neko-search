@@ -1,14 +1,14 @@
 import {
   createLocalQwen3EmbeddingGenerator,
   type LocalQwen3EmbeddingGeneratorOptions,
-} from '../../../../src/apps/nekosearch/local-qwen3-embedding-generator.js';
-import type { ModelStatus } from '../../../../src/apps/nekosearch/model-manager.js';
+} from '../../../../apps/nekosearch/src/local-qwen3-embedding-generator.js';
+import type { ModelStatus } from '../../../../apps/nekosearch/src/model-manager.js';
 import type {
   RuntimeModelInputs,
   RuntimePipeline,
   RuntimeTensor,
   TransformersRuntimeModule,
-} from '../../../../src/apps/nekosearch/transformers-runtime.js';
+} from '../../../../apps/nekosearch/src/transformers-runtime.js';
 
 const MODEL_DIRECTORY = '/models/qwen3-embedding-0.6b/1.0.0';
 

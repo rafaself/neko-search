@@ -195,7 +195,10 @@ describe('read-only documentation index startup', () => {
   it('creates and updates an index through the indexing CLI', () => {
     const corpusPath = join(directory, 'corpus.json');
     const cli = fileURLToPath(
-      new URL('../../../../../apps/docs-indexer/dist/cli.js', import.meta.url),
+      new URL(
+        '../../../../../apps/nekosearch/dist/apps/nekosearch/maintenance/cli.js',
+        import.meta.url,
+      ),
     );
     const corpus = (word: string, revision: string) =>
       ingestNestJsDocuments(

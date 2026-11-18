@@ -11,15 +11,15 @@ import {
   configureSetupClient,
   inspectSetupClients,
   removeSetupClient,
-} from '../../../../src/apps/nekosearch/setup-clients.js';
+} from '../../../../apps/nekosearch/src/setup-clients.js';
 import {
   buildWindowsCommandLine,
   providerCommandRunner,
   resolveProviderExecutable,
   runProviderCommand,
   type ProviderCommandRunner,
-} from '../../../../src/apps/nekosearch/providers/provider-runner.js';
-import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
+} from '../../../../apps/nekosearch/src/providers/provider-runner.js';
+import type { NekosearchStdioCommand } from '../../../../apps/nekosearch/src/mcp-command.js';
 
 const SERVER_COMMAND: NekosearchStdioCommand = {
   command: '/node runtime with spaces/node',

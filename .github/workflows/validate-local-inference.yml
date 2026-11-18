@@ -33,8 +33,8 @@ jobs:
           NEKOSEARCH_MODEL_DIR: ${{ runner.temp }}/nekosearch-model
         run: |
           npm run build
-          node dist/apps/nekosearch/cli.js model install
-          node dist/apps/nekosearch/cli.js model status | tee "$RUNNER_TEMP/nekosearch-model-status"
+          node apps/nekosearch/dist/apps/nekosearch/cli.js model install
+          node apps/nekosearch/dist/apps/nekosearch/cli.js model status | tee "$RUNNER_TEMP/nekosearch-model-status"
           grep -F 'Available for inference: yes' "$RUNNER_TEMP/nekosearch-model-status"
 
       - name: Run real offline Qwen3 inference

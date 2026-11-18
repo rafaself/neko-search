@@ -38,7 +38,7 @@ jobs:
         run: npm run check
 
       - name: Verify npm package
-        run: npm pack --pack-destination "$RUNNER_TEMP"
+        run: npm run package:pack -- --pack-destination "$RUNNER_TEMP"
 
   documentation:
     runs-on: ubuntu-latest

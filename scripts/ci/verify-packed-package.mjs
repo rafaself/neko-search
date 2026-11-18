@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -15,6 +16,8 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
+import { stageNekosearchPackage } from '../release/stage-nekosearch-package.mjs';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
@@ -244,7 +247,8 @@ async function verifyCatalogServer(project, temporaryDirectory) {
     'the updated installed binary build should preserve its nested MDX link',
   );
   const { updateSnapshot } = await import(
-    pathToFileURL(join(root, 'dist/apps/nekosearch/catalog.js')).href
+    pathToFileURL(join(root, 'apps/nekosearch/dist/apps/nekosearch/catalog.js'))
+      .href
   );
   const update = await updateSnapshot(updatedSnapshotDirectory, {
     catalogRoot: join(xdgDataHome, 'nekosearch'),
@@ -906,6 +910,13 @@ function sha256(value) {
 }
 
 async function main() {
+  const { values } = parseArgs({
+    options: {
+      'pack-destination': { type: 'string', default: process.cwd() },
+    },
+  });
+  const destination = resolve(values['pack-destination']);
+
   const temporaryDirectory = await mkdtemp(
     join(tmpdir(), 'nestjs-docs-packed-package-'),
   );
@@ -916,6 +927,8 @@ async function main() {
   try {
     const packDirectory = join(temporaryDirectory, 'packed');
     const project = join(temporaryDirectory, 'isolated-project');
+    const stage = join(temporaryDirectory, 'package');
+    await stageNekosearchPackage(stage, npmEnvironment);
     await Promise.all([mkdir(packDirectory), mkdir(project)]);
 
     const report = JSON.parse(
@@ -928,7 +941,7 @@ async function main() {
           '--pack-destination',
           packDirectory,
         ],
-        { env: npmEnvironment },
+        { cwd: stage, env: npmEnvironment },
       ),
     );
     assert.ok(
@@ -968,21 +981,21 @@ async function main() {
       'dist/apps/nekosearch/providers/adapters/cursor.adapter.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
-      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
-      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
-      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/build/documentation-build-config.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/build/build-documentation-snapshot.js',
+      'node_modules/@nestjs-docs/documentation-engine/dist/build/build-local-documentation.js',
+      'dist/apps/nekosearch/sources/nestjs/documentation.integration.js',
+      'dist/apps/nekosearch/sources/nestjs/github/documentation-source.js',
+      'dist/apps/nekosearch/sources/nestjs/nestjs-documentation-transformer.js',
+      'dist/apps/nekosearch/sources/nestjs/source-recipes.js',
+      'dist/apps/nekosearch/sources/nestjs/version/documentation-version.js',
       'dist/apps/nekosearch/catalog.js',
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/catalog-contract.js',
-      'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
-      'dist/modules/documentation/mcp/documentation-tool-handlers.js',
-      'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
-      'dist/shared/config/package-metadata.js',
+      'dist/apps/nekosearch/mcp/contracts/documentation-tools.contract.js',
+      'dist/apps/nekosearch/mcp/documentation-tool-handlers.js',
+      'dist/apps/nekosearch/mcp/presenters/documentation.presenter.js',
+      'dist/apps/nekosearch/package-metadata.js',
       'node_modules/@nestjs-docs/documentation-engine/package.json',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/sqlite-documentation-store.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/sqlite/runtime-index.js',
@@ -1006,16 +1019,6 @@ async function main() {
       ),
       'the npm tarball must not contain NestJS indexes, corpus files, or bundle manifests',
     );
-    const buildRuntimeFiles = new Set([
-      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
-      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
-      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
-    ]);
     const buildEngineFiles = new Set([
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/document-normalizer.js',
       'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/documentation-link-resolver.js',
@@ -1029,8 +1032,8 @@ async function main() {
       assert.ok(
         !path.startsWith('dist/apps/mcp-server/') &&
           !path.startsWith('dist/apps/docs-indexer/') &&
-          (!path.startsWith('dist/apps/nekosearch/build-runtime/') ||
-            buildRuntimeFiles.has(path)) &&
+          !path.startsWith('dist/apps/nekosearch/build-runtime/') &&
+          !path.startsWith('dist/apps/nekosearch/maintenance/') &&
           (!path.startsWith(
             'node_modules/@nestjs-docs/documentation-engine/dist/infrastructure/markdown/',
           ) ||
@@ -1050,7 +1053,7 @@ async function main() {
     }
     for (const path of files) {
       assert.ok(
-        !path.startsWith('apps/docs-indexer/') &&
+        !path.startsWith('apps/') &&
           !path.startsWith('packages/documentation-engine/') &&
           !path.startsWith('test/'),
         `the npm tarball should not expose workspace sources: ${path}`,
@@ -1170,7 +1173,7 @@ process.once('exit', () => {
     );
     assert.match(
       buildSource,
-      /build-runtime\/services\/build-local-documentation\.js/u,
+      /@nestjs-docs\/documentation-engine\/build\/build-local-documentation\.js/u,
     );
     assert.doesNotMatch(buildSource, /@mdx-js\/mdx|remark-gfm/u);
     const installedEngine = join(
@@ -1271,6 +1274,9 @@ process.once('exit', () => {
     }
 
     await verifyCatalogServer(project, temporaryDirectory);
+    await mkdir(destination, { recursive: true });
+    await copyFile(tarballPath, join(destination, packed[0].filename));
+    console.log(join(destination, packed[0].filename));
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

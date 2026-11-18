@@ -9,13 +9,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
-import type { ProviderCommandRunner } from '../../../../src/apps/nekosearch/providers/provider-runner.js';
+import type { NekosearchStdioCommand } from '../../../../apps/nekosearch/src/mcp-command.js';
+import type { ProviderCommandRunner } from '../../../../apps/nekosearch/src/providers/provider-runner.js';
 import {
   configureSetupClient,
   inspectSetupClients,
   removeSetupClient,
-} from '../../../../src/apps/nekosearch/setup-clients.js';
+} from '../../../../apps/nekosearch/src/setup-clients.js';
 
 describe('Codex, Claude Code, and Cursor provider setup', () => {
   let root: string;

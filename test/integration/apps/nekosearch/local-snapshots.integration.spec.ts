@@ -10,23 +10,23 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { buildLocalDocumentation } from '../../../../apps/docs-indexer/src/services/build-local-documentation.js';
+import { buildLocalDocumentation } from '../../../../packages/documentation-engine/src/modules/documentation/build/build-local-documentation.js';
 import {
   getCatalogIndex,
   listCatalogIndexes,
-} from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/catalog.js';
 import {
   installLocalSnapshot,
   type LocalDocumentationSnapshotBuilder,
-} from '../../../../src/apps/nekosearch/local-snapshots.js';
+} from '../../../../apps/nekosearch/src/local-snapshots.js';
 import {
   listCatalogDocumentation,
   searchCatalogDocumentation,
   type SearchableCatalogRuntime,
-} from '../../../../src/apps/nekosearch/serve.js';
+} from '../../../../apps/nekosearch/src/serve.js';
 import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
 
-const packageDataDirectory = resolve(process.cwd(), 'data');
+const packageDataDirectory = resolve(process.cwd(), 'apps/nekosearch/data');
 
 describe('NekoSearch local directory installs', () => {
   let root: string;

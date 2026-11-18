@@ -6,11 +6,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { addSnapshot } from '../../../../src/apps/nekosearch/catalog.js';
+import { addSnapshot } from '../../../../apps/nekosearch/src/catalog.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
 const entryPoint = fileURLToPath(
-  new URL('../../../../dist/apps/nekosearch/cli.js', import.meta.url),
+  new URL(
+    '../../../../apps/nekosearch/dist/apps/nekosearch/cli.js',
+    import.meta.url,
+  ),
 );
 
 describe('nekosearch serve stdio server', () => {

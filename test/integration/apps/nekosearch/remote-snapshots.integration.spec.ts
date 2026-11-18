@@ -13,24 +13,24 @@ import {
 import {
   buildNestJsDocumentationSnapshot,
   resolveDocumentationSource,
-} from '../../../../apps/docs-indexer/src/integrations/nestjs/documentation.integration.js';
-import { sourceUrl } from '../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
+} from '../../../../apps/nekosearch/src/sources/nestjs/documentation.integration.js';
+import { sourceUrl } from '../../../../apps/nekosearch/src/sources/nestjs/github/documentation-source.js';
 import {
   addSnapshot,
   getCatalogIndex,
   listCatalogIndexes,
   updateSnapshot,
-} from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/catalog.js';
 import {
   checkUpstreamRevisions,
   installRemoteSnapshot,
   type NestJsSnapshotBuilder,
   type RemoteSnapshotOptions,
-} from '../../../../src/apps/nekosearch/remote-snapshots.js';
+} from '../../../../apps/nekosearch/src/remote-snapshots.js';
 
 const officialRepository = 'https://github.com/nestjs/docs.nestjs.com';
 const apiBase = 'https://api.github.com/repos/nestjs/docs.nestjs.com';
-const dataDirectory = resolve(process.cwd(), 'data');
+const dataDirectory = resolve(process.cwd(), 'apps/nekosearch/data');
 const sourceBuilder: NestJsSnapshotBuilder = {
   resolveDocumentationSource,
   buildNestJsDocumentationSnapshot,

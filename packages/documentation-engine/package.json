@@ -8,7 +8,8 @@
     "./domain/*": "./dist/domain/*",
     "./application/*": "./dist/application/*",
     "./infrastructure/*": "./dist/infrastructure/*",
-    "./retrieval/*": "./dist/retrieval/*"
+    "./retrieval/*": "./dist/retrieval/*",
+    "./build/*": "./dist/build/*"
   },
   "files": [
     "dist/application/services/documentation-search.service.js",
@@ -33,7 +34,10 @@
     "dist/retrieval/search-input.js",
     "dist/retrieval/search.constants.js",
     "dist/retrieval/fusion/reciprocal-rank-fusion.js",
-    "dist/retrieval/retrievers/semantic-retriever.js"
+    "dist/retrieval/retrievers/semantic-retriever.js",
+    "dist/build/build-local-documentation.js",
+    "dist/build/build-documentation-snapshot.js",
+    "dist/build/documentation-build-config.js"
   ],
   "dependencies": {
     "@mdx-js/mdx": "^3.1.1",

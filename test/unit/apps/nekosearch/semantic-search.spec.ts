@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { jest } from '@jest/globals';
 import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import { QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1 } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
-import type { ModelStatus } from '../../../../src/apps/nekosearch/model-manager.js';
+import type { ModelStatus } from '../../../../apps/nekosearch/src/model-manager.js';
 import {
   disableSemanticSearch,
   enableSemanticSearch,
   loadSemanticSearchConfiguration,
   resolveConfiguredEmbeddingProvider,
-} from '../../../../src/apps/nekosearch/semantic-search.js';
+} from '../../../../apps/nekosearch/src/semantic-search.js';
 
 describe('semantic search configuration', () => {
   let directory: string;

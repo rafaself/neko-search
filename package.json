@@ -1,85 +1,24 @@
 {
-  "name": "nekosearch",
-  "version": "0.0.4",
-  "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
-  "type": "module",
+  "name": "nekosearch-monorepo",
+  "private": true,
   "workspaces": [
-    "apps/docs-indexer",
+    "apps/nekosearch",
     "apps/docs-site",
     "packages/documentation-engine"
   ],
-  "bin": {
-    "nekosearch": "./dist/apps/nekosearch/cli.js"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/rafaself/nekosearch.git"
-  },
-  "homepage": "https://github.com/rafaself/nekosearch#readme",
-  "bugs": {
-    "url": "https://github.com/rafaself/nekosearch/issues"
-  },
-  "keywords": [
-    "documentation",
-    "local",
-    "mcp",
-    "model-context-protocol",
-    "stdio",
-    "offline",
-    "search"
-  ],
-  "files": [
-    "dist/apps/nekosearch/**",
-    "dist/apps/nekosearch/build-runtime/config/documentation-build-config.js",
-    "dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js",
-    "dist/apps/nekosearch/build-runtime/services/build-local-documentation.js",
-    "dist/modules/documentation/mcp/contracts/documentation-tools.contract.js",
-    "dist/modules/documentation/mcp/documentation-tool-handlers.js",
-    "dist/modules/documentation/mcp/presenters/documentation.presenter.js",
-    "dist/shared/config/package-metadata.js",
-    "data/mcp-protocol/**",
-    "README.md",
-    "LICENSE",
-    "THIRD-PARTY-NOTICES.md",
-    "licenses/nestjs-docs-v11-LICENSE",
-    "licenses/nestjs-docs-v12-LICENSE"
-  ],
-  "dependencies": {
-    "@clack/prompts": "^1.9.0",
-    "@mdx-js/mdx": "^3.1.1",
-    "@modelcontextprotocol/server": "^2.4.0",
-    "@nestjs-docs/documentation-engine": "0.1.0",
-    "json5": "^2.2.3",
-    "remark-gfm": "^4.0.1",
-    "yaml": "^2.9.1",
-    "zod": "^4.6.7"
-  },
-  "peerDependencies": {
-    "@huggingface/transformers": "4.3.2"
-  },
-  "peerDependenciesMeta": {
-    "@huggingface/transformers": {
-      "optional": true
-    }
-  },
-  "bundleDependencies": [
-    "@nestjs-docs/documentation-engine"
-  ],
+  "type": "module",
   "engines": {
     "node": ">=24.15.0"
   },
   "scripts": {
     "build:engine": "npm run build --workspace @nestjs-docs/documentation-engine",
-    "build:indexer": "npm run build --workspace @nestjs-docs/docs-indexer",
-    "build:cli": "tsc -p tsconfig.build.json",
-    "build": "npm run build:engine && npm run build:indexer && npm run build:cli && node scripts/build/copy-nekosearch-build-runtime.mjs",
-    "prepack": "npm run build && node scripts/ci/verify-package.mjs && node scripts/ci/verify-packed-package.mjs",
-    "start:nekosearch": "node dist/apps/nekosearch/cli.js",
-    "docs:build": "npm run build && node dist/apps/nekosearch/package-documentation.js",
-    "docs:ingest": "npm run build && node apps/docs-indexer/dist/cli.js ingest",
+    "build:cli": "npm run build --workspace nekosearch",
+    "build": "npm run build:engine && npm run build:cli",
+    "start:nekosearch": "node apps/nekosearch/dist/apps/nekosearch/cli.js",
+    "docs:build": "npm run build && node apps/nekosearch/dist/apps/nekosearch/maintenance/package-documentation.js",
+    "docs:ingest": "npm run build && node apps/nekosearch/dist/apps/nekosearch/maintenance/cli.js ingest",
     "docs:build:mcp": "npm run build && node scripts/release/build-mcp-protocol-snapshot.mjs",
-    "search:index": "npm run build && node apps/docs-indexer/dist/cli.js index",
+    "search:index": "npm run build && node apps/nekosearch/dist/apps/nekosearch/maintenance/cli.js index",
     "docs:site:dev": "npm run dev --workspace @nestjs-docs/docs-site --",
     "docs:site:build": "npm run build --workspace @nestjs-docs/docs-site",
     "docs:site:preview": "npm run preview --workspace @nestjs-docs/docs-site --",
@@ -94,7 +33,8 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watchAll",
     "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
-    "search:evaluate": "npm run build && node scripts/evaluation/evaluate-search.mjs"
+    "search:evaluate": "npm run build && node scripts/evaluation/evaluate-search.mjs",
+    "package:pack": "npm run build && node scripts/ci/verify-package.mjs && node scripts/ci/verify-packed-package.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

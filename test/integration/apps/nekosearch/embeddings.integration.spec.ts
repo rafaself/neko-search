@@ -10,19 +10,19 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import { QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1 } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
-import type { ModelStatus } from '../../../../src/apps/nekosearch/model-manager.js';
+import type { ModelStatus } from '../../../../apps/nekosearch/src/model-manager.js';
 import {
   buildDocumentationEmbeddings,
   formatDocumentationEmbeddingStatuses,
   getDocumentationEmbeddingStatuses,
-} from '../../../../src/apps/nekosearch/embeddings.js';
+} from '../../../../apps/nekosearch/src/embeddings.js';
 import {
   addSnapshot,
   getCatalogIndex,
-} from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/catalog.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
-const packageDataDirectory = resolve(process.cwd(), 'data');
+const packageDataDirectory = resolve(process.cwd(), 'apps/nekosearch/data');
 
 describe('NekoSearch existing-snapshot embeddings', () => {
   let root: string;

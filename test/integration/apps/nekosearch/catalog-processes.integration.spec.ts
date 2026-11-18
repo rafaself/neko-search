@@ -15,11 +15,11 @@ import {
   addSnapshot,
   listCatalogIndexes,
   type SnapshotIdentity,
-} from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/catalog.js';
 
-const dataDirectory = resolve(process.cwd(), 'data');
+const dataDirectory = resolve(process.cwd(), 'apps/nekosearch/data');
 const catalogModuleUrl = pathToFileURL(
-  resolve(process.cwd(), 'src/apps/nekosearch/catalog.ts'),
+  resolve(process.cwd(), 'apps/nekosearch/dist/apps/nekosearch/catalog.js'),
 ).href;
 
 describe('NekoSearch catalog writes across processes', () => {

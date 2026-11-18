@@ -6,13 +6,11 @@ import tseslint from 'typescript-eslint';
 export default [
   {
     ignores: [
-      'dist/**',
+      '**/dist/**',
       'coverage/**',
       'node_modules/**',
-      'apps/docs-indexer/dist/**',
       'apps/docs-site/.vitepress/cache/**',
       'apps/docs-site/.vitepress/dist/**',
-      'packages/documentation-engine/dist/**',
     ],
   },
   js.configs.recommended,

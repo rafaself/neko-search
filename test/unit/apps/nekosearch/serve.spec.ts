@@ -5,7 +5,7 @@ import {
   searchCatalogDocumentation,
   searchCatalogDocumentationWithSemantic,
   type SearchableCatalogRuntime,
-} from '../../../../src/apps/nekosearch/serve.js';
+} from '../../../../apps/nekosearch/src/serve.js';
 
 type SearchFunction = SearchableCatalogRuntime['documentation']['search'];
 

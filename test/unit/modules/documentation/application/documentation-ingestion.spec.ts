@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ingestSnapshot } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
-import { transformNestJsDocument } from '../../../../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
+import { transformNestJsDocument } from '../../../../../apps/nekosearch/src/sources/nestjs/nestjs-documentation-transformer.js';
 import { writeDocumentationCorpus } from '@nestjs-docs/documentation-engine/infrastructure/filesystem/documentation-corpus-store.js';
 import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';

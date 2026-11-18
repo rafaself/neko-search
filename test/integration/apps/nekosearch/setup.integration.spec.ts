@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import type { DocumentationCatalogEntry } from '../../../../src/apps/nekosearch/catalog.js';
+import type { DocumentationCatalogEntry } from '../../../../apps/nekosearch/src/catalog.js';
 import {
   runSetup,
   SETUP_BACK,
@@ -8,12 +8,12 @@ import {
   type SetupGroupedChoices,
   type SetupPromptApi,
   type SetupSpinner,
-} from '../../../../src/apps/nekosearch/setup.js';
+} from '../../../../apps/nekosearch/src/setup.js';
 import type {
   SetupClientId,
   SetupClientStatus,
-} from '../../../../src/apps/nekosearch/setup-clients.js';
-import type { NekosearchStdioCommand } from '../../../../src/apps/nekosearch/mcp-command.js';
+} from '../../../../apps/nekosearch/src/setup-clients.js';
+import type { NekosearchStdioCommand } from '../../../../apps/nekosearch/src/mcp-command.js';
 
 const CANCELED = Symbol('canceled');
 const SERVER_COMMAND: NekosearchStdioCommand = {

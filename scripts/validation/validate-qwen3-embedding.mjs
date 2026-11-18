@@ -24,7 +24,10 @@ const {
   inspectTransformersRuntime,
   resolveManagedRuntimeDirectory,
 } = await import(
-  new URL('../../dist/apps/nekosearch/transformers-runtime.js', import.meta.url)
+  new URL(
+    '../../apps/nekosearch/dist/apps/nekosearch/transformers-runtime.js',
+    import.meta.url,
+  )
 );
 const runtime = inspectTransformersRuntime();
 if (!runtime.available) throw new Error(runtime.detail);
@@ -55,7 +58,7 @@ assertLeftPadding(padded.attention_mask);
 
 const generatorModule = await import(
   new URL(
-    '../../dist/apps/nekosearch/local-qwen3-embedding-generator.js',
+    '../../apps/nekosearch/dist/apps/nekosearch/local-qwen3-embedding-generator.js',
     import.meta.url,
   )
 );
@@ -122,7 +125,10 @@ async function validateMcpHybridSearch() {
   const root = await mkdtemp(join(tmpdir(), 'nekosearch-real-mcp-'));
   const invoke = promisify(execFile);
   const cli = fileURLToPath(
-    new URL('../../dist/apps/nekosearch/cli.js', import.meta.url),
+    new URL(
+      '../../apps/nekosearch/dist/apps/nekosearch/cli.js',
+      import.meta.url,
+    ),
   );
   const guard = `data:text/javascript,${encodeURIComponent(`
     import { Socket } from 'node:net';

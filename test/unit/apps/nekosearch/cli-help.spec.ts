@@ -1,7 +1,7 @@
 import {
   isHelpInvocation,
   renderCliHelp,
-} from '../../../../src/apps/nekosearch/cli-help.js';
+} from '../../../../apps/nekosearch/src/cli-help.js';
 
 describe('nekosearch CLI help', () => {
   it.each([

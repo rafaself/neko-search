@@ -1,4 +1,4 @@
-import { getUserDataDirectory } from '../../../../src/apps/nekosearch/catalog.js';
+import { getUserDataDirectory } from '../../../../apps/nekosearch/src/catalog.js';
 
 describe('NekoSearch user data directory', () => {
   it('uses XDG_DATA_HOME when set on Linux and macOS', () => {

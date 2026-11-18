@@ -17,7 +17,7 @@ const verifierModulePath = pathToFileURL(
 ).href;
 const importVerifier = (specifier: string) =>
   import(specifier) as Promise<{
-    verifyPackage(root: string): Promise<void>;
+    verifyPackage(root: string, engine: string): Promise<void>;
   }>;
 
 let verifyPackage: (root: string) => Promise<void>;
@@ -27,18 +27,22 @@ describe('npm package verification', () => {
 
   beforeAll(async () => {
     const verifier = await importVerifier(verifierModulePath);
-    verifyPackage = (directory) => verifier.verifyPackage(directory);
+    verifyPackage = (directory) =>
+      verifier.verifyPackage(
+        directory,
+        join(directory, 'packages/documentation-engine'),
+      );
   });
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'nekosearch-package-'));
     cpSync(
-      join(repositoryRoot, 'data/mcp-protocol'),
+      join(repositoryRoot, 'apps/nekosearch/data/mcp-protocol'),
       join(root, 'data/mcp-protocol'),
       { recursive: true },
     );
     copyFileSync(
-      join(repositoryRoot, 'package.json'),
+      join(repositoryRoot, 'apps/nekosearch/package.json'),
       join(root, 'package.json'),
     );
     const engineMetadataPath = join(
@@ -60,21 +64,17 @@ describe('npm package verification', () => {
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
-      'dist/apps/nekosearch/package-documentation.js',
       'dist/apps/nekosearch/semantic-search.js',
       'dist/apps/nekosearch/embeddings.js',
-      'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
-      'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
-      'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/github/documentation-source.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/nestjs-documentation-transformer.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
-      'dist/apps/nekosearch/build-runtime/integrations/nestjs/version/documentation-version.js',
-      'dist/modules/documentation/mcp/contracts/documentation-tools.contract.js',
-      'dist/modules/documentation/mcp/documentation-tool-handlers.js',
-      'dist/modules/documentation/mcp/presenters/documentation.presenter.js',
-      'dist/shared/config/package-metadata.js',
+      'dist/apps/nekosearch/sources/nestjs/documentation.integration.js',
+      'dist/apps/nekosearch/sources/nestjs/github/documentation-source.js',
+      'dist/apps/nekosearch/sources/nestjs/nestjs-documentation-transformer.js',
+      'dist/apps/nekosearch/sources/nestjs/source-recipes.js',
+      'dist/apps/nekosearch/sources/nestjs/version/documentation-version.js',
+      'dist/apps/nekosearch/mcp/contracts/documentation-tools.contract.js',
+      'dist/apps/nekosearch/mcp/documentation-tool-handlers.js',
+      'dist/apps/nekosearch/mcp/presenters/documentation.presenter.js',
+      'dist/apps/nekosearch/package-metadata.js',
     ];
     for (const path of requiredFiles) {
       const absolutePath = join(root, path);
@@ -145,12 +145,7 @@ describe('npm package verification', () => {
   });
 
   it('requires the on-demand NestJS source builder in the package runtime', async () => {
-    rmSync(
-      join(
-        root,
-        'dist/apps/nekosearch/build-runtime/integrations/nestjs/source-recipes.js',
-      ),
-    );
+    rmSync(join(root, 'dist/apps/nekosearch/sources/nestjs/source-recipes.js'));
 
     await expect(verifyPackage(root)).rejects.toThrow('source-recipes.js');
   });

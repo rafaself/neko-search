@@ -19,10 +19,10 @@ import { SemanticRetriever } from '@nestjs-docs/documentation-engine/retrieval/r
 import {
   getUserCatalogDirectory,
   listCatalogIndexes,
-} from '../../dist/apps/nekosearch/catalog.js';
-import { createLocalQwen3EmbeddingGenerator } from '../../dist/apps/nekosearch/local-qwen3-embedding-generator.js';
-import { getModelStatus } from '../../dist/apps/nekosearch/model-manager.js';
-import { inspectTransformersRuntime } from '../../dist/apps/nekosearch/transformers-runtime.js';
+} from '../../apps/nekosearch/dist/apps/nekosearch/catalog.js';
+import { createLocalQwen3EmbeddingGenerator } from '../../apps/nekosearch/dist/apps/nekosearch/local-qwen3-embedding-generator.js';
+import { getModelStatus } from '../../apps/nekosearch/dist/apps/nekosearch/model-manager.js';
+import { inspectTransformersRuntime } from '../../apps/nekosearch/dist/apps/nekosearch/transformers-runtime.js';
 
 const RESULT_LIMIT = 10;
 const SNAPSHOT_VERSIONS = ['11', '12'];

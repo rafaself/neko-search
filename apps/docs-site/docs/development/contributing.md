@@ -54,7 +54,7 @@ Review rendering, navigation, local search, links, assets, and both themes. Test
 
 Inspect implementation, public schemas/types, and relevant tests before describing behavior. Use current CLI forms and MCP catalog schemas. Validate examples with a temporary catalog rather than editing a contributor's real MCP registrations.
 
-These pages describe NekoSearch itself. The repository's separate `docs/mcp-protocol` directory supplies bundled reference content; it is not the source directory for this website. Do not copy external framework documentation into the product site.
+These pages describe NekoSearch itself. The repository's separate `apps/nekosearch/content/mcp-protocol` directory supplies bundled reference content; it is not the source directory for this website. Do not copy external framework documentation into the product site.
 
 ## Share a change
 

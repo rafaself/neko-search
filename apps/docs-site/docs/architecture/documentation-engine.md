@@ -5,7 +5,7 @@ description: Follow documentation through discovery, static parsing, normalizati
 
 # Documentation Engine
 
-The engine is the reusable documentation layer. It owns source/corpus schemas, shared parsing and normalization, storage contracts, and retrieval. The indexer composes these capabilities into build workflows and source-specific integrations.
+The engine is the reusable documentation layer. It owns source/corpus schemas, shared parsing and normalization, storage contracts, and retrieval. It also owns the reusable snapshot builder. The NekoSearch app supplies source-specific integrations and optional local inference.
 
 ## 1. Discover source files {#discover-source-files}
 
@@ -39,7 +39,7 @@ Current builds use build manifest version 2 and resolved-link snapshot/index for
 
 ## Incremental reuse
 
-When a compatible prior build exists, the indexer compares source content hashes and pipeline metadata to identify added, modified, unchanged, and removed documents. Compatible unchanged documents can be reused; pipeline changes invalidate reuse when needed. Links are resolved against the current corpus before final output is activated.
+When a compatible prior build exists, the snapshot builder compares source content hashes and pipeline metadata to identify added, modified, unchanged, and removed documents. Compatible unchanged documents can be reused; pipeline changes invalidate reuse when needed. Links are resolved against the current corpus before final output is activated.
 
 `nekosearch build` uses incremental mode by default. `--clean` disables previous-output reuse. Neither mode installs the result automatically.
 

@@ -1,0 +1,63 @@
+{
+  "name": "nekosearch",
+  "version": "0.0.4",
+  "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
+  "type": "module",
+  "bin": {
+    "nekosearch": "./dist/apps/nekosearch/cli.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafaself/nekosearch.git"
+  },
+  "homepage": "https://github.com/rafaself/nekosearch#readme",
+  "bugs": {
+    "url": "https://github.com/rafaself/nekosearch/issues"
+  },
+  "keywords": [
+    "documentation",
+    "local",
+    "mcp",
+    "model-context-protocol",
+    "stdio",
+    "offline",
+    "search"
+  ],
+  "files": [
+    "dist/apps/nekosearch/**",
+    "data/mcp-protocol/**",
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "licenses/nestjs-docs-v11-LICENSE",
+    "licenses/nestjs-docs-v12-LICENSE"
+  ],
+  "dependencies": {
+    "@clack/prompts": "^1.9.0",
+    "@mdx-js/mdx": "^3.1.1",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@nestjs-docs/documentation-engine": "0.1.0",
+    "json5": "^2.2.3",
+    "remark-gfm": "^4.0.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": "4.3.2"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "bundleDependencies": [
+    "@nestjs-docs/documentation-engine"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/build/copy-semantic-runtime-lock.mjs"
+  }
+}

@@ -8,12 +8,12 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { installTransformersRuntime } from '../../../../src/apps/nekosearch/install-transformers-runtime.js';
+import { installTransformersRuntime } from '../../../../apps/nekosearch/src/install-transformers-runtime.js';
 import {
   getRuntimeHostProblem,
   inspectRuntimeDirectory,
   resolveManagedRuntimeDirectory,
-} from '../../../../src/apps/nekosearch/transformers-runtime.js';
+} from '../../../../apps/nekosearch/src/transformers-runtime.js';
 
 const runtimeTest = getRuntimeHostProblem() ? it.skip : it;
 

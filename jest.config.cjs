@@ -7,16 +7,13 @@ module.exports = {
   moduleNameMapper: {
     '^@nestjs-docs/documentation-engine/(.*)\\.js$':
       '<rootDir>/packages/documentation-engine/src/modules/documentation/$1',
-    '^@nestjs-docs/docs-indexer/(.*)\\.js$':
-      '<rootDir>/apps/docs-indexer/src/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json', useESM: true }],
   },
   collectCoverageFrom: [
-    'src/**/*.ts',
-    'apps/docs-indexer/src/**/*.ts',
+    'apps/nekosearch/src/**/*.ts',
     'packages/documentation-engine/src/**/*.ts',
   ],
   coverageDirectory: 'coverage',

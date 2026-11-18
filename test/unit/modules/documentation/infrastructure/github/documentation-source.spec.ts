@@ -5,9 +5,9 @@ import {
   readSourceIndex,
   REPOSITORY,
   sourceUrl,
-} from '../../../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
+} from '../../../../../../apps/nekosearch/src/sources/nestjs/github/documentation-source.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
-import { NESTJS_DOCUMENTATION_RECIPES } from '../../../../../../apps/docs-indexer/src/integrations/nestjs/source-recipes.js';
+import { NESTJS_DOCUMENTATION_RECIPES } from '../../../../../../apps/nekosearch/src/sources/nestjs/source-recipes.js';
 import {
   revision,
   loadIngestionFixtures,

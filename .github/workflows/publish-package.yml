@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version from package.json to publish, for example 0.0.4
+        description: Version from apps/nekosearch/package.json to publish, for example 0.0.4
         required: true
         type: string
 
@@ -47,9 +47,9 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          package_version="$(node -p 'require("./package.json").version')"
+          package_version="$(node -p 'require("./apps/nekosearch/package.json").version')"
           if [[ "$REQUESTED_VERSION" != "$package_version" ]]; then
-            echo "::error::Requested version ${REQUESTED_VERSION} does not match package.json (${package_version})."
+            echo "::error::Requested version ${REQUESTED_VERSION} does not match apps/nekosearch/package.json (${package_version})."
             exit 1
           fi
 
@@ -79,7 +79,7 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          npm pack --pack-destination "$RUNNER_TEMP"
+          npm run package:pack -- --pack-destination "$RUNNER_TEMP"
           test -f "$RUNNER_TEMP/nekosearch-${PACKAGE_VERSION}.tgz"
 
       - name: Publish with npm Trusted Publishing

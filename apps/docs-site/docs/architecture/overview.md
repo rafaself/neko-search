@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-description: Understand the boundaries between the NekoSearch CLI, documentation indexer, reusable engine, catalog, retrieval, and MCP transport.
+description: Understand the boundaries between the NekoSearch CLI, reusable engine, catalog, retrieval, and MCP transport.
 ---
 
 # Architecture Overview
@@ -10,7 +10,7 @@ NekoSearch separates preparing documentation from serving it. The CLI coordinate
 ```text
 Preparation
   Local files / public GitHub / curated integration
-    → documentation indexer
+    → snapshot builder
     → documentation engine: parse, normalize, resolve links, index
     → portable snapshot
     → validated user catalog installation
@@ -24,15 +24,15 @@ Serving
 
 ## Responsibility boundaries
 
-| Boundary                                               | Responsibility                                                                                              |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| CLI (`src/apps/nekosearch`)                            | Public command parsing, setup, installation, status, and server launch                                      |
-| Documentation indexer (`apps/docs-indexer`)            | Build orchestration, configuration, incremental builds, optional hybrid embeddings, and source integrations |
-| Documentation engine (`packages/documentation-engine`) | Shared schemas, discovery, parsing, normalization, link resolution, lexical/vector indexing, and retrieval  |
-| Snapshot catalog                                       | Bundled/installed source discovery, validation, safe activation/removal, and curated tracking associations  |
-| Retrieval                                              | Query validation, ranked source-local search, section fetches, pagination, and references                   |
-| MCP transport                                          | Public tool schemas, source selection, structured/text presentation, and stdio lifecycle                    |
-| Documentation website (`apps/docs-site`)               | Static product documentation, with its own build and browser-local search                                   |
+| Boundary                                               | Responsibility                                                                                             |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| CLI (`apps/nekosearch`)                                | Public command parsing, setup, installation, status, and server launch                                     |
+| Source adapters (`apps/nekosearch/src/sources`)        | Curated recipes, upstream fetching, and source-specific transforms                                         |
+| Documentation engine (`packages/documentation-engine`) | Snapshot builds, schemas, parsing, normalization, lexical and vector indexing, and retrieval               |
+| Snapshot catalog                                       | Bundled/installed source discovery, validation, safe activation/removal, and curated tracking associations |
+| Retrieval                                              | Query validation, ranked source-local search, section fetches, pagination, and references                  |
+| MCP transport                                          | Public tool schemas, source selection, structured/text presentation, and stdio lifecycle                   |
+| Documentation website (`apps/docs-site`)               | Static product documentation, with its own build and browser-local search                                  |
 
 The documentation website is a private npm workspace. It is not loaded by the production CLI, and its content is not automatically ingested into the external documentation catalog.
 
@@ -40,7 +40,7 @@ The documentation website is a private npm workspace. It is not loaded by the pr
 
 Generic local and GitHub ingestion use the shared Markdown/MDX pipeline. The optional NestJS integration supplies curated version recipes and a framework-specific transformation. Adding NestJS is not a prerequisite for serving another documentation source.
 
-The root build compiles the engine, indexer, and CLI, then copies the builder runtime required by public local/curated commands. It does not download optional documentation or build the website.
+The root build compiles the engine and the CLI. The CLI loads snapshot building and source integrations when a command needs them. It does not download optional documentation or build the website.
 
 ## Validated snapshots as a boundary
 

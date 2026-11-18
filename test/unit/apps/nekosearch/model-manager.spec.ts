@@ -17,7 +17,7 @@ import {
   resolveModelDirectory,
   type ModelManagerOptions,
   type ModelRelease,
-} from '../../../../src/apps/nekosearch/model-manager.js';
+} from '../../../../apps/nekosearch/src/model-manager.js';
 
 const MODEL_ID = 'qwen3-embedding-0.6b';
 const MODEL_VERSION = '1.0.0';

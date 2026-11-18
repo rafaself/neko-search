@@ -12,16 +12,16 @@ import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/doma
 import {
   buildNestJsDocumentationSnapshot,
   resolveDocumentationSource,
-} from '../../../../apps/docs-indexer/src/integrations/nestjs/documentation.integration.js';
-import { addSnapshot } from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/sources/nestjs/documentation.integration.js';
+import { addSnapshot } from '../../../../apps/nekosearch/src/catalog.js';
 import {
   parseStatusArguments,
   renderStatus,
-} from '../../../../src/apps/nekosearch/status.js';
-import type { NestJsSnapshotBuilder } from '../../../../src/apps/nekosearch/remote-snapshots.js';
+} from '../../../../apps/nekosearch/src/status.js';
+import type { NestJsSnapshotBuilder } from '../../../../apps/nekosearch/src/remote-snapshots.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 
-const dataDirectory = resolve(process.cwd(), 'data');
+const dataDirectory = resolve(process.cwd(), 'apps/nekosearch/data');
 const officialRepository = 'https://github.com/nestjs/docs.nestjs.com';
 const apiPrefix =
   'https://api.github.com/repos/nestjs/docs.nestjs.com/commits/';

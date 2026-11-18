@@ -1,7 +1,7 @@
 import { PassThrough, Writable } from 'node:stream';
 import type { Key } from 'node:readline';
 import { stripVTControlCharacters } from 'node:util';
-import { createSetupPromptApi } from '../../../../src/apps/nekosearch/setup.js';
+import { createSetupPromptApi } from '../../../../apps/nekosearch/src/setup.js';
 
 describe('setup terminal prompts', () => {
   it('prints multiline setup artwork without adding a prompt guide', () => {

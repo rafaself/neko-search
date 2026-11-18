@@ -15,7 +15,7 @@ import {
   addSnapshot,
   listCatalogIndexes,
   removeSnapshot,
-} from '../../../../src/apps/nekosearch/catalog.js';
+} from '../../../../apps/nekosearch/src/catalog.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
 
@@ -132,7 +132,7 @@ describe('NekoSearch snapshot catalog', () => {
     const output = execFileSync(
       process.execPath,
       [
-        resolve(process.cwd(), 'dist/apps/nekosearch/cli.js'),
+        resolve(process.cwd(), 'apps/nekosearch/dist/apps/nekosearch/cli.js'),
         'remove',
         'nestjs@12',
       ],

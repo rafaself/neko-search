@@ -1,17 +1,19 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { DocumentationSnapshotSchema } from '../../packages/documentation-engine/dist/domain/documentation.schemas.js';
 import { normalizeAndChunkDocument } from '../../packages/documentation-engine/dist/infrastructure/markdown/document-normalizer.js';
 import { parseMarkdown } from '../../packages/documentation-engine/dist/infrastructure/markdown/markdown-parser.js';
-import { buildDocumentationSnapshot } from '../../apps/docs-indexer/dist/services/build-documentation-snapshot.js';
-import { resolveConfiguredEmbeddingProvider } from '../../dist/apps/nekosearch/semantic-search.js';
+import { buildDocumentationSnapshot } from '../../packages/documentation-engine/dist/build/build-documentation-snapshot.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const sourceDirectory = join(root, 'docs/mcp-protocol');
-const outputDirectory = join(root, 'data/mcp-protocol');
+const sourceDirectory = join(root, 'apps/nekosearch/content/mcp-protocol');
+const { values } = parseArgs({ options: { output: { type: 'string' } } });
+const outputDirectory = values.output
+  ? resolve(values.output)
+  : join(root, 'apps/nekosearch/data/mcp-protocol');
 const version = '2025-11-25';
-const embeddingProvider = await resolveConfiguredEmbeddingProvider();
 const identity = { id: 'mcp', version };
 const source = {
   kind: 'git',
@@ -81,7 +83,6 @@ const summary = await buildDocumentationSnapshot({
       parseMarkdown(file.markdown, { path: file.path }),
       { identity, maxChunkChars, idPrefix: `mcp-spec:v${version}` },
     ),
-  ...(embeddingProvider && { embeddingProvider }),
 });
 
 console.log(

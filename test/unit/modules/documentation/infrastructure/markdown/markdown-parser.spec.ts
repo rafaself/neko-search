@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { parseMarkdown } from '@nestjs-docs/documentation-engine/infrastructure/markdown/markdown-parser.js';
-import { transformNestJsDocument } from '../../../../../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
+import { transformNestJsDocument } from '../../../../../../apps/nekosearch/src/sources/nestjs/nestjs-documentation-transformer.js';
 import { ingestSnapshot } from '../../../../../fixtures/ingestion.fixtures.js';
 import {
   REPOSITORY,
   sourceUrl,
-} from '../../../../../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
+} from '../../../../../../apps/nekosearch/src/sources/nestjs/github/documentation-source.js';
 import type {
   DocumentationSnapshot,
   SourceDocument,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
-import { createNestJsDocumentationIdentity } from '../../../../../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
+import { createNestJsDocumentationIdentity } from '../../../../../../apps/nekosearch/src/sources/nestjs/version/documentation-version.js';
 import {
   revision,
   loadIngestionFixtures,

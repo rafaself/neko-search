@@ -2,19 +2,19 @@ import { readFile } from 'node:fs/promises';
 import {
   NESTJS_DOCUMENTATION_REPOSITORY,
   createNestJsDocumentationIdentity,
-} from '../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
+} from '../../apps/nekosearch/src/sources/nestjs/version/documentation-version.js';
 import {
   readContentAliases,
   readSourceIndex,
-} from '../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
-import { NESTJS_DOCUMENTATION_RECIPES } from '../../apps/docs-indexer/src/integrations/nestjs/source-recipes.js';
-import { sourceUrl } from '../../apps/docs-indexer/src/integrations/nestjs/github/documentation-source.js';
+} from '../../apps/nekosearch/src/sources/nestjs/github/documentation-source.js';
+import { NESTJS_DOCUMENTATION_RECIPES } from '../../apps/nekosearch/src/sources/nestjs/source-recipes.js';
+import { sourceUrl } from '../../apps/nekosearch/src/sources/nestjs/github/documentation-source.js';
 import type { DocumentationSnapshot } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
-import type { NestJsDocumentationVersion } from '../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
+import type { NestJsDocumentationVersion } from '../../apps/nekosearch/src/sources/nestjs/version/documentation-version.js';
 import { ingestSnapshot as runDocumentationIngestion } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
-import { transformNestJsDocument } from '../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
+import { transformNestJsDocument } from '../../apps/nekosearch/src/sources/nestjs/nestjs-documentation-transformer.js';
 
 export const revision = 'a'.repeat(40);
 
