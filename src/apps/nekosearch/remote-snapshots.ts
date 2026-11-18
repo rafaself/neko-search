@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { GitDocumentationSource } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
@@ -124,6 +125,13 @@ export async function installRemoteSnapshot(
     options.embeddingProvider ??
     (await import('./semantic-search.js')).resolveConfiguredEmbeddingProvider();
   const resolvedEmbeddingProvider = await embeddingProvider;
+  const currentEmbeddingSpace = current?.manifest.embeddings;
+  const requestedEmbeddingSpace = resolvedEmbeddingProvider?.embeddingSpace;
+  const embeddingConfigurationMatches =
+    currentEmbeddingSpace === undefined
+      ? requestedEmbeddingSpace === undefined
+      : requestedEmbeddingSpace !== undefined &&
+        isDeepStrictEqual(currentEmbeddingSpace, requestedEmbeddingSpace);
   const fetcher = options.fetcher ?? fetch;
   const sourceBuilder = options.sourceBuilder ?? (await loadSourceBuilder());
   options.onProgress?.('resolving');
@@ -134,6 +142,7 @@ export async function installRemoteSnapshot(
   );
   if (
     operation === 'update' &&
+    embeddingConfigurationMatches &&
     current?.revision === resolvedSource.revision &&
     current.manifest.source.kind === 'git' &&
     current.manifest.source.repository === OFFICIAL_SOURCE_REPOSITORY

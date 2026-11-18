@@ -271,7 +271,7 @@ export async function updateSnapshot(
               entry.source === snapshot.source &&
               entry.version === snapshot.version,
           ) ?? current),
-    changed: changed && current.revision !== snapshot.revision,
+    changed,
   };
 }
 

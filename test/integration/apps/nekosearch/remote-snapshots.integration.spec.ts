@@ -7,6 +7,10 @@ import { TestDocumentationSearchService } from '../../../fixtures/test-documenta
 import { loadIngestionFixtures } from '../../../fixtures/ingestion.fixtures.js';
 import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import {
+  QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+  type DocumentationEmbeddingProvider,
+} from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
+import {
   buildNestJsDocumentationSnapshot,
   resolveDocumentationSource,
 } from '../../../../apps/docs-indexer/src/integrations/nestjs/documentation.integration.js';
@@ -195,6 +199,40 @@ describe('NekoSearch curated source installs', () => {
     expect(currentFetcher.requestedRefNames()).toEqual(['master']);
     expect(currentFetcher.requestedRawPaths()).toEqual([]);
     expect(current.entry.revision).toBe(secondRevision);
+  }, 20_000);
+
+  it('rebuilds a same-revision snapshot when semantic mode changes', async () => {
+    const revision = 'd'.repeat(40);
+    await installRevision(revision);
+    const upstream = createV12Upstream(revision);
+    const embeddedBatches: string[][] = [];
+
+    const hybrid = await installRemoteSnapshot('nestjs', '12', 'update', {
+      ...remoteOptions(upstream.fetcher),
+      embeddingProvider: makeEmbeddingProvider((texts) => {
+        embeddedBatches.push(texts);
+      }),
+    });
+    expect(hybrid.changed).toBe(true);
+    expect(hybrid.entry.manifest.embeddings).toEqual(
+      QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+    );
+    expect(embeddedBatches).toHaveLength(1);
+    expect(upstream.requestedRawPaths()).toContain('content/introduction.md');
+
+    const lexicalUpstream = createV12Upstream(revision);
+    const lexical = await installRemoteSnapshot(
+      'nestjs',
+      '12',
+      'update',
+      remoteOptions(lexicalUpstream.fetcher),
+    );
+    expect(lexical.changed).toBe(true);
+    expect(lexical.entry.manifest.embeddings).toBeUndefined();
+    expect(lexicalUpstream.requestedRawPaths()).toContain(
+      'content/introduction.md',
+    );
+    expect(embeddedBatches).toHaveLength(1);
   }, 20_000);
 
   it('reports current and changed tracked refs without downloading documentation files', async () => {
@@ -757,4 +795,22 @@ function urlString(input: string | URL | Request): string {
     : input instanceof URL
       ? input.href
       : input.url;
+}
+
+function makeEmbeddingProvider(
+  onEmbed: (texts: string[]) => void,
+): DocumentationEmbeddingProvider {
+  return {
+    embeddingSpace: QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+    embedDocuments: (texts) => {
+      onEmbed(texts);
+      return Promise.resolve(
+        texts.map(() => {
+          const vector = new Float32Array(1024);
+          vector[0] = 1;
+          return vector;
+        }),
+      );
+    },
+  };
 }
