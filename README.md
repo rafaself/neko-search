@@ -190,6 +190,8 @@ Use selectors returned by `list_docs` or the result groups from `search_docs`. U
 
 ## Development
 
+See [Contributing](CONTRIBUTING.md) for the repository layout and validation steps.
+
 ```sh
 nvm use
 npm ci

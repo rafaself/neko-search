@@ -14,6 +14,10 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json', useESM: true }],
   },
-  collectCoverageFrom: ['src/**/*.ts'],
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    'apps/docs-indexer/src/**/*.ts',
+    'packages/documentation-engine/src/**/*.ts',
+  ],
   coverageDirectory: 'coverage',
 };

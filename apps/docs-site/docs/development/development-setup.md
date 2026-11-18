@@ -11,7 +11,7 @@ Use a supported Node 24 release matching the package's engine range. The reposit
 
 ```sh
 git clone https://github.com/rafaself/nekosearch.git
-cd neko-search
+cd nekosearch
 nvm use
 npm ci
 npm run build
@@ -69,12 +69,13 @@ Keep the same base when building, checking, and previewing. The output uses `.ht
 
 ## Publish with Cloudflare Pages
 
-The **Publish documentation** GitHub Actions workflow is manual. It builds and checks the site, creates the Cloudflare Pages Direct Upload project named `nekosearch` on the first run if needed, then uploads the static output with Wrangler. It only publishes the `main` branch and never deploys on a push.
+The **Publish documentation** GitHub Actions workflow is manual. It builds and checks the site, then uploads the static output to the existing Cloudflare Pages Direct Upload project named `nekosearch` with Wrangler. It only publishes the `main` branch and never deploys on a push.
 
 Before the first deployment:
 
-1. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit** permission.
-2. In the GitHub repository, add Actions secrets named `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` with the matching Cloudflare values.
+1. Confirm the `nekosearch` Pages project exists in the target account.
+2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit** permission.
+3. In the GitHub repository, add Actions secrets named `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` with the matching Cloudflare values.
 
 Then open **Actions → Publish documentation → Run workflow**, choose `main`, and start the run. Cloudflare must have the `nekosearch` project name available for the site to receive the `nekosearch.pages.dev` address. Cloudflare Direct Upload projects cannot later be switched to Git integration, so keep this project on Direct Upload for manual workflow publishing. See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/) and [GitHub Actions setup](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
 
