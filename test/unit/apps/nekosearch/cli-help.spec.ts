@@ -30,6 +30,9 @@ describe('nekosearch CLI help', () => {
     expect(help).toContain('  add --from <snapshot-dir>');
     expect(help).toContain('  mcp configure <provider>');
     expect(help).toContain('  mcp remove <provider>');
+    expect(help).toContain('  model install [--dir <model-dir>]');
+    expect(help).toContain('  model status [--dir <model-dir>]');
+    expect(help).toContain('  model remove [--dir <model-dir>]');
     expect(help).toContain('  update nestjs@<major>');
   });
 
@@ -39,6 +42,7 @@ describe('nekosearch CLI help', () => {
     expect(help).toContain('Network access:');
     expect(help).toContain('add --github fetches supported files over HTTPS');
     expect(help).toContain('status --check-upstream resolves tracked refs');
+    expect(help).toContain('model install downloads pinned');
     expect(help).toContain('serve is stdio-only, offline, and read-only.');
   });
 });

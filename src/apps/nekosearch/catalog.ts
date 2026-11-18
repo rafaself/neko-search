@@ -11,8 +11,8 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { hostname, homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { homedir, hostname } from 'node:os';
+import { basename, dirname, join, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DocumentationCorpus } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
 import { DocumentationCorpusSchema } from '@nestjs-docs/documentation-engine/domain/documentation.schemas.js';
@@ -32,7 +32,6 @@ const SNAPSHOT_FILES = [
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MAX_CORPUS_BYTES = 512 * 1024 * 1024;
 const MAX_INDEX_BYTES = 512 * 1024 * 1024;
-const CATALOG_DIRECTORY_NAME = 'nekosearch';
 const SNAPSHOTS_DIRECTORY_NAME = 'snapshots';
 const CATALOG_FILE_NAME = 'catalog.json';
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
@@ -740,11 +739,21 @@ export function formatCatalogList(
 export function getUserCatalogDirectory(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
+  return getUserDataDirectory(environment);
+}
+
+export function getUserDataDirectory(
+  environment: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  homeDirectory: string = homedir(),
+): string {
+  const path = platform === 'win32' ? win32 : posix;
   const dataHome =
-    process.platform === 'win32'
-      ? environment.LOCALAPPDATA?.trim() || homedir()
-      : environment.XDG_DATA_HOME?.trim() || join(homedir(), '.local', 'share');
-  return resolve(dataHome, CATALOG_DIRECTORY_NAME);
+    platform === 'win32'
+      ? environment.LOCALAPPDATA?.trim() || homeDirectory
+      : environment.XDG_DATA_HOME?.trim() ||
+        path.join(homeDirectory, '.local', 'share');
+  return path.resolve(dataHome, 'nekosearch');
 }
 
 async function loadBundledProtocolSnapshot(

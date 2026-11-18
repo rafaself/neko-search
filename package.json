@@ -14,11 +14,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rafaself/neko-search.git"
+    "url": "git+https://github.com/rafaself/nekosearch.git"
   },
-  "homepage": "https://github.com/rafaself/neko-search#readme",
+  "homepage": "https://github.com/rafaself/nekosearch#readme",
   "bugs": {
-    "url": "https://github.com/rafaself/neko-search/issues"
+    "url": "https://github.com/rafaself/nekosearch/issues"
   },
   "keywords": [
     "documentation",

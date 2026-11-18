@@ -10,7 +10,7 @@ description: Install the npm workspace, build NekoSearch, run checks, and develo
 Use a supported Node 24 release matching the package's engine range. The repository includes `.nvmrc` with major version 24.
 
 ```sh
-git clone https://github.com/rafaself/neko-search.git
+git clone https://github.com/rafaself/nekosearch.git
 cd neko-search
 nvm use
 npm ci

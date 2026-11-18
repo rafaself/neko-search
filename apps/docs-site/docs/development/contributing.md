@@ -5,7 +5,7 @@ description: Contribute focused, validated changes to NekoSearch while preservin
 
 # Contributing
 
-NekoSearch is MIT-licensed. Start with the [development environment](./development-setup.md) and the repository's [working agreements](https://github.com/rafaself/neko-search/blob/main/AGENTS.md).
+NekoSearch is MIT-licensed. Start with the [development environment](./development-setup.md) and the repository's [working agreements](https://github.com/rafaself/nekosearch/blob/main/AGENTS.md).
 
 ## Choose the owning boundary
 
@@ -58,4 +58,4 @@ These pages describe NekoSearch itself. The repository's separate `docs/mcp-prot
 
 ## Share a change
 
-Use a focused issue or pull request in [rafaself/neko-search](https://github.com/rafaself/neko-search). Explain the concrete behavior change, why it matters, validation results, and any limitations. Follow the repository's conventional commit format and avoid including generated website output, personal catalog data, or credentials.
+Use a focused issue or pull request in [rafaself/nekosearch](https://github.com/rafaself/nekosearch). Explain the concrete behavior change, why it matters, validation results, and any limitations. Follow the repository's conventional commit format and avoid including generated website output, personal catalog data, or credentials.

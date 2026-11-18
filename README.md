@@ -108,24 +108,47 @@ The current recipes use the official `nestjs/docs.nestjs.com` repository: the `1
 
 `nekosearch status` is offline by default. With no selector it shows the CLI version, catalog readability, and every available bundled or installed snapshot, including its active revision, origin, and tracking state. A selector shows only that snapshot and validates only its files. `status nestjs@12 --check-upstream` makes a read-only network check for that tracked recipe; it resolves the configured ref and compares commit IDs without downloading documentation or changing the catalog. Results distinguish `current`, `changed`, `untracked`, and `check failed`. A network or ref-resolution failure is reported as `check failed`, never as current. A snapshot pinned to an immutable commit, or installed with `add --from`, does not track future revisions.
 
+## Optional local embedding model
+
+Install the pinned Qwen3-Embedding-0.6B ONNX model only when you need local model inference:
+
+```sh
+nekosearch model install
+nekosearch model status
+nekosearch model remove
+```
+
+Installation downloads the `q8` model and its tokenizer/configuration from the immutable [v1.0.0 release](https://github.com/rafaself/nekosearch-models/releases/tag/qwen3-embedding-0.6b-v1.0.0). The installer validates the release-pinned manifest and every SHA-256 checksum, then activates the model only after verification. Interrupted transfers resume with HTTP range requests. `status` hashes the installed artifacts and reports model version, upstream revision, directory, integrity, and inference readiness.
+
+The default model directory is under the same persistent application-data root as the documentation catalog:
+
+- Linux and macOS: `$XDG_DATA_HOME/nekosearch/models/qwen3-embedding-0.6b/1.0.0` or `~/.local/share/nekosearch/models/qwen3-embedding-0.6b/1.0.0` when `XDG_DATA_HOME` is unset.
+- Windows: `%LOCALAPPDATA%\nekosearch\models\qwen3-embedding-0.6b\1.0.0`.
+
+Set `NEKOSEARCH_MODEL_DIR` or pass `--dir <model-dir>` to use an exact alternate model directory. Use the same override for `status` and `remove`. Removal requires the NekoSearch ownership marker and deletes only the release files it manages. Other files in that directory are preserved. Once removed, inference is reported unavailable until the model is installed again.
+
+The npm package does not download model weights or include Transformers.js or ONNX Runtime. The manager adds no npm dependencies. Lexical search therefore keeps its existing install footprint. Inference consumers provide `@huggingface/transformers@4.3.2` separately. The published compatibility check covers Linux x64 on Node.js 24.
+
 ## Network access and serving
 
-| Command                                                     | Network access | What it does                                                                       |
-| ----------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------- |
-| `nekosearch build ...`                                      | No             | Builds a snapshot from local files at the chosen output path.                      |
-| `nekosearch add --dir ... --id ...`                         | No             | Builds, validates, and installs a local Markdown/MDX directory.                    |
-| `nekosearch add --from ...`                                 | No             | Validates and installs a local snapshot.                                           |
-| `nekosearch add --github ... --ref ... --path ... --id ...` | Yes            | Fetches supported Markdown/MDX files from a public GitHub repo at a pinned commit. |
-| `nekosearch list`                                           | No             | Lists bundled and installed snapshots.                                             |
-| `nekosearch status [<source@version>]`                      | No             | Shows catalog and snapshot state without contacting upstream sources.              |
-| `nekosearch remove <source@version>`                        | No             | Removes an installed snapshot from the catalog and retires its active files.       |
-| `nekosearch setup`                                          | Conditional    | Local prompts and client checks are offline; only selected curated docs use HTTPS. |
-| `nekosearch status [<source@version>] --check-upstream`     | Yes            | Resolves selected tracked refs only; does not download docs or write the catalog.  |
-| `nekosearch add nestjs@11` / `nestjs@12`                    | Yes            | Fetches the selected curated source over HTTPS and builds it locally.              |
-| `nekosearch update nestjs@11` / `nestjs@12`                 | Yes            | Resolves and builds the requested major's latest curated commit.                   |
-| `nekosearch serve`                                          | No             | Serves search and fetch tools over stdio using read-only SQLite connections.       |
-| `nekosearch mcp configure grok-build`                       | No             | Adds the verified user registration through the Grok Build CLI.                    |
-| `nekosearch mcp remove grok-build`                          | No             | Removes only the verified NekoSearch user registration through the Grok Build CLI. |
+| Command                                                     | Network access  | What it does                                                                       |
+| ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------- |
+| `nekosearch build ...`                                      | No              | Builds a snapshot from local files at the chosen output path.                      |
+| `nekosearch add --dir ... --id ...`                         | No              | Builds, validates, and installs a local Markdown/MDX directory.                    |
+| `nekosearch add --from ...`                                 | No              | Validates and installs a local snapshot.                                           |
+| `nekosearch add --github ... --ref ... --path ... --id ...` | Yes             | Fetches supported Markdown/MDX files from a public GitHub repo at a pinned commit. |
+| `nekosearch list`                                           | No              | Lists bundled and installed snapshots.                                             |
+| `nekosearch status [<source@version>]`                      | No              | Shows catalog and snapshot state without contacting upstream sources.              |
+| `nekosearch remove <source@version>`                        | No              | Removes an installed snapshot from the catalog and retires its active files.       |
+| `nekosearch setup`                                          | Conditional     | Local prompts and client checks are offline; only selected curated docs use HTTPS. |
+| `nekosearch status [<source@version>] --check-upstream`     | Yes             | Resolves selected tracked refs only; does not download docs or write the catalog.  |
+| `nekosearch add nestjs@11` / `nestjs@12`                    | Yes             | Fetches the selected curated source over HTTPS and builds it locally.              |
+| `nekosearch update nestjs@11` / `nestjs@12`                 | Yes             | Resolves and builds the requested major's latest curated commit.                   |
+| `nekosearch serve`                                          | No              | Serves search and fetch tools over stdio using read-only SQLite connections.       |
+| `nekosearch mcp configure grok-build`                       | No              | Adds the verified user registration through the Grok Build CLI.                    |
+| `nekosearch mcp remove grok-build`                          | No              | Removes only the verified NekoSearch user registration through the Grok Build CLI. |
+| `nekosearch model install` / `model remove`                 | Yes for install | Installs or removes only NekoSearch-managed model release assets.                  |
+| `nekosearch model status`                                   | No              | Verifies model checksums and reports inference readiness.                          |
 
 `remove` is offline and only removes installed snapshots; bundled snapshots cannot be removed. It removes the selector from the catalog and retires its active snapshot files. A running `serve` process keeps using the SQLite indexes it opened at startup; restart it to load catalog changes. If the filesystem cannot retire files still in use, the command reports a cleanup warning.
 

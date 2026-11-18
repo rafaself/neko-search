@@ -150,6 +150,26 @@ Output includes CLI version, readability, active revision, origin, tracking, and
 
 **Errors:** malformed or missing selector, multiple selectors, repeated/unknown flags, corrupt snapshot/catalog, and failed upstream checks. Imported snapshots do not become tracked by using this flag.
 
+## model
+
+```text
+nekosearch model install [--dir <model-dir>]
+nekosearch model status [--dir <model-dir>]
+nekosearch model remove [--dir <model-dir>]
+```
+
+Manage the pinned Qwen3-Embedding-0.6B ONNX release independently from documentation snapshots.
+
+| Subcommand | Behavior                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `install`  | Download the immutable v1.0.0 release, resume interrupted assets, validate the pinned manifest and all SHA-256 values, and activate only after verification. |
+| `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                         |
+| `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved.                                      |
+
+The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. npm installation does not download model files or add Transformers.js/ONNX Runtime. Inference consumers provide `@huggingface/transformers@4.3.2` separately. The validated runtime is Linux x64 with Node.js 24.
+
+**Errors:** network or HTTP failures after retries, invalid release metadata/checksums, unmanaged target directory, incomplete managed files, and unsafe paths. A failed installation remains in a hidden staging directory and is not reported as installed. `remove` refuses directories without the matching NekoSearch ownership marker.
+
 ## update
 
 ```sh

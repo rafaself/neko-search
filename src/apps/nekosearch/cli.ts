@@ -44,6 +44,8 @@ if (command === 'setup' && arguments_.length === 0) {
     process.stderr.write(`nekosearch serve failed: ${formatError(error)}\n`);
     process.exitCode = 1;
   });
+} else if (command === 'model') {
+  runModelCommand(arguments_);
 } else if (command === 'list' && arguments_.length === 0) {
   listCatalogIndexes()
     .then((entries) => process.stdout.write(`${formatCatalogList(entries)}\n`))
@@ -145,6 +147,72 @@ function runStatusCommand(arguments_: string[]): void {
     })
     .catch((error: unknown) => {
       process.stderr.write(`nekosearch status failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
+}
+
+function runModelCommand(arguments_: string[]): void {
+  const [operation, ...optionArguments] = arguments_;
+  if (!['install', 'status', 'remove'].includes(operation ?? '')) {
+    process.stderr.write(
+      `nekosearch model requires install, status, or remove\n${renderCliHelp()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  let directory: string | undefined;
+  try {
+    const parsed = parseArgs({
+      args: optionArguments,
+      options: { dir: { type: 'string' } },
+      strict: true,
+      allowPositionals: false,
+    });
+    directory = parsed.values.dir;
+    if (directory !== undefined && !directory.trim()) {
+      throw new Error('--dir must not be empty');
+    }
+  } catch (error) {
+    process.stderr.write(
+      `nekosearch model ${operation} failed: ${errorMessage(error)}\n${renderCliHelp()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  void import('./model-manager.js')
+    .then(async (modelManager) => {
+      const options = directory ? { modelDirectory: directory } : {};
+      if (operation === 'install') {
+        const result = await modelManager.installModel(options);
+        process.stdout.write(
+          result.alreadyInstalled
+            ? `Qwen3-Embedding-0.6B ${result.modelDirectory} is already installed and verified.\n`
+            : `Installed Qwen3-Embedding-0.6B v1.0.0 at ${result.modelDirectory}.\n`,
+        );
+      } else if (operation === 'status') {
+        const status = await modelManager.getModelStatus(options);
+        process.stdout.write(`${modelManager.formatModelStatus(status)}\n`);
+        if (status.installationState === 'corrupt') process.exitCode = 1;
+      } else {
+        const result = await modelManager.removeModel(options);
+        process.stdout.write(
+          result.removed
+            ? `Removed NekoSearch-managed Qwen3-Embedding-0.6B files from ${result.modelDirectory}. Inference will be unavailable until the model is installed again.\n`
+            : `Qwen3-Embedding-0.6B is not installed at ${result.modelDirectory}.\n`,
+        );
+        if (result.preservedFiles.length > 0) {
+          process.stdout.write(
+            `Preserved other files in that directory: ${result.preservedFiles.join(', ')}\n`,
+          );
+        }
+      }
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `nekosearch model ${operation} failed: ${formatError(error)}\n`,
+      );
       process.exitCode = 1;
     });
 }
