@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { GitDocumentationSource } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   addSnapshot,
   listCatalogIndexes,
@@ -35,6 +36,8 @@ export interface NestJsSnapshotBuilder {
     fetcher: typeof fetch,
     resolvedSource: GitDocumentationSource,
     onProgress?: (phase: 'downloading' | 'indexing') => void,
+    embeddingProvider?: DocumentationEmbeddingProvider,
+    previousOutputDirectory?: string,
   ): Promise<unknown>;
 }
 
@@ -43,6 +46,7 @@ export interface RemoteSnapshotOptions extends CatalogOptions {
   fetcher?: typeof fetch;
   sourceBuilder?: NestJsSnapshotBuilder;
   onProgress?: (phase: RemoteSnapshotPhase) => void;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 export type RemoteSnapshotPhase =
@@ -116,6 +120,10 @@ export async function installRemoteSnapshot(
     );
   }
 
+  const embeddingProvider =
+    options.embeddingProvider ??
+    (await import('./semantic-search.js')).resolveConfiguredEmbeddingProvider();
+  const resolvedEmbeddingProvider = await embeddingProvider;
   const fetcher = options.fetcher ?? fetch;
   const sourceBuilder = options.sourceBuilder ?? (await loadSourceBuilder());
   options.onProgress?.('resolving');
@@ -154,6 +162,10 @@ export async function installRemoteSnapshot(
       fetcher,
       resolvedSource,
       options.onProgress,
+      resolvedEmbeddingProvider,
+      operation === 'update' && current
+        ? dirname(current.databasePath)
+        : undefined,
     );
     options.onProgress?.('validating');
     const snapshot = await validateSnapshotDirectory(snapshotDirectory);

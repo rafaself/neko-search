@@ -8,16 +8,19 @@ import {
   type CatalogOptions,
   type DocumentationCatalogEntry,
 } from './catalog.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 
 export type LocalDocumentationSnapshotBuilder = (
   inputDirectory: string,
   selector: string,
   outputDirectory: string,
+  embeddingProvider?: DocumentationEmbeddingProvider,
 ) => Promise<unknown>;
 
 export interface LocalSnapshotInstallOptions extends CatalogOptions {
   /** Injectable builder for deterministic offline tests. */
   builder?: LocalDocumentationSnapshotBuilder;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 /** Build, validate, and install a local Markdown/MDX directory offline. */
@@ -28,7 +31,7 @@ export async function installLocalSnapshot(
 ): Promise<DocumentationCatalogEntry> {
   const resolvedInputDirectory = resolve(inputDirectory);
   await assertSafeInputDirectory(resolvedInputDirectory);
-  const { builder, ...catalogOptions } = options;
+  const { builder, embeddingProvider, ...catalogOptions } = options;
 
   // Avoid doing an expensive build when the selector already exists. The
   // installer repeats this precondition under the catalog lock.
@@ -44,6 +47,7 @@ export async function installLocalSnapshot(
       resolvedInputDirectory,
       selector,
       stagingDirectory,
+      embeddingProvider,
     );
     const snapshot = await validateSnapshotDirectory(stagingDirectory);
     const { source, version } = parseSelector(selector);
@@ -66,16 +70,13 @@ async function buildWithLocalIndexer(
   inputDirectory: string,
   selector: string,
   outputDirectory: string,
+  embeddingProvider?: DocumentationEmbeddingProvider,
 ): Promise<unknown> {
   const { buildLocalSnapshot } = await import('./build.js');
-  return buildLocalSnapshot([
-    inputDirectory,
-    '--id',
-    selector,
-    '--output',
-    outputDirectory,
-    '--clean',
-  ]);
+  return buildLocalSnapshot(
+    [inputDirectory, '--id', selector, '--output', outputDirectory, '--clean'],
+    { embeddingProvider },
+  );
 }
 
 async function assertSafeInputDirectory(directory: string): Promise<void> {

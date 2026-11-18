@@ -13,11 +13,13 @@
   "files": [
     "dist/application/services/documentation-search.service.js",
     "dist/domain/documentation-index-manifest.schemas.js",
+    "dist/domain/documentation-embedding.schemas.js",
     "dist/domain/documentation.schemas.js",
     "dist/application/services/documentation-ingestion.service.js",
     "dist/infrastructure/sqlite/documentation-index-manifest.js",
     "dist/infrastructure/sqlite/index-schema.js",
     "dist/infrastructure/sqlite/runtime-index.js",
+    "dist/infrastructure/sqlite/documentation-embeddings.js",
     "dist/infrastructure/sqlite/sqlite-documentation-store.js",
     "dist/infrastructure/sqlite/indexing/index-corpus.js",
     "dist/infrastructure/sqlite/indexing/index-integrity.js",

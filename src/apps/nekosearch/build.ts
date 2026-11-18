@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DocumentationSourceProvenance } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 
 export interface LocalBuildConfiguration {
   id: string;
@@ -20,6 +21,7 @@ export interface LocalBuildOptions {
   mode: 'clean' | 'incremental';
   sourceProvenance?: DocumentationSourceProvenance;
   sourceLocationForPath?: (path: string) => string;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 interface LocalBuildSummary {
@@ -46,7 +48,10 @@ interface BuildLocalDocumentationModule {
 }
 
 /** Build a local snapshot without installing it in the catalog. */
-export async function buildLocalSnapshot(args: string[]) {
+export async function buildLocalSnapshot(
+  args: string[],
+  options: Pick<LocalBuildOptions, 'embeddingProvider'> = {},
+) {
   const { positionals, values } = parseArgs({
     args,
     options: {
@@ -93,6 +98,7 @@ export async function buildLocalSnapshot(args: string[]) {
 
   return buildLocalSnapshotConfiguration(configuration, {
     mode: values.clean ? 'clean' : 'incremental',
+    ...options,
   });
 }
 
@@ -101,6 +107,12 @@ export async function buildLocalSnapshotConfiguration(
   configuration: LocalBuildConfiguration,
   options: LocalBuildOptions,
 ): Promise<LocalBuildSummary> {
+  let embeddingProvider = options.embeddingProvider;
+  if (!embeddingProvider) {
+    const { resolveConfiguredEmbeddingProvider } =
+      await import('./semantic-search.js');
+    embeddingProvider = await resolveConfiguredEmbeddingProvider();
+  }
   const buildServicePath = resolve(
     dirname(fileURLToPath(import.meta.url)),
     'build-runtime/services/build-local-documentation.js',
@@ -108,5 +120,8 @@ export async function buildLocalSnapshotConfiguration(
   const buildService = (await import(
     pathToFileURL(buildServicePath).href
   )) as BuildLocalDocumentationModule;
-  return buildService.buildLocalDocumentation(configuration, options);
+  return buildService.buildLocalDocumentation(configuration, {
+    ...options,
+    ...(embeddingProvider && { embeddingProvider }),
+  });
 }

@@ -174,6 +174,39 @@ export function validateDocumentationEmbeddingTable(
   }
 }
 
+/** Read a validated vector set for incremental snapshot reuse. */
+export function readDocumentationEmbeddingVectors(
+  database: DatabaseSync,
+  embeddingSpace: DocumentationEmbeddingSpace,
+  expectedChunkIds: ReadonlySet<string>,
+): DocumentationEmbeddingVector[] {
+  validateDocumentationEmbeddingTable(
+    database,
+    embeddingSpace,
+    expectedChunkIds,
+    expectedChunkIds,
+  );
+  const rawRows: unknown = database
+    .prepare(
+      `SELECT chunk_id AS chunkId, embedding FROM ${DOCUMENTATION_EMBEDDINGS_TABLE} ORDER BY chunk_id COLLATE BINARY ASC`,
+    )
+    .all();
+  if (!Array.isArray(rawRows)) {
+    throw new Error('SQLite did not return an embedding row list');
+  }
+  const vectors: DocumentationEmbeddingVector[] = [];
+  for (const rawRow of rawRows as unknown[]) {
+    if (!isRecord(rawRow) || typeof rawRow.chunkId !== 'string') {
+      throw new Error('SQLite contains an invalid embedding row');
+    }
+    vectors.push({
+      chunkId: rawRow.chunkId,
+      vector: decodeFloat32Blob(rawRow.embedding, rawRow.chunkId),
+    });
+  }
+  return vectors;
+}
+
 function validateVector(
   vector: unknown,
   chunkId: string,
@@ -218,6 +251,23 @@ function validateFloat32Blob(value: unknown, chunkId: string): void {
   if (Math.abs(Math.sqrt(squaredNorm) - 1) > NORMALIZED_VECTOR_TOLERANCE) {
     throw new Error(`Embedding BLOB for ${chunkId} is not L2-normalized`);
   }
+}
+
+function decodeFloat32Blob(value: unknown, chunkId: string): Float32Array {
+  if (
+    !(value instanceof Uint8Array) ||
+    value.byteLength !== EMBEDDING_BLOB_BYTES
+  ) {
+    throw new Error(
+      `Embedding BLOB for ${chunkId} must contain exactly ${EMBEDDING_BLOB_BYTES} bytes`,
+    );
+  }
+  const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  const vector = new Float32Array(1024);
+  for (let offset = 0; offset < value.byteLength; offset += 4) {
+    vector[offset / 4] = bytes.readFloatLE(offset);
+  }
+  return vector;
 }
 
 function encodeFloat32Vector(vector: Float32Array): Buffer {

@@ -80,6 +80,6 @@ Then open **Actions → Publish documentation → Run workflow**, choose `main`,
 
 ## Existing snapshot scripts
 
-The existing root commands `docs:build`, `docs:ingest`, `docs:build:mcp`, and `search:index` operate on indexed documentation. They are separate from the `docs:site:*` website scripts.
+The root commands `docs:build` and `docs:build:mcp` build package documentation snapshots and honor `nekosearch.yaml` or `NEKOSEARCH_CONFIG` for optional local embeddings. Semantic Search is disabled by default; enabling it requires the already installed model and optional inference runtime. The lower-level `docs:ingest` and `search:index` commands remain corpus/index maintenance tools. These commands are separate from the `docs:site:*` website scripts.
 
 Use the public CLI's [`build`](../cli/commands.md#build) for portable local snapshots. Contributor-level indexer commands expose the specialized ingestion/build pipeline; inspect their command handlers and configuration schemas before changing them. Product website development does not require rebuilding external documentation snapshots.

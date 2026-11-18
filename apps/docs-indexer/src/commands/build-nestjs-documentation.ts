@@ -1,9 +1,11 @@
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { buildNestJsDocumentationSet } from '../integrations/nestjs/documentation.integration.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 
 export async function buildNestJsDocumentationCommand(
   args: string[],
+  embeddingProvider?: DocumentationEmbeddingProvider,
 ): Promise<void> {
   const { values } = parseArgs({
     args,
@@ -16,7 +18,10 @@ export async function buildNestJsDocumentationCommand(
   const summary = await buildNestJsDocumentationSet(
     resolve(values.output),
     fetch,
-    { mode: values.clean ? 'clean' : 'incremental' },
+    {
+      mode: values.clean ? 'clean' : 'incremental',
+      ...(embeddingProvider && { embeddingProvider }),
+    },
   );
   console.error(
     `Built both official NestJS documentation majors into ${summary.outputDirectory}`,

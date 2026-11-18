@@ -137,7 +137,17 @@ Inference reads only the versioned local model directory, disables Transformers.
 
 The local `EmbeddingGenerator` accepts document batches and individual queries. Queries are formatted as `Instruct: Given a query about software documentation, retrieve relevant documentation passages that answer the query\nQuery:<query>`; documents are passed without a prefix. The generator loads one shared CPU `q8` pipeline per model directory, processes one item at a time to cap memory use, selects each sequence's last attended token, and L2-normalizes the resulting 1024-dimensional vectors. Inputs are truncated at 8,192 tokens for the validated runtime.
 
-Snapshot builders can accept an optional complete `embeddingSet`, pairing every canonical `chunkId` with one vector and the exported `LOCAL_QWEN3_EMBEDDING_SPACE` metadata. Hybrid builds are validated before atomic promotion and record model revision, ONNX checksum, dimensions, data type, pooling, normalization, query-instruction version, and pipeline version in `manifest.json`. Lexical-only builds omit the vector table and embedding metadata. Embeddings are persisted but are not yet used by a semantic search command or generated automatically by the CLI.
+Ingestion reads `nekosearch.yaml` from the current directory, or the path in `NEKOSEARCH_CONFIG`:
+
+```yaml
+search:
+  semantic:
+    enabled: false
+```
+
+Semantic Search defaults to disabled, including when the file is absent. In that mode, builds, local/GitHub adds, curated installs and updates, and package snapshot builds stay lexical and do not inspect the model or load its runtime. When enabled, install Qwen3 explicitly with `nekosearch model install`; ingestion never downloads it. The configured workflows generate vectors locally, record the full embedding space in the snapshot manifest, validate the complete snapshot, and activate it atomically. No remote inference is used.
+
+Incremental builds reuse vectors only when the model revision, artifact checksum, embedding dimensions, data type, pooling, normalization, query instruction, pipeline version, chunk ID, and chunk content all match. New or changed chunks are embedded locally; changed embedding metadata requires a full regeneration. Programmatic snapshot builders can still accept a complete `embeddingSet` with the exported `LOCAL_QWEN3_EMBEDDING_SPACE` metadata. Embeddings are persisted but are not yet used by a semantic search command.
 
 To validate an installed model without network access, build NekoSearch and run `NEKOSEARCH_MODEL_DIR=<model-dir> npm run validate:qwen3`. The validation script blocks `fetch`, checks vector dimensions and normalization, and verifies retrieval ranking on two query/document pairs.
 

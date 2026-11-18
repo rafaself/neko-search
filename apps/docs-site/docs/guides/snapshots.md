@@ -23,6 +23,20 @@ nekosearch build ./docs --id my-api@1 --output ./snapshots/my-api
 
 Output is staged and validated before promotion. The builder rejects overlapping local input/output directories. Keep snapshots outside the documentation tree.
 
+## Lexical and semantic snapshots
+
+NekoSearch snapshot builders always build the FTS5/BM25 index. Semantic vectors are optional and disabled by default. Add this file to the current working directory to configure snapshot ingestion, or set `NEKOSEARCH_CONFIG` to a different YAML file:
+
+```yaml
+search:
+  semantic:
+    enabled: false
+```
+
+With `enabled: false` or no config file, ingestion does not check for or load Qwen3. With `enabled: true`, first install the pinned model with `nekosearch model install` and install the optional Transformers.js runtime. Build, `add --dir`, `add --github`, curated installs and updates, and package snapshot builds then generate vectors locally. They never install the model or call remote inference implicitly.
+
+Incremental builds reuse vectors for unchanged chunks only when the complete model/pipeline metadata and the chunk ID and content match. Other chunks are regenerated. The completed vector table and manifest are validated before the snapshot is promoted or installed.
+
 ## Install a snapshot
 
 ```sh

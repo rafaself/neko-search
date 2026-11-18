@@ -52,6 +52,7 @@
     "@nestjs-docs/documentation-engine": "0.1.0",
     "json5": "^2.2.3",
     "remark-gfm": "^4.0.1",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "peerDependencies": {
@@ -75,7 +76,7 @@
     "build": "npm run build:engine && npm run build:indexer && npm run build:cli && node scripts/build/copy-nekosearch-build-runtime.mjs",
     "prepack": "npm run build && node scripts/ci/verify-package.mjs && node scripts/ci/verify-packed-package.mjs",
     "start:nekosearch": "node dist/apps/nekosearch/cli.js",
-    "docs:build": "npm run build && node apps/docs-indexer/dist/cli.js build",
+    "docs:build": "npm run build && node dist/apps/nekosearch/package-documentation.js",
     "docs:ingest": "npm run build && node apps/docs-indexer/dist/cli.js ingest",
     "docs:build:mcp": "npm run build && node scripts/release/build-mcp-protocol-snapshot.mjs",
     "search:index": "npm run build && node apps/docs-indexer/dist/cli.js index",

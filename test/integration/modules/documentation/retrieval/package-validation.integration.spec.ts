@@ -60,6 +60,8 @@ describe('npm package verification', () => {
       'dist/apps/nekosearch/remote-snapshots.js',
       'dist/apps/nekosearch/serve.js',
       'dist/apps/nekosearch/build.js',
+      'dist/apps/nekosearch/package-documentation.js',
+      'dist/apps/nekosearch/semantic-search.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
       'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
       'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
@@ -125,6 +127,19 @@ describe('npm package verification', () => {
 
     await expect(verifyPackage(root)).rejects.toThrow(
       'The runtime package must not depend on NestJS framework packages',
+    );
+  });
+
+  it('keeps the Transformers.js runtime optional for lexical-only installs', async () => {
+    const packagePath = join(root, 'package.json');
+    const packageMetadata = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    packageMetadata.dependencies['@huggingface/transformers'] = '4.3.2';
+    writeFileSync(packagePath, JSON.stringify(packageMetadata));
+
+    await expect(verifyPackage(root)).rejects.toThrow(
+      'npm package metadata or file allowlist is invalid',
     );
   });
 

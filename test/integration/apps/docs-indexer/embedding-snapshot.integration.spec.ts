@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { jest } from '@jest/globals';
 import { buildDocumentationSnapshot } from '../../../../apps/docs-indexer/src/services/build-documentation-snapshot.js';
 import { createNestJsDocumentationIdentity } from '../../../../apps/docs-indexer/src/integrations/nestjs/version/documentation-version.js';
 import { transformNestJsDocument } from '../../../../apps/docs-indexer/src/integrations/nestjs/nestjs-documentation-transformer.js';
@@ -28,6 +29,86 @@ import { DOCUMENTATION_EMBEDDINGS_TABLE } from '@nestjs-docs/documentation-engin
 import { addSnapshot } from '../../../../src/apps/nekosearch/catalog.js';
 
 describe('hybrid documentation snapshot builds', () => {
+  it('reuses vectors for unchanged chunks and regenerates changed chunk embeddings', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'incremental-embeddings-'));
+    const outputDirectory = join(workspace, 'snapshot');
+    const firstDocuments = [
+      {
+        path: 'content/first.md',
+        canonicalUrl: 'https://docs.nestjs.com/first',
+        markdown: '# First\n\nUnchanged embedding source text.',
+      },
+      {
+        path: 'content/second.md',
+        canonicalUrl: 'https://docs.nestjs.com/second',
+        markdown: '# Second\n\nInitial embedding source text.',
+      },
+    ];
+    const firstSnapshot = makeNestJsSnapshot(
+      '12',
+      firstDocuments,
+      'b'.repeat(40),
+    );
+    const embeddingProvider = {
+      embeddingSpace: QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+      embedDocuments: jest.fn((texts: string[]) =>
+        Promise.resolve(
+          texts.map(() => {
+            const vector = new Float32Array(1024);
+            vector[0] = 1;
+            return vector;
+          }),
+        ),
+      ),
+    };
+    const request = {
+      identity: createNestJsDocumentationIdentity('12', 'content/first.md'),
+      snapshot: firstSnapshot,
+      transformDocument: transformNestJsDocument,
+      transformerVersion: 1,
+      outputDirectory,
+      embeddingProvider,
+    };
+
+    try {
+      await buildDocumentationSnapshot({ ...request, mode: 'clean' });
+      expect(embeddingProvider.embedDocuments).toHaveBeenCalledTimes(1);
+      expect(embeddingProvider.embedDocuments.mock.calls[0]?.[0]).toHaveLength(
+        2,
+      );
+
+      await buildDocumentationSnapshot({ ...request, mode: 'incremental' });
+      expect(embeddingProvider.embedDocuments).toHaveBeenCalledTimes(1);
+
+      const changedDocuments = [
+        firstDocuments[0]!,
+        {
+          ...firstDocuments[1]!,
+          markdown: '# Second\n\nChanged embedding source text.',
+        },
+      ];
+      await buildDocumentationSnapshot({
+        ...request,
+        snapshot: makeNestJsSnapshot('12', changedDocuments, 'c'.repeat(40)),
+        mode: 'incremental',
+      });
+      expect(embeddingProvider.embedDocuments).toHaveBeenCalledTimes(2);
+      expect(embeddingProvider.embedDocuments.mock.calls[1]?.[0]).toEqual([
+        '# Second\n\nChanged embedding source text.\n',
+      ]);
+      expect(
+        validateDocumentationIndex(
+          '12',
+          ingestNestJsDocuments('12', changedDocuments, 'c'.repeat(40)),
+          join(outputDirectory, 'index.sqlite'),
+          QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+        ),
+      ).toEqual({ documentCount: 2, chunkCount: 2 });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it('validates hybrid output before atomic promotion and keeps lexical-only builds valid', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'hybrid-snapshot-build-'));
     const hybridDirectory = join(workspace, 'hybrid');

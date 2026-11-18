@@ -16,6 +16,8 @@ A source has an identity such as `my-api@1`: `my-api` is the documentation ID an
 
 The bundled `mcp@2025-11-25` source is a small protocol summary included with the CLI. It is not the full upstream specification or this NekoSearch website.
 
+NekoSearch snapshot-building commands use the optional [`search.semantic.enabled` configuration](./snapshots.md#lexical-and-semantic-snapshots). Semantic Search is off by default; enabling it requires an already installed local Qwen3 model. The contributor-only `docs:ingest` and `search:index` commands maintain intermediate corpus and index data rather than activated snapshots.
+
 ## Curated sources
 
 ```sh

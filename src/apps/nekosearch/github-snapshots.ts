@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { GitDocumentationSource } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   addSnapshot,
   getCatalogIndex,
@@ -57,6 +58,7 @@ export interface GitHubSnapshotOptions extends CatalogOptions {
   /** Injectable HTTPS transport and builder for deterministic tests. */
   fetcher?: typeof fetch;
   snapshotBuilder?: GitHubSnapshotBuilder;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 interface GitHubRepository {
@@ -87,10 +89,19 @@ export async function installGitHubSnapshot(
   const { source, version } = parseSelector(selector);
   validateSourceId(source);
 
-  const { fetcher = fetch, snapshotBuilder, ...catalogOptions } = options;
+  const {
+    fetcher = fetch,
+    snapshotBuilder,
+    embeddingProvider,
+    ...catalogOptions
+  } = options;
   if (await getCatalogIndex(selector, catalogOptions)) {
     throw new Error(`Catalog already contains ${selector}`);
   }
+  const resolvedEmbeddingProvider =
+    embeddingProvider ??
+    (await import('./semantic-search.js')).resolveConfiguredEmbeddingProvider();
+  const configuredEmbeddingProvider = await resolvedEmbeddingProvider;
 
   const timeoutSignal = AbortSignal.timeout(INGESTION_TIMEOUT_MS);
   const resolved = await resolveCommit(repository, ref, fetcher, timeoutSignal);
@@ -145,6 +156,9 @@ export async function installGitHubSnapshot(
       mode: 'clean',
       sourceProvenance: provenance,
       sourceLocationForPath,
+      ...(configuredEmbeddingProvider && {
+        embeddingProvider: configuredEmbeddingProvider,
+      }),
     });
     const snapshot = await validateSnapshotDirectory(snapshotDirectory);
     if (

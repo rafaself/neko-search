@@ -5,11 +5,13 @@ import { DocumentationSnapshotSchema } from '../../packages/documentation-engine
 import { normalizeAndChunkDocument } from '../../packages/documentation-engine/dist/infrastructure/markdown/document-normalizer.js';
 import { parseMarkdown } from '../../packages/documentation-engine/dist/infrastructure/markdown/markdown-parser.js';
 import { buildDocumentationSnapshot } from '../../apps/docs-indexer/dist/services/build-documentation-snapshot.js';
+import { resolveConfiguredEmbeddingProvider } from '../../dist/apps/nekosearch/semantic-search.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const sourceDirectory = join(root, 'docs/mcp-protocol');
 const outputDirectory = join(root, 'data/mcp-protocol');
 const version = '2025-11-25';
+const embeddingProvider = await resolveConfiguredEmbeddingProvider();
 const identity = { id: 'mcp', version };
 const source = {
   kind: 'git',
@@ -70,7 +72,7 @@ const summary = await buildDocumentationSnapshot({
   identity,
   snapshot,
   outputDirectory,
-  mode: 'clean',
+  mode: 'incremental',
   transformerVersion: 1,
   transformDocument: (file, provenance, maxChunkChars) =>
     normalizeAndChunkDocument(
@@ -79,6 +81,7 @@ const summary = await buildDocumentationSnapshot({
       parseMarkdown(file.markdown, { path: file.path }),
       { identity, maxChunkChars, idPrefix: `mcp-spec:v${version}` },
     ),
+  ...(embeddingProvider && { embeddingProvider }),
 });
 
 console.log(

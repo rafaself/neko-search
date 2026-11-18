@@ -2,6 +2,7 @@ import type {
   DocumentationIdentity,
   DocumentationSourceProvenance,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import { DocumentationSnapshotSchema } from '@nestjs-docs/documentation-engine/domain/documentation.schemas.js';
 import {
   discoverLocalDocumentation,
@@ -31,6 +32,7 @@ export interface BuildLocalDocumentationOptions {
   mode?: DocumentationBuildMode;
   sourceProvenance?: DocumentationSourceProvenance;
   sourceLocationForPath?: (path: string) => string;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 export type {
@@ -95,6 +97,9 @@ export async function buildLocalDocumentation(
     mode: options.mode,
     maxChunkChars: config.maxChunkChars,
     diagnostics,
+    ...(options.embeddingProvider && {
+      embeddingProvider: options.embeddingProvider,
+    }),
   });
 }
 

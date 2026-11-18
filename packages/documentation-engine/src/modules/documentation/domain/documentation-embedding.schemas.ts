@@ -55,3 +55,9 @@ export interface DocumentationEmbeddingSet {
   embeddingSpace: DocumentationEmbeddingSpace;
   vectors: readonly DocumentationEmbeddingVector[];
 }
+
+/** Local provider used only when semantic indexing is explicitly enabled. */
+export interface DocumentationEmbeddingProvider {
+  embeddingSpace: DocumentationEmbeddingSpace;
+  embedDocuments(documents: string[]): Promise<Float32Array[]>;
+}

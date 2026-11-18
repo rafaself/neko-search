@@ -5,6 +5,7 @@ import type {
   DocumentationSnapshot,
   GitDocumentationSource,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import { ingestSnapshot } from '@nestjs-docs/documentation-engine/application/services/documentation-ingestion.service.js';
 import { resolveInternalDocumentationLinks } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import {
@@ -43,6 +44,7 @@ export interface NestJsDocumentationSetBuildSummary {
 
 export interface NestJsDocumentationSetBuildOptions {
   mode?: DocumentationBuildMode;
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 /** Resolve the selected official ref, pin all downloads, then use the shared ingestion engine. */
@@ -65,6 +67,8 @@ export async function buildNestJsDocumentationSnapshot(
   fetcher: typeof fetch = fetch,
   resolvedSource?: GitDocumentationSource,
   onProgress?: (phase: 'downloading' | 'indexing') => void,
+  embeddingProvider?: DocumentationEmbeddingProvider,
+  previousOutputDirectory?: string,
 ): Promise<DocumentationBuildSummary> {
   const recipe = getNestJsDocumentationRecipe(version);
   onProgress?.('downloading');
@@ -80,7 +84,9 @@ export async function buildNestJsDocumentationSnapshot(
     transformerVersion: recipe.transformerVersion,
     transformDocument: recipe.transformDocument,
     outputDirectory,
-    mode: 'clean',
+    mode: previousOutputDirectory ? 'incremental' : 'clean',
+    ...(previousOutputDirectory && { previousOutputDirectory }),
+    ...(embeddingProvider && { embeddingProvider }),
   });
 }
 
@@ -106,6 +112,9 @@ export async function buildNestJsDocumentationSet(
         outputDirectory: join(stagingDirectory, `v${version}`),
         previousOutputDirectory: join(outputDirectory, `v${version}`),
         mode: options.mode,
+        ...(options.embeddingProvider && {
+          embeddingProvider: options.embeddingProvider,
+        }),
       });
       stagedSummaries.push(summary);
     }

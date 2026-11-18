@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import {
   copyFile,
   lstat,
@@ -30,7 +31,13 @@ import type {
   NormalizedDocument,
   SourceDocument,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
-import type { DocumentationEmbeddingSet } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
+import type {
+  DocumentationEmbeddingProvider,
+  DocumentationEmbeddingSet,
+  DocumentationEmbeddingSpace,
+  DocumentationEmbeddingVector,
+} from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
+import { DocumentationEmbeddingSpaceSchema } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   DocumentationCorpusSchema,
   DocumentationSnapshotSchema,
@@ -55,6 +62,10 @@ import {
 } from '@nestjs-docs/documentation-engine/infrastructure/markdown/documentation-link-resolver.js';
 import { DocumentationIndexWriter } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-writer.js';
 import { validateDocumentationIndex } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/indexing/index-integrity.js';
+import {
+  readDocumentationEmbeddingVectors,
+  validateDocumentationEmbeddingSet,
+} from '@nestjs-docs/documentation-engine/infrastructure/sqlite/documentation-embeddings.js';
 import {
   DOCUMENTATION_BUILD_MANIFEST_VERSION,
   DocumentationBuildManifestSchema,
@@ -88,6 +99,7 @@ interface PreviousDocumentationBuild {
   directory: string;
   corpus: DocumentationCorpus;
   pipelineMatches: boolean;
+  embeddingSpace?: DocumentationEmbeddingSpace;
 }
 
 export interface DocumentationBuildDiagnostic extends MarkdownDiagnostic {
@@ -119,6 +131,8 @@ export interface DocumentationSnapshotBuildRequest {
   diagnostics?: DocumentationBuildDiagnostic[];
   /** Omit for a lexical-only snapshot; provide one complete set for hybrid. */
   embeddingSet?: DocumentationEmbeddingSet;
+  /** Provide to generate vectors locally and reuse compatible prior vectors. */
+  embeddingProvider?: DocumentationEmbeddingProvider;
 }
 
 /** Incrementally reuse validated prior documents and index rows, then promote. */
@@ -129,6 +143,11 @@ export async function buildDocumentationSnapshot(
   if (request.identity.version !== snapshot.version) {
     throw new Error(
       'Documentation identity version must match the source snapshot',
+    );
+  }
+  if (request.embeddingSet && request.embeddingProvider) {
+    throw new Error(
+      'Provide either a complete embedding set or an embedding provider, not both',
     );
   }
   const maxChunkChars = request.maxChunkChars ?? 4000;
@@ -211,6 +230,16 @@ export async function buildDocumentationSnapshot(
     const corpusContents = `${JSON.stringify(corpus, null, 2)}\n`;
     await writeFile(corpusPath, corpusContents, 'utf8');
 
+    const embeddingSet =
+      request.embeddingSet ??
+      (request.embeddingProvider
+        ? await generateEmbeddingSet(
+            corpus,
+            request.embeddingProvider,
+            previous,
+          )
+        : undefined);
+
     if (previous?.pipelineMatches) {
       await copyFile(join(previous.directory, INDEX_FILENAME), indexPath);
     }
@@ -220,7 +249,7 @@ export async function buildDocumentationSnapshot(
       request.identity.version,
     );
     try {
-      writer.indexCorpus(corpus, request.embeddingSet);
+      writer.indexCorpus(corpus, embeddingSet);
     } finally {
       writer.close();
     }
@@ -229,15 +258,15 @@ export async function buildDocumentationSnapshot(
       request.identity.version,
       corpus,
       indexPath,
-      request.embeddingSet?.embeddingSpace,
+      embeddingSet?.embeddingSpace,
     );
     const manifest = DocumentationBuildManifestSchema.parse({
       manifestVersion: DOCUMENTATION_BUILD_MANIFEST_VERSION,
       snapshotFormatVersion: 2,
       documentation: request.identity,
       source: corpus.source,
-      ...(request.embeddingSet && {
-        embeddings: request.embeddingSet.embeddingSpace,
+      ...(embeddingSet && {
+        embeddings: embeddingSet.embeddingSpace,
       }),
       pipeline,
       corpus: {
@@ -376,12 +405,103 @@ async function loadPreviousBuild(
       directory,
       corpus,
       pipelineMatches: isDeepStrictEqual(manifest.pipeline, pipeline),
+      ...(manifest.embeddings && { embeddingSpace: manifest.embeddings }),
     };
   } catch {
     // An invalid or unreadable prior build is never trusted. The caller makes
     // a clean build and only replaces it after the new output validates.
     return undefined;
   }
+}
+
+async function generateEmbeddingSet(
+  corpus: DocumentationCorpus,
+  provider: DocumentationEmbeddingProvider,
+  previous: PreviousDocumentationBuild | undefined,
+): Promise<DocumentationEmbeddingSet> {
+  const parsedSpace = DocumentationEmbeddingSpaceSchema.safeParse(
+    provider.embeddingSpace,
+  );
+  if (!parsedSpace.success) {
+    throw new Error('Embedding provider metadata is incompatible with Qwen3');
+  }
+
+  const chunks = corpus.documents.flatMap((document) => document.chunks);
+  const previousChunks = new Map(
+    previous?.corpus.documents.flatMap((document) =>
+      document.chunks.map((chunk) => [chunk.id, chunk] as const),
+    ) ?? [],
+  );
+  const reusableVectors = new Map<string, Float32Array>();
+  if (
+    previous?.embeddingSpace &&
+    isDeepStrictEqual(previous.embeddingSpace, parsedSpace.data)
+  ) {
+    const previousChunkIds = new Set(
+      previous.corpus.documents.flatMap((document) =>
+        document.chunks.map((chunk) => chunk.id),
+      ),
+    );
+    const previousDatabase = new DatabaseSync(
+      join(previous.directory, INDEX_FILENAME),
+      { readOnly: true },
+    );
+    try {
+      for (const vector of readDocumentationEmbeddingVectors(
+        previousDatabase,
+        previous.embeddingSpace,
+        previousChunkIds,
+      )) {
+        reusableVectors.set(vector.chunkId, vector.vector);
+      }
+    } finally {
+      previousDatabase.close();
+    }
+  }
+
+  const vectors: DocumentationEmbeddingVector[] = [];
+  const chunksNeedingEmbeddings: typeof chunks = [];
+  for (const chunk of chunks) {
+    const previousChunk = previousChunks.get(chunk.id);
+    const previousVector = reusableVectors.get(chunk.id);
+    if (
+      previousChunk &&
+      previousVector &&
+      previousChunk.documentId === chunk.documentId &&
+      previousChunk.contentHash === chunk.contentHash &&
+      previousChunk.markdown === chunk.markdown
+    ) {
+      vectors.push({ chunkId: chunk.id, vector: previousVector });
+    } else {
+      chunksNeedingEmbeddings.push(chunk);
+    }
+  }
+
+  if (chunksNeedingEmbeddings.length > 0) {
+    const generatedVectors = await provider.embedDocuments(
+      chunksNeedingEmbeddings.map((chunk) => chunk.markdown),
+    );
+    if (generatedVectors.length !== chunksNeedingEmbeddings.length) {
+      throw new Error(
+        `Embedding generation returned ${generatedVectors.length} vectors for ${chunksNeedingEmbeddings.length} chunks`,
+      );
+    }
+    chunksNeedingEmbeddings.forEach((chunk, index) => {
+      const vector = generatedVectors[index];
+      if (!vector) {
+        throw new Error(`Embedding generation omitted chunk ${chunk.id}`);
+      }
+      vectors.push({ chunkId: chunk.id, vector });
+    });
+  }
+
+  return {
+    embeddingSpace: parsedSpace.data,
+    vectors: validateDocumentationEmbeddingSet(
+      { embeddingSpace: parsedSpace.data, vectors },
+      chunks.map((chunk) => chunk.id),
+    ),
+  };
 }
 
 function sameSourceIdentity(

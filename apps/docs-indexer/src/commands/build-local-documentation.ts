@@ -3,9 +3,11 @@ import { parseArgs } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { DocumentationBuildConfigSchema } from '../config/documentation-build-config.js';
 import { buildLocalDocumentation } from '../services/build-local-documentation.js';
+import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 
 export async function buildLocalDocumentationCommand(
   args: string[],
+  embeddingProvider?: DocumentationEmbeddingProvider,
 ): Promise<void> {
   const { values } = parseArgs({
     args,
@@ -52,7 +54,10 @@ export async function buildLocalDocumentationCommand(
       inputDirectory: resolve(configDirectory, parsed.data.inputDirectory),
       outputDirectory: resolve(configDirectory, parsed.data.outputDirectory),
     },
-    { mode: values.clean ? 'clean' : 'incremental' },
+    {
+      mode: values.clean ? 'clean' : 'incremental',
+      ...(embeddingProvider && { embeddingProvider }),
+    },
   );
   console.error(
     [

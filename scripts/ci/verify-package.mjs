@@ -38,6 +38,8 @@ export async function verifyPackage(root = rootDirectory) {
     'dist/apps/nekosearch/remote-snapshots.js',
     'dist/apps/nekosearch/serve.js',
     'dist/apps/nekosearch/build.js',
+    'dist/apps/nekosearch/package-documentation.js',
+    'dist/apps/nekosearch/semantic-search.js',
     'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
     'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',
     'dist/apps/nekosearch/build-runtime/integrations/nestjs/documentation.integration.js',
@@ -70,6 +72,11 @@ export async function verifyPackage(root = rootDirectory) {
     packageMetadata.dependencies?.['@modelcontextprotocol/server'] !==
       '^2.4.0' ||
     packageMetadata.dependencies?.json5 !== '^2.2.3' ||
+    packageMetadata.dependencies?.['@huggingface/transformers'] !== undefined ||
+    packageMetadata.peerDependencies?.['@huggingface/transformers'] !==
+      '4.3.2' ||
+    packageMetadata.peerDependenciesMeta?.['@huggingface/transformers']
+      ?.optional !== true ||
     packageMetadata.files?.includes('dist/**') === true ||
     !files.includes('dist/apps/nekosearch/**') ||
     !files.includes('data/mcp-protocol/**') ||
@@ -102,6 +109,18 @@ export async function verifyPackage(root = rootDirectory) {
   ) {
     throw new Error(
       'The documentation engine package must include its internal link resolver',
+    );
+  }
+  if (
+    !engineMetadata.files?.includes(
+      'dist/domain/documentation-embedding.schemas.js',
+    ) ||
+    !engineMetadata.files?.includes(
+      'dist/infrastructure/sqlite/documentation-embeddings.js',
+    )
+  ) {
+    throw new Error(
+      'The documentation engine package must include its embedding schema and SQLite store',
     );
   }
   if (
