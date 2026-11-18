@@ -24,15 +24,15 @@ Serving
 
 ## Responsibility boundaries
 
-| Boundary                                               | Responsibility                                                                                               |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| CLI (`src/apps/nekosearch`)                            | Public command parsing, setup, installation, status, and server launch                                       |
-| Documentation indexer (`apps/docs-indexer`)            | Build orchestration, configuration, incremental builds, and source-specific integrations                     |
-| Documentation engine (`packages/documentation-engine`) | Shared schemas, discovery, static parsing, normalization, link resolution, indexing, and retrieval contracts |
-| Snapshot catalog                                       | Bundled/installed source discovery, validation, safe activation/removal, and curated tracking associations   |
-| Retrieval                                              | Query validation, ranked source-local search, section fetches, pagination, and references                    |
-| MCP transport                                          | Public tool schemas, source selection, structured/text presentation, and stdio lifecycle                     |
-| Documentation website (`apps/docs-site`)               | Static product documentation, with its own build and browser-local search                                    |
+| Boundary                                               | Responsibility                                                                                              |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| CLI (`src/apps/nekosearch`)                            | Public command parsing, setup, installation, status, and server launch                                      |
+| Documentation indexer (`apps/docs-indexer`)            | Build orchestration, configuration, incremental builds, optional hybrid embeddings, and source integrations |
+| Documentation engine (`packages/documentation-engine`) | Shared schemas, discovery, parsing, normalization, link resolution, lexical/vector indexing, and retrieval  |
+| Snapshot catalog                                       | Bundled/installed source discovery, validation, safe activation/removal, and curated tracking associations  |
+| Retrieval                                              | Query validation, ranked source-local search, section fetches, pagination, and references                   |
+| MCP transport                                          | Public tool schemas, source selection, structured/text presentation, and stdio lifecycle                    |
+| Documentation website (`apps/docs-site`)               | Static product documentation, with its own build and browser-local search                                   |
 
 The documentation website is a private npm workspace. It is not loaded by the production CLI, and its content is not automatically ingested into the external documentation catalog.
 

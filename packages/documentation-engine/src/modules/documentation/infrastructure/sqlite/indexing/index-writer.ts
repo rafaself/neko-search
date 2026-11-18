@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { DocumentationVersion } from '../../../domain/documentation.types.js';
+import type { DocumentationEmbeddingSet } from '../../../domain/documentation-embedding.schemas.js';
 import { indexDocumentationCorpus } from './index-corpus.js';
 
 /** Writable index connection used exclusively by indexing commands. */
@@ -19,8 +20,16 @@ export class DocumentationIndexWriter {
     this.database = new DatabaseSync(path, { timeout: 5000 });
   }
 
-  indexCorpus(corpus: unknown): number {
-    return indexDocumentationCorpus(this.database, this.version, corpus);
+  indexCorpus(
+    corpus: unknown,
+    embeddingSet?: DocumentationEmbeddingSet,
+  ): number {
+    return indexDocumentationCorpus(
+      this.database,
+      this.version,
+      corpus,
+      embeddingSet,
+    );
   }
 
   close(): void {

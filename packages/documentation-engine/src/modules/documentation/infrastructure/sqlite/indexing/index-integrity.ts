@@ -9,6 +9,7 @@ import type {
   DocumentationLinkReference,
   DocumentationVersion,
 } from '../../../domain/documentation.types.js';
+import type { DocumentationEmbeddingSpace } from '../../../domain/documentation-embedding.schemas.js';
 import { validateRuntimeIndex } from '../runtime-index.js';
 import { DOCUMENTATION_REFERENCES_TABLE } from '../index-schema.js';
 
@@ -27,8 +28,15 @@ interface ExpectedRow {
 export function validateIndexIntegrity(
   database: DatabaseSync,
   version: DocumentationVersion,
+  embeddingSpace?: DocumentationEmbeddingSpace,
+  canonicalChunkIds?: ReadonlySet<string>,
 ): ReturnType<typeof validateRuntimeIndex> {
-  const summary = validateRuntimeIndex(database, version);
+  const summary = validateRuntimeIndex(
+    database,
+    version,
+    embeddingSpace,
+    canonicalChunkIds,
+  );
   const integrity = database.prepare('PRAGMA integrity_check').all();
   if (integrity.length !== 1 || integrity[0]?.integrity_check !== 'ok') {
     throw new Error(`Documentation v${version} SQLite integrity check failed`);
@@ -65,10 +73,21 @@ export function validateDocumentationIndex(
   version: DocumentationVersion,
   corpus: DocumentationCorpus,
   databasePath: string,
+  embeddingSpace?: DocumentationEmbeddingSpace,
 ): { documentCount: number; chunkCount: number } {
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
-    validateIndexIntegrity(database, version);
+    const canonicalChunkIds = new Set(
+      corpus.documents.flatMap((document) =>
+        document.chunks.map((chunk) => chunk.id),
+      ),
+    );
+    validateIndexIntegrity(
+      database,
+      version,
+      embeddingSpace,
+      canonicalChunkIds,
+    );
     return validateCorpusIndex(version, corpus, database);
   } finally {
     database.close();

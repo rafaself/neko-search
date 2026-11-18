@@ -4,6 +4,7 @@ export const DOCUMENTATION_INDEX_METADATA_TABLE =
   'documentation_index_metadata';
 export const DOCUMENTATION_INDEX_TABLE = 'documentation_search';
 export const DOCUMENTATION_REFERENCES_TABLE = 'documentation_references';
+export const DOCUMENTATION_EMBEDDINGS_TABLE = 'documentation_embeddings';
 
 export const DOCUMENTATION_INDEX_COLUMNS = [
   'title',
@@ -36,6 +37,11 @@ export const DOCUMENTATION_REFERENCES_SCHEMA = `CREATE TABLE ${DOCUMENTATION_REF
   target_section_id TEXT,
   PRIMARY KEY(chunk_id, occurrence_index)
 ) STRICT`;
+
+export const DOCUMENTATION_EMBEDDINGS_SCHEMA = `CREATE TABLE ${DOCUMENTATION_EMBEDDINGS_TABLE} (
+  chunk_id TEXT PRIMARY KEY,
+  embedding BLOB NOT NULL
+)`;
 
 export const DOCUMENTATION_INDEX_METADATA_KEYS = [
   'schema_version',

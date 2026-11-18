@@ -4,8 +4,14 @@ import type {
   DocumentationChunk,
   DocumentationVersion,
 } from '../../../domain/documentation.types.js';
+import type { DocumentationEmbeddingSet } from '../../../domain/documentation-embedding.schemas.js';
+import {
+  validateDocumentationEmbeddingSet,
+  writeDocumentationEmbeddings,
+} from '../documentation-embeddings.js';
 import { validateRuntimeIndex } from '../runtime-index.js';
 import {
+  DOCUMENTATION_EMBEDDINGS_TABLE,
   DOCUMENTATION_INDEX_FORMAT_VERSION,
   DOCUMENTATION_INDEX_METADATA_SCHEMA,
   DOCUMENTATION_INDEX_SCHEMA,
@@ -19,8 +25,13 @@ export function indexDocumentationCorpus(
   database: DatabaseSync,
   documentationVersion: DocumentationVersion,
   corpus: unknown,
+  embeddingSet?: DocumentationEmbeddingSet,
 ): number {
   const chunks = validateCorpus(corpus, documentationVersion);
+  const expectedChunkIds = chunks.map((chunk) => chunk.id);
+  const vectors = embeddingSet
+    ? validateDocumentationEmbeddingSet(embeddingSet, expectedChunkIds)
+    : undefined;
   const parsedCorpus = DocumentationCorpusSchema.parse(corpus);
   const references = parsedCorpus.documents.flatMap((document) =>
     document.chunks.flatMap((chunk) =>
@@ -43,6 +54,7 @@ export function indexDocumentationCorpus(
     database.exec('BEGIN IMMEDIATE');
     transactionStarted = true;
     if (hasCompatibleIndex(database, documentationVersion)) {
+      database.exec(`DROP TABLE IF EXISTS ${DOCUMENTATION_EMBEDDINGS_TABLE}`);
       validateRuntimeIndex(database, documentationVersion);
     } else {
       rebuildIndexSchema(database);
@@ -154,6 +166,15 @@ export function indexDocumentationCorpus(
       documentation_version: documentationVersion,
       source_revision: chunks[0]!.sourceRevision,
     });
+    if (vectors) {
+      writeDocumentationEmbeddings(database, vectors);
+    }
+    validateRuntimeIndex(
+      database,
+      documentationVersion,
+      embeddingSet?.embeddingSpace,
+      new Set(expectedChunkIds),
+    );
     database.exec('COMMIT');
     transactionStarted = false;
     return chunks.length;
@@ -322,6 +343,7 @@ function hasCompatibleIndex(
 }
 
 function rebuildIndexSchema(database: DatabaseSync): void {
+  database.exec(`DROP TABLE IF EXISTS ${DOCUMENTATION_EMBEDDINGS_TABLE}`);
   database.exec(`DROP TABLE IF EXISTS ${DOCUMENTATION_REFERENCES_TABLE}`);
   database.exec('DROP TABLE IF EXISTS documentation_search');
   database.exec('DROP TABLE IF EXISTS documentation_index_metadata');

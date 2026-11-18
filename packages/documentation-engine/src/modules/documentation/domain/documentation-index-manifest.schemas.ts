@@ -5,6 +5,7 @@ import {
   DocumentationVersionSchema,
   DOCUMENTATION_SNAPSHOT_FORMAT_VERSION,
 } from './documentation.schemas.js';
+import { DocumentationEmbeddingSpaceSchema } from './documentation-embedding.schemas.js';
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -33,6 +34,7 @@ const runtimeManifestFields = {
   manifestVersion: z.literal(DOCUMENTATION_RUNTIME_MANIFEST_VERSION),
   ...manifestIdentityFields,
   index: z.strictObject(runtimeIndexFields),
+  embeddings: DocumentationEmbeddingSpaceSchema.optional(),
 };
 
 function validateManifestIdentity(
@@ -70,6 +72,7 @@ export const DocumentationBuildManifestSchema = z
     manifestVersion: z.literal(DOCUMENTATION_BUILD_MANIFEST_VERSION),
     snapshotFormatVersion: z.literal(DOCUMENTATION_SNAPSHOT_FORMAT_VERSION),
     ...manifestIdentityFields,
+    embeddings: DocumentationEmbeddingSpaceSchema.optional(),
     index: z.strictObject({
       ...runtimeIndexFields,
       formatVersion: positiveIntegerSchema,

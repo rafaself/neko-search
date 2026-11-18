@@ -37,6 +37,7 @@ export function loadDocumentationIndexManifest(
     documentation: buildManifest.documentation,
     source: buildManifest.source,
     index: buildManifest.index,
+    ...(buildManifest.embeddings && { embeddings: buildManifest.embeddings }),
   });
 
   if (manifest.index.file !== basename(resolve(databasePath))) {

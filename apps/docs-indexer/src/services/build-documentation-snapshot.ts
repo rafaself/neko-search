@@ -30,6 +30,7 @@ import type {
   NormalizedDocument,
   SourceDocument,
 } from '@nestjs-docs/documentation-engine/domain/documentation.types.js';
+import type { DocumentationEmbeddingSet } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   DocumentationCorpusSchema,
   DocumentationSnapshotSchema,
@@ -116,6 +117,8 @@ export interface DocumentationSnapshotBuildRequest {
   mode?: DocumentationBuildMode;
   maxChunkChars?: number;
   diagnostics?: DocumentationBuildDiagnostic[];
+  /** Omit for a lexical-only snapshot; provide one complete set for hybrid. */
+  embeddingSet?: DocumentationEmbeddingSet;
 }
 
 /** Incrementally reuse validated prior documents and index rows, then promote. */
@@ -217,7 +220,7 @@ export async function buildDocumentationSnapshot(
       request.identity.version,
     );
     try {
-      writer.indexCorpus(corpus);
+      writer.indexCorpus(corpus, request.embeddingSet);
     } finally {
       writer.close();
     }
@@ -226,12 +229,16 @@ export async function buildDocumentationSnapshot(
       request.identity.version,
       corpus,
       indexPath,
+      request.embeddingSet?.embeddingSpace,
     );
     const manifest = DocumentationBuildManifestSchema.parse({
       manifestVersion: DOCUMENTATION_BUILD_MANIFEST_VERSION,
       snapshotFormatVersion: 2,
       documentation: request.identity,
       source: corpus.source,
+      ...(request.embeddingSet && {
+        embeddings: request.embeddingSet.embeddingSpace,
+      }),
       pipeline,
       corpus: {
         formatVersion: 2,
@@ -354,6 +361,7 @@ async function loadPreviousBuild(
       identity.version,
       corpus,
       indexPath,
+      manifest.embeddings,
     );
     if (
       validated.documentCount !== manifest.corpus.documentCount ||

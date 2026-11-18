@@ -20,11 +20,12 @@ import {
   ONNX_RUNTIME_NODE_VERSION,
   TRANSFORMERS_VERSION,
 } from './transformers-runtime.js';
+import { QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1 } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 
-const MODEL_ID = 'qwen3-embedding-0.6b';
+const MODEL_ID = QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1.modelId;
 const MODEL_VERSION = '1.0.0';
 const UPSTREAM_REPOSITORY = 'onnx-community/Qwen3-Embedding-0.6B-ONNX';
-const UPSTREAM_REVISION = 'c25a394dd583836952667c12f008335071b3f43d';
+const UPSTREAM_REVISION = QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1.modelRevision;
 const RELEASE_REPOSITORY = 'rafaself/nekosearch-models';
 const RELEASE_TAG = `${MODEL_ID}-v${MODEL_VERSION}`;
 const RELEASE_URL = `https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}`;
@@ -800,7 +801,8 @@ function parseAndValidateManifest(
     model.architecture !== 'Qwen3Model' ||
     model.format !== 'onnx' ||
     model.contextLength !== 32768 ||
-    model.embeddingDimensions !== 1024 ||
+    model.embeddingDimensions !==
+      QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1.embeddingDimensions ||
     model.pooling !== 'last_token' ||
     model.normalization !== 'l2' ||
     !isRecord(tokenizer) ||

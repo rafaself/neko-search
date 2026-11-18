@@ -5,6 +5,7 @@ import {
   type ModelStatus,
 } from './model-manager.js';
 import type { EmbeddingGenerator } from './embedding-generator.js';
+import { QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1 } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   inspectTransformersRuntime,
   TRANSFORMERS_VERSION,
@@ -17,6 +18,9 @@ const MAX_SEQUENCE_LENGTH = 8192;
 const MODEL_BATCH_SIZE = 1;
 const QUERY_INSTRUCTION =
   'Given a query about software documentation, retrieve relevant documentation passages that answer the query';
+
+export const LOCAL_QWEN3_EMBEDDING_SPACE =
+  QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1;
 
 interface SharedModelRuntime {
   pipelinePromise?: Promise<RuntimePipeline>;

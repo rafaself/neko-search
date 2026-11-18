@@ -19,6 +19,12 @@ SQLite FTS5 provides full-text matching, snippets, and weighted BM25 ranking acr
 
 The engine has an internal result cap of 50, but the **public MCP contract caps the entire response at 10**. Internal engine limits are not extra MCP options.
 
+## Optional snapshot embeddings
+
+Snapshot builds may include one normalized 1024-dimensional Float32 vector for every canonical chunk. The vectors live in a separate `documentation_embeddings(chunk_id, embedding)` table and do not copy chunk text or add a foreign key to the FTS5 virtual table. The FTS5 schema and BM25 queries are unchanged.
+
+Hybrid manifests record the supported Qwen3 model revision and ONNX artifact checksum along with dimensions, data type, pooling, normalization, query-instruction version, and embedding-pipeline version. Validation checks the metadata, exact Float32 BLOB size, vector normalization, and one-to-one chunk IDs against the corpus before promotion. Lexical-only snapshots omit both the metadata and the embeddings table. The current MCP search path remains lexical; snapshot embedding persistence does not yet enable hybrid ranking.
+
 ## Combining selected sources
 
 The MCP layer resolves every selector before searching any index. It rejects unknown or duplicated selectors rather than dropping them or broadening the request.

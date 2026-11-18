@@ -31,6 +31,7 @@ export class SQLiteDocumentationStore implements DocumentationSearchStore {
       const summary = validateRuntimeIndex(
         this.database,
         indexManifest.documentation.version,
+        indexManifest.embeddings,
       );
       if (
         summary.revision !== indexManifest.index.sourceRevision ||

@@ -1,5 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { DocumentationEmbeddingSpace } from '../../domain/documentation-embedding.schemas.js';
 import type { DocumentationVersion } from '../../domain/documentation.types.js';
+import { validateDocumentationEmbeddingTable } from './documentation-embeddings.js';
 import {
   DOCUMENTATION_INDEX_COLUMNS,
   DOCUMENTATION_INDEX_FORMAT_VERSION,
@@ -15,6 +17,8 @@ import {
 export function validateRuntimeIndex(
   database: DatabaseSync,
   version: DocumentationVersion,
+  embeddingSpace?: DocumentationEmbeddingSpace,
+  canonicalChunkIds?: ReadonlySet<string>,
 ): {
   revision: string;
   documentCount: number;
@@ -26,7 +30,7 @@ export function validateRuntimeIndex(
   };
   const tables = database
     .prepare(
-      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata', 'documentation_references')",
+      "SELECT name, sql FROM sqlite_schema WHERE type = 'table' AND name IN ('documentation_search', 'documentation_index_metadata', 'documentation_references', 'documentation_embeddings')",
     )
     .all();
   const tableSql = new Map(tables.map((table) => [table.name, table.sql]));
@@ -175,6 +179,17 @@ export function validateRuntimeIndex(
     chunkCount++;
   }
   if (chunkCount === 0) fail('index contains no documentation chunks');
+
+  try {
+    validateDocumentationEmbeddingTable(
+      database,
+      embeddingSpace,
+      chunkIds,
+      canonicalChunkIds,
+    );
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
 
   return {
     revision,

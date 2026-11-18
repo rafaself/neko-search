@@ -1131,7 +1131,16 @@ function validateSnapshotIndex(
   corpus: DocumentationCorpus,
   manifest: ReturnType<typeof DocumentationBuildManifestSchema.parse>,
 ): void {
-  validateRuntimeDatabase(databasePath, runtimeManifestFromBuild(manifest));
+  const canonicalChunkIds = new Set(
+    corpus.documents.flatMap((document) =>
+      document.chunks.map((chunk) => chunk.id),
+    ),
+  );
+  validateRuntimeDatabase(
+    databasePath,
+    runtimeManifestFromBuild(manifest),
+    canonicalChunkIds,
+  );
   const database = new DatabaseSync(databasePath, {
     readOnly: true,
     timeout: 5000,
@@ -1217,6 +1226,7 @@ function snapshotRowMatches(
 function validateRuntimeDatabase(
   databasePath: string,
   manifest: DocumentationIndexRuntimeManifest,
+  canonicalChunkIds: ReadonlySet<string>,
 ): void {
   const database = new DatabaseSync(databasePath, {
     readOnly: true,
@@ -1226,6 +1236,8 @@ function validateRuntimeDatabase(
     const summary = validateRuntimeIndex(
       database,
       manifest.documentation.version,
+      manifest.embeddings,
+      canonicalChunkIds,
     );
     if (
       manifest.index.file !== basename(databasePath) ||
@@ -1248,6 +1260,7 @@ function runtimeManifestFromBuild(
     documentation: manifest.documentation,
     source: manifest.source,
     index: manifest.index,
+    ...(manifest.embeddings && { embeddings: manifest.embeddings }),
   });
 }
 
