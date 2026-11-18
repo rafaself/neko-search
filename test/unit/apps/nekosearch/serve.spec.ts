@@ -179,35 +179,32 @@ describe('searchCatalogDocumentation', () => {
           embedQuery,
         },
       ),
-    ).rejects.toThrow(/embeddings for every selected source/u);
+    ).rejects.toThrow(/compatible embeddings are unavailable/u);
     expect(embedQuery).not.toHaveBeenCalled();
     expect(lexical).not.toHaveBeenCalled();
   });
 
-  it('keeps the bundled protocol snapshot lexical when hybrid search is enabled', async () => {
+  it('rejects a bundled snapshot without vectors instead of falling back to lexical search', async () => {
     const lexical = jest.fn<SearchFunction>(() => [searchHit('mcp-protocol')]);
     const bundled = runtime('mcp', '2025-11-25', lexical);
     bundled.entry.status = 'bundled';
-    const embedQuery = jest.fn(() => {
-      const vector = new Float32Array(1024);
-      vector[0] = 1;
-      return Promise.resolve(vector);
-    });
+    const embedQuery = jest.fn(() => Promise.resolve(new Float32Array(1024)));
 
-    const result = await searchCatalogDocumentationWithSemantic(
-      new Map([['mcp@2025-11-25', bundled]]),
-      { query: 'tools', sources: ['mcp@2025-11-25'] },
-      {
-        embeddingSpace: QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
-        embedQuery,
-      },
+    await expect(
+      searchCatalogDocumentationWithSemantic(
+        new Map([['mcp@2025-11-25', bundled]]),
+        { query: 'tools', sources: ['mcp@2025-11-25'] },
+        {
+          embeddingSpace: QWEN3_DOCUMENTATION_EMBEDDING_SPACE_V1,
+          embedQuery,
+        },
+      ),
+    ).rejects.toThrow(
+      /mcp@2025-11-25 is a bundled lexical-only snapshot.*omit it from sources or disable Semantic Search/u,
     );
 
-    expect(embedQuery).toHaveBeenCalledTimes(1);
-    expect(lexical).toHaveBeenCalledWith('tools', 50);
-    expect(result.structuredContent.groups[0]?.results[0]?.chunkId).toBe(
-      'mcp-protocol-section',
-    );
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(lexical).not.toHaveBeenCalled();
   });
 });
 

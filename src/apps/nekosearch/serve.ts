@@ -75,6 +75,13 @@ export async function serve(): Promise<void> {
       'Semantic Search is enabled, but the configured embedding provider cannot embed queries.',
     );
   }
+  const queryEmbeddingProvider: SemanticQueryEmbeddingProvider | undefined =
+    configuredEmbeddingProvider
+      ? {
+          embeddingSpace: configuredEmbeddingProvider.embeddingSpace,
+          embedQuery: configuredEmbeddingProvider.embedQuery!,
+        }
+      : undefined;
   const runtimes: CatalogSearchRuntime[] = [];
   let runtimesBySelector: Map<string, CatalogSearchRuntime>;
   try {
@@ -126,28 +133,7 @@ export async function serve(): Promise<void> {
         listCatalogDocumentation(runtimesBySelector.values()),
       ),
   );
-  server.registerTool(
-    'search_docs',
-    {
-      description: `Searches only the 1 to ${MAX_SEARCH_SOURCES} exact selectors in sources. Get selectors from list_docs. Results are grouped by selector and preserve each snapshot's lexical or fused ranking; limit caps the total response at ${MAX_TOTAL_SEARCH_RESULTS} hits across all groups.`,
-      inputSchema: catalogSearchDocsInputSchema,
-      outputSchema: catalogSearchDocsOutputSchema,
-      annotations: readOnlyAnnotations,
-    },
-    (input) => {
-      if (!configuredEmbeddingProvider) {
-        return runTool('search_docs', () =>
-          searchCatalogDocumentation(runtimesBySelector, input),
-        );
-      }
-      return runAsyncTool('search_docs', () =>
-        searchCatalogDocumentationWithSemantic(runtimesBySelector, input, {
-          embeddingSpace: configuredEmbeddingProvider.embeddingSpace,
-          embedQuery: configuredEmbeddingProvider.embedQuery!,
-        }),
-      );
-    },
-  );
+  registerSearchDocsTool(server, runtimesBySelector, queryEmbeddingProvider);
   server.registerTool(
     'fetch_docs',
     {
@@ -182,6 +168,37 @@ export async function serve(): Promise<void> {
 
   await server.connect(new StdioServerTransport());
   process.stderr.write('NekoSearch MCP server ready on stdio\n');
+}
+
+/** Register the public search tool with the globally configured retrieval mode. */
+export function registerSearchDocsTool(
+  server: McpServer,
+  runtimesBySelector: ReadonlyMap<string, SearchableCatalogRuntime>,
+  embeddingProvider?: SemanticQueryEmbeddingProvider,
+): void {
+  server.registerTool(
+    'search_docs',
+    {
+      description: `Searches only the 1 to ${MAX_SEARCH_SOURCES} exact selectors in sources. Get selectors from list_docs. Results are grouped by selector and preserve each snapshot's lexical or fused ranking; limit caps the total response at ${MAX_TOTAL_SEARCH_RESULTS} hits across all groups.`,
+      inputSchema: catalogSearchDocsInputSchema,
+      outputSchema: catalogSearchDocsOutputSchema,
+      annotations: readOnlyAnnotations,
+    },
+    (input) => {
+      if (!embeddingProvider) {
+        return runTool('search_docs', () =>
+          searchCatalogDocumentation(runtimesBySelector, input),
+        );
+      }
+      return runAsyncTool('search_docs', () =>
+        searchCatalogDocumentationWithSemantic(
+          runtimesBySelector,
+          input,
+          embeddingProvider,
+        ),
+      );
+    },
+  );
 }
 
 export function searchCatalogDocumentation(
@@ -224,20 +241,24 @@ export async function searchCatalogDocumentationWithSemantic(
   const queryEmbeddingSpace = DocumentationEmbeddingSpaceSchema.parse(
     embeddingProvider.embeddingSpace,
   );
-  const incompatibleSources = selectedRuntimes
-    .filter(
-      (runtime) =>
-        !runtime.semanticRetriever ||
-        !isDeepStrictEqual(
-          runtime.semanticRetriever.embeddingSpace,
-          queryEmbeddingSpace,
-        ),
-    )
-    .filter((runtime) => runtime.entry.status !== 'bundled')
-    .map((runtime) => selectorFor(runtime.entry));
-  if (incompatibleSources.length > 0) {
+  const incompatibleRuntimes = selectedRuntimes.filter(
+    (runtime) =>
+      !runtime.semanticRetriever ||
+      !isDeepStrictEqual(
+        runtime.semanticRetriever.embeddingSpace,
+        queryEmbeddingSpace,
+      ),
+  );
+  if (incompatibleRuntimes.length > 0) {
+    const unavailableSources = incompatibleRuntimes.map((runtime) => {
+      const selector = selectorFor(runtime.entry);
+      if (runtime.entry.status === 'bundled') {
+        return `${selector} is a bundled lexical-only snapshot; omit it from sources or disable Semantic Search with nekosearch embeddings disable`;
+      }
+      return `${selector} has no compatible embeddings; run nekosearch embeddings build ${selector}`;
+    });
     throw new Error(
-      `Semantic Search requires compatible embeddings for every selected source: ${incompatibleSources.join(', ')}. Run nekosearch embeddings build for these sources.`,
+      `Semantic Search is enabled, but compatible embeddings are unavailable for selected sources: ${unavailableSources.join('; ')}. Semantic Search does not fall back to lexical retrieval.`,
     );
   }
 
@@ -246,12 +267,7 @@ export async function searchCatalogDocumentationWithSemantic(
   );
   const queryVector = await embeddingProvider.embedQuery(input.query);
   const fusedRankings = selectedRuntimes.map((runtime, index) => {
-    const semanticRetriever = runtime.semanticRetriever;
-    if (!semanticRetriever) {
-      // The package-bundled MCP protocol snapshot has no user-managed
-      // embedding lifecycle; retain its established lexical ranking.
-      return lexicalRankings[index] ?? [];
-    }
+    const semanticRetriever = runtime.semanticRetriever!;
     const semanticResults = semanticRetriever.search(
       queryVector,
       SEMANTIC_RETRIEVAL_TOP_K,
