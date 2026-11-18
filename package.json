@@ -1,6 +1,6 @@
 {
   "name": "nekosearch",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A local, read-only MCP server for searching and fetching documentation snapshots.",
   "type": "module",
   "workspaces": [
