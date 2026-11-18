@@ -301,10 +301,11 @@ export async function getModelStatus(
 ): Promise<ModelStatus> {
   const release = options.release ?? PINNED_RELEASE;
   const modelDirectory = resolveModelDirectory(options);
-  const runtimeRequirement = `@huggingface/transformers@${TRANSFORMERS_VERSION} with onnxruntime-node@${ONNX_RUNTIME_NODE_VERSION} on Linux x64 Node.js 24.22.2`;
-  const transformersRuntime = inspectTransformersRuntime();
-  const runtimeAvailable =
-    isSupportedRuntimeHost() && transformersRuntime.available;
+  const runtimeRequirement = `@huggingface/transformers@${TRANSFORMERS_VERSION} with onnxruntime-node@${ONNX_RUNTIME_NODE_VERSION} on Linux x64 with Node.js >=24.15.0`;
+  const hostProblem = getRuntimeHostProblem();
+  const runtime = hostProblem
+    ? { available: false as const, detail: hostProblem }
+    : inspectTransformersRuntime();
   const base: ModelStatus = {
     modelId: MODEL_ID,
     installationState: 'not-installed',
@@ -312,10 +313,10 @@ export async function getModelStatus(
     upstreamRevision: UPSTREAM_REVISION,
     modelDirectory,
     artifactIntegrity: 'missing',
-    runtimeAvailable,
+    runtimeAvailable: runtime.available,
     inferenceAvailable: false,
     runtimeRequirement,
-    details: [],
+    details: runtime.available ? [] : [runtime.detail],
     unmanagedFiles: [],
   };
 
@@ -385,23 +386,11 @@ export async function getModelStatus(
     await verifyModelFiles(modelDirectory, manifest, release);
     const names = await readdir(modelDirectory);
     const managedNames = new Set([...RELEASE_ASSET_NAMES, MARKER_FILE]);
-    const runtimeValidated = isValidatedRuntime(manifest);
-    const currentRuntimeAvailable =
-      runtimeValidated && transformersRuntime.available;
-    const runtimeDetails = runtimeValidated
-      ? transformersRuntime.available
-        ? []
-        : [transformersRuntime.detail]
-      : [
-          `The current runtime is outside the validated Linux x64 Node.js ${manifest.runtime.nodeVersion} environment`,
-        ];
     return {
       ...base,
       installationState: 'installed',
       artifactIntegrity: 'valid',
-      runtimeAvailable: currentRuntimeAvailable,
-      inferenceAvailable: currentRuntimeAvailable,
-      details: runtimeDetails,
+      inferenceAvailable: runtime.available,
       unmanagedFiles: names.filter((name) => !managedNames.has(name)),
     };
   } catch (error) {
@@ -529,6 +518,7 @@ export function formatModelStatus(status: ModelStatus): string {
     `Local model directory: ${status.modelDirectory}`,
     `Artifact integrity: ${integrity}`,
     `Runtime available: ${status.runtimeAvailable ? 'yes' : 'no'}`,
+    `Runtime requirement: ${status.runtimeRequirement}`,
     `Available for inference: ${inference}`,
     ...(status.unmanagedFiles.length > 0
       ? [`Preserved unmanaged files: ${status.unmanagedFiles.join(', ')}`]
@@ -829,6 +819,7 @@ function parseAndValidateManifest(
     runtime.package !== '@huggingface/transformers' ||
     runtime.version !== TRANSFORMERS_VERSION ||
     runtime.onnxruntimeNodeVersion !== ONNX_RUNTIME_NODE_VERSION ||
+    // Immutable release provenance records the environment used to validate the artifacts.
     runtime.nodeVersion !== '24.22.2' ||
     runtime.platform !== 'linux' ||
     runtime.architecture !== 'x64' ||
@@ -934,20 +925,17 @@ async function verifyModelFiles(
   }
 }
 
-function isValidatedRuntime(manifest: ModelManifest): boolean {
-  return (
-    process.platform === manifest.runtime.platform &&
-    process.arch === manifest.runtime.architecture &&
-    process.versions.node === manifest.runtime.nodeVersion
-  );
-}
-
-function isSupportedRuntimeHost(): boolean {
-  return (
-    process.platform === 'linux' &&
-    process.arch === 'x64' &&
-    process.versions.node === '24.22.2'
-  );
+function getRuntimeHostProblem(): string | undefined {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  if (
+    process.platform !== 'linux' ||
+    process.arch !== 'x64' ||
+    major < 24 ||
+    (major === 24 && minor < 15)
+  ) {
+    return `Local Qwen3 inference requires Linux x64 with Node.js >=24.15.0. Current host: ${process.platform} ${process.arch}, Node.js ${process.versions.node}.`;
+  }
+  return undefined;
 }
 
 function isManagedMarker(value: unknown, release: ModelRelease): boolean {

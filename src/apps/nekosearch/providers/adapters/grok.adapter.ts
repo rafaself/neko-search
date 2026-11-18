@@ -26,6 +26,7 @@ export function createGrokBuildAdapter(
   const adapter: McpProviderAdapter = {
     id: PROVIDER_ID,
     label: PROVIDER_LABEL,
+    target: 'Grok Build user MCP registry (managed by `grok mcp`)',
     detect: () => runner.resolve('grok', environment, platform),
     async inspect() {
       const executable = requireGrokCli(adapter, environment, platform, runner);

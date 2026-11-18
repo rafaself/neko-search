@@ -822,7 +822,7 @@ async function installAndEnableSemanticSearchByDefault(
   const runtimeStatus = await modelManager.getModelStatus();
   if (!runtimeStatus.runtimeAvailable) {
     throw new Error(
-      `The local inference runtime is unavailable. Install the optional @huggingface/transformers@4.3.2 runtime on a supported Node.js host before setup downloads Qwen3.`,
+      `The local inference runtime is unavailable. ${runtimeStatus.details.join(' ')} Runtime requirement: ${runtimeStatus.runtimeRequirement}. Run \`nekosearch model status\` to check readiness before setup downloads Qwen3.`,
     );
   }
   await modelManager.installModel({ progress });

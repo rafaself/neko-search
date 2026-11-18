@@ -151,10 +151,10 @@ class LocalQwen3EmbeddingGenerator implements EmbeddingGenerator {
         `Qwen3 model is not installed and verified at ${this.modelDirectory} (state: ${status.installationState}, integrity: ${status.artifactIntegrity})`,
       );
     }
-    if (!isSupportedRuntime(status)) {
+    if (!status.runtimeAvailable) {
       throw new Error(
         status.details.join('; ') ||
-          `Qwen3 inference requires Linux x64 Node.js ${status.runtimeRequirement}`,
+          `Qwen3 inference requires ${status.runtimeRequirement}`,
       );
     }
 
@@ -333,10 +333,6 @@ function poolLastActiveToken(
     embeddings.push(embedding);
   }
   return embeddings;
-}
-
-function isSupportedRuntime(status: ModelStatus): boolean {
-  return status.runtimeAvailable;
 }
 
 function validateTexts(texts: string[], name: string): void {

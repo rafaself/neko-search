@@ -1,3 +1,11 @@
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
@@ -60,12 +68,17 @@ const examples = [
   },
 ];
 
+const vectors = [];
 for (const { query, documents, expectedDocument } of examples) {
   const queryVector = await generator.embedQuery(query);
   const documentVectors = await generator.embedDocuments(documents);
   assertVector(queryVector, `query: ${query}`);
   documentVectors.forEach((vector, index) =>
     assertVector(vector, `document ${index + 1}: ${documents[index]}`),
+  );
+
+  vectors.push(
+    ...[queryVector, ...documentVectors].map((vector) => Array.from(vector)),
   );
 
   const scores = documentVectors.map((vector) => dot(queryVector, vector));
@@ -80,9 +93,101 @@ for (const { query, documents, expectedDocument } of examples) {
   );
 }
 
+if (process.env.NEKOSEARCH_QWEN3_VECTOR_OUTPUT) {
+  await writeFile(
+    process.env.NEKOSEARCH_QWEN3_VECTOR_OUTPUT,
+    JSON.stringify(vectors),
+    { flag: 'wx' },
+  );
+}
+
 process.stdout.write(
   `Validated local Qwen3 tokenizer and inference at ${modelDirectory} without network access.\n`,
 );
+await validateMcpHybridSearch();
+
+async function validateMcpHybridSearch() {
+  const root = await mkdtemp(join(tmpdir(), 'nekosearch-real-mcp-'));
+  const invoke = promisify(execFile);
+  const cli = fileURLToPath(
+    new URL('../../dist/apps/nekosearch/cli.js', import.meta.url),
+  );
+  const guard = `data:text/javascript,${encodeURIComponent(`
+    import { Socket } from 'node:net';
+    function block() { throw new Error('Network is disabled during hybrid MCP validation'); }
+    Socket.prototype.connect = block;
+    globalThis.fetch = block;
+  `)}`;
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: join(root, 'data'),
+    NEKOSEARCH_CONFIG: join(root, 'nekosearch.yaml'),
+    NEKOSEARCH_MODEL_DIR: modelDirectory,
+  };
+  const client = new Client({
+    name: 'nekosearch-real-model-validation',
+    version: '1.0.0',
+  });
+  try {
+    const docs = join(root, 'docs');
+    await mkdir(docs);
+    await writeFile(
+      env.NEKOSEARCH_CONFIG,
+      'search:\n  semantic:\n    enabled: false\n',
+    );
+    await writeFile(
+      join(docs, 'capital.md'),
+      '# Beijing\n\nThe capital of China is Beijing.\n',
+    );
+    await writeFile(
+      join(docs, 'gravity.md'),
+      '# Gravity\n\nGravity is a force that draws two masses toward each other.\n',
+    );
+
+    for (const args of [
+      ['add', '--dir', docs, '--id', 'qwen-validation@1'],
+      ['embeddings', 'build', 'qwen-validation@1'],
+      ['embeddings', 'enable'],
+    ]) {
+      await invoke(process.execPath, ['--import', guard, cli, ...args], {
+        cwd: process.cwd(),
+        env,
+        timeout: 50_000,
+      });
+    }
+
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: ['--import', guard, cli, 'serve'],
+        cwd: process.cwd(),
+        env,
+      }),
+    );
+    const result = await client.callTool({
+      name: 'search_docs',
+      arguments: {
+        sources: ['qwen-validation@1'],
+        query: 'What is the capital of China?',
+        limit: 2,
+      },
+    });
+    assert.ok(!result.isError, JSON.stringify(result.content));
+    const results = result.structuredContent.groups[0].results;
+    assert.equal(
+      results.length,
+      2,
+      'the real hybrid search should return both chunks',
+    );
+    assert.match(results[0].title, /Beijing/u);
+    process.stdout.write(
+      'Validated real Qwen3 Hybrid Search over offline MCP stdio.\n',
+    );
+  } finally {
+    await client.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 function assertLeftPadding(mask) {
   const [batchSize, sequenceLength] = mask.dims;

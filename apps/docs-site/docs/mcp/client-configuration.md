@@ -1,40 +1,29 @@
 ---
 title: Client Configuration
-description: Configure Grok Build CLI automatically or launch the NekoSearch stdio server from another MCP client.
+description: Configure Codex, Claude Code, Cursor, or Grok Build, or launch NekoSearch from another stdio client.
 ---
 
 # Client Configuration
 
-NekoSearch serves MCP over stdio. Its current automatic setup adapter supports Grok Build CLI. Other MCP clients can be configured manually if they support launching a local stdio server; NekoSearch does not currently detect or edit their settings.
+NekoSearch serves MCP over stdio. Run `nekosearch setup` to select a detected MCP client and review its user registration.
 
-## Grok Build CLI setup
+| Provider ID   | Detection                            | User registration                              |
+| ------------- | ------------------------------------ | ---------------------------------------------- |
+| `codex`       | `codex` on `PATH`                    | Managed by `codex mcp`                         |
+| `claude-code` | `claude` on `PATH`                   | Managed by `claude mcp` with user scope        |
+| `cursor`      | `cursor` or `cursor-agent` on `PATH` | The `nekosearch` entry in `~/.cursor/mcp.json` |
+| `grok-build`  | `grok` on `PATH`                     | Managed by `grok mcp` with user scope          |
 
-Run the interactive setup:
-
-```sh
-nekosearch setup
-```
-
-Setup offers Grok Build when the `grok` executable is on `PATH` and `grok inspect --json` returns a registration list that can be inspected safely. It configures the user-level MCP registry through the Grok CLI. NekoSearch does not edit the Grok TOML file directly.
-
-| Provider ID  | Detection                             | Registration target                                     |
-| ------------ | ------------------------------------- | ------------------------------------------------------- |
-| `grok-build` | `grok` executable available on `PATH` | User MCP registry managed by `grok mcp` (`config.toml`) |
-
-The user config path used to identify registration scope is `${GROK_HOME:-~/.grok}/config.toml`.
+An existing project entry can take precedence over a user registration. To inspect or change a project registration, open the client's MCP settings for that project.
 
 ## Configure or remove directly
 
 ```sh
-nekosearch mcp configure grok-build
-nekosearch mcp remove grok-build
+nekosearch mcp configure codex
+nekosearch mcp remove codex
 ```
 
-`configure` inspects existing registrations first. An exact matching user-level `stdio` registration is left unchanged. If the name `nekosearch` is available, NekoSearch asks Grok Build to add the server with the user scope and then inspects the result again.
-
-`remove` deletes only a single verified user-level registration whose command matches this NekoSearch installation. A registration in another scope, with a different command, with unknown origin, or with multiple same-name entries is a conflict and is left unchanged. There is no force option.
-
-Both commands require `grok` on `PATH`. Configuration errors, unsupported `grok inspect --json` output, and conflicts are reported as command failures. Neither command downloads documentation or verifies a live MCP connection.
+Replace `codex` with the provider ID for your client. `configure` adds the user registration when absent and leaves an exact match alone. `remove` removes a matching user registration. A customized or conflicting entry requires review in the client. Restart or reconnect your MCP client, then call `list_docs` to verify the connection.
 
 ## Launch from another MCP client
 
@@ -64,4 +53,4 @@ After configuration, restart or reconnect the client, then verify that `list_doc
 
 ## Remove a registration
 
-Use `nekosearch mcp remove grok-build` for a registration managed by the Grok Build adapter. Remove manual registrations from the corresponding MCP client's settings. Removing a registration does not uninstall NekoSearch or remove any documentation snapshots.
+Use `nekosearch mcp remove <provider>` for a verified user registration. Remove manual registrations from the corresponding MCP client's settings. Removing a registration does not uninstall NekoSearch or remove any documentation snapshots.

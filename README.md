@@ -30,27 +30,30 @@ Run the interactive setup when you want to install curated docs and register thi
 nekosearch setup
 ```
 
-Setup asks which curated documentation snapshots you want, offers an optional Qwen3-Embedding-0.6B installation (~625 MB across all release assets), then checks for supported provider CLIs. Skipping keeps Semantic Search disabled and avoids downloading the model or loading the ML runtime. Choosing installation checks the optional runtime before downloading Qwen3, validates the model and existing snapshot vectors before enabling, and ingests selected new docs with embeddings. Grok Build is available when its CLI is installed and reports a safe user-level registration inventory. Matching NekoSearch registrations start checked; conflicts are shown as disabled choices. Uncheck a verified registration to remove it after review. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`.
+Setup asks which curated documentation snapshots and MCP clients you want, then offers an optional Qwen3-Embedding-0.6B installation (~625 MB across all release assets). Skipping keeps Semantic Search disabled and avoids downloading the model or loading the ML runtime. Choosing installation checks the optional runtime before downloading Qwen3, validates the model and existing snapshot vectors before enabling, and ingests selected new docs with embeddings. Setup supports Codex, Claude Code, Cursor, and Grok Build when their executables are detected. Matching NekoSearch registrations start checked; conflicts are shown as disabled choices. Uncheck a verified registration to remove it after review. The keyboard help at the bottom reflects the focused option (`Space: select` or `Space: unselect`) and includes `Backspace: go back`.
 
-Before it changes anything, setup shows a final overview of the documentation, Semantic Search choice, and providers selected. Downloads, local indexing, and provider configuration begin only after you confirm. If model setup, docs download, or provider configuration fails, setup reports the failure and continues with remaining operations; Semantic Search is enabled only after model and snapshot validation succeeds. Provider registrations are added, inspected, and removed through the provider's official CLI. NekoSearch does not directly edit third-party JSON, JSONC, TOML, or other configuration files. Conflicting or unrecognized registrations remain untouched, and re-running setup leaves matching registrations unchanged. On a non-interactive terminal it exits before checking providers or downloading docs.
+Before it changes anything, setup shows a final overview of the documentation, Semantic Search choice, and providers selected. Downloads, local indexing, and provider configuration begin only after you confirm. If model setup, docs download, or provider configuration fails, setup reports the failure and continues with remaining operations; Semantic Search is enabled only after model and snapshot validation succeeds. NekoSearch uses the client CLI for Codex, Claude Code, and Grok Build changes. For Cursor, it updates only the NekoSearch entry in the global MCP JSON file. Conflicting or unrecognized registrations remain untouched, and re-running setup leaves matching registrations unchanged. On a non-interactive terminal it exits before checking providers or downloading docs.
 
 Package installation and upgrades never run setup automatically. Setup only downloads documentation when you explicitly select a curated source. Client registration is local and uses the absolute Node.js executable, the installed NekoSearch CLI path, and the `serve` argument. It does not start a shell, edit project settings, start a daemon, or enable an HTTP listener.
 
 ### MCP client support
 
-NekoSearch currently supports provider management through official CLI commands only. The inspection command runs from a neutral temporary directory and reads registration metadata without starting MCP servers. An unfamiliar CLI output or unknown registration origin disables automatic setup.
+NekoSearch inspects user registration metadata without starting MCP servers. A registry it cannot verify is unavailable for automatic setup.
 
-| Provider       | Setup support                                                                  | Requirement and management path                                                                                                                                                         |
-| -------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Grok Build CLI | Automatic through `grok inspect --json`, `grok mcp add`, and `grok mcp remove` | Install the Grok Build CLI and make `grok` available on `PATH`. NekoSearch registers only in the user scope. [Official Grok MCP CLI docs](https://docs.x.ai/build/features/mcp-servers) |
+| Provider       | Executable on `PATH`       | User registration                       |
+| -------------- | -------------------------- | --------------------------------------- |
+| Codex          | `codex`                    | Managed by `codex mcp`                  |
+| Claude Code    | `claude`                   | Managed by `claude mcp` with user scope |
+| Cursor         | `cursor` or `cursor-agent` | Global `~/.cursor/mcp.json`             |
+| Grok Build CLI | `grok`                     | Managed by `grok mcp` with user scope   |
 
 A registration being written does not prove that a client connected or completed an MCP handshake. NekoSearch does not run provider health checks because those checks can start the MCP server.
 
 Configure or remove the same verified user registration without the interactive setup:
 
 ```sh
-nekosearch mcp configure grok-build
-nekosearch mcp remove grok-build
+nekosearch mcp configure codex
+nekosearch mcp remove codex
 ```
 
 The provider-specific command is `grok mcp add --scope user nekosearch -- <node> <nekosearch-cli> serve`. Removal uses `grok mcp remove --scope user nekosearch` only after `grok inspect --json` confirms that the named registration has the expected command, arguments, and user origin. A same-name registration from another scope, an unknown origin, or a different command is left unchanged.
@@ -127,13 +130,15 @@ The default model directory is under the same persistent application-data root a
 
 Set `NEKOSEARCH_MODEL_DIR` or pass `--dir <model-dir>` to use an exact alternate model directory. Use the same override for `status` and `remove`; set `NEKOSEARCH_MODEL_DIR` when running embedding commands or `serve` with an alternate location. Removal requires the NekoSearch ownership marker and deletes only the release files it manages. Other files in that directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. Once removed, inference is reported unavailable until the model is installed again.
 
-The npm package does not download model weights or install the ML runtime for lexical-only users. Transformers.js is an optional peer dependency, pinned to `4.3.2`; it brings ONNX Runtime Node `1.30.0`. To enable local inference, install it in the application directory that launches NekoSearch:
+The npm package does not download model weights or install the ML runtime for lexical-only users. Transformers.js is an optional peer dependency, pinned to `4.3.2`; it brings ONNX Runtime Node `1.30.0`. To enable local inference, install it alongside NekoSearch. For a project install, run this in the project directory:
 
 ```sh
 npm install --save-exact @huggingface/transformers@4.3.2
 ```
 
-Inference reads only the versioned local model directory, disables Transformers.js remote models, uses CPU execution, and does not require a network connection. The validated runtime is Linux x64 on Node.js `24.22.2`.
+For a global NekoSearch installation, use `npm install --global @huggingface/transformers@4.3.2` under the same Node.js installation. Verify readiness with `nekosearch model status`.
+
+Inference reads only the versioned local model directory, disables Transformers.js remote models, uses CPU execution, and does not require a network connection. Inference requires Linux x64 and Node.js 24.15.0 or newer. Node.js 24.22.3, 25.9.0, and 26.13.1 passed offline inference with the same model. Use Node.js 26 LTS for new installations.
 
 The local `EmbeddingGenerator` accepts document batches and individual queries. Queries are formatted as `Instruct: Given a query about software documentation, retrieve relevant documentation passages that answer the query\nQuery:<query>`; documents are passed without a prefix. The generator loads one shared CPU `q8` pipeline per model directory, processes one item at a time to cap memory use, selects each sequence's last attended token, and L2-normalizes the resulting 1024-dimensional vectors. Inputs are truncated at 8,192 tokens for the validated runtime.
 
@@ -171,8 +176,8 @@ The dedicated real-inference Jest test is skipped in regular CI. Run it with `NE
 | `nekosearch add nestjs@11` / `nestjs@12`                    | Yes             | Fetches the selected curated source over HTTPS and builds it locally.              |
 | `nekosearch update nestjs@11` / `nestjs@12`                 | Yes             | Resolves and builds the requested major's latest curated commit.                   |
 | `nekosearch serve`                                          | No              | Serves search and fetch tools over stdio using read-only SQLite connections.       |
-| `nekosearch mcp configure grok-build`                       | No              | Adds the verified user registration through the Grok Build CLI.                    |
-| `nekosearch mcp remove grok-build`                          | No              | Removes only the verified NekoSearch user registration through the Grok Build CLI. |
+| `nekosearch mcp configure <provider>`                       | No              | Adds and verifies a user MCP registration.                                         |
+| `nekosearch mcp remove <provider>`                          | No              | Removes a matching NekoSearch user registration.                                   |
 | `nekosearch model install` / `model remove`                 | Yes for install | Installs or removes only NekoSearch-managed model release assets.                  |
 | `nekosearch model status`                                   | No              | Verifies model checksums and reports inference readiness.                          |
 

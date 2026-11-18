@@ -49,8 +49,6 @@ interface ResolvedSetupClientOptions {
   providerRunner: McpProviderRuntime['runner'];
 }
 
-const USER_TARGET = 'Grok Build user MCP registry (managed by `grok mcp`)';
-
 export async function inspectSetupClients(
   options: SetupClientOptions,
 ): Promise<SetupClientStatus[]> {
@@ -74,8 +72,8 @@ export async function inspectSetupClients(
         registration: 'unknown',
         setupMode: 'unsupported',
         scope: 'user',
-        target: USER_TARGET,
-        reason: `The installed CLI cannot be inspected safely: ${errorMessage(error)}`,
+        target: adapter.target,
+        reason: `The provider configuration cannot be inspected safely: ${errorMessage(error)}`,
       });
     }
   }
@@ -139,7 +137,7 @@ function statusForRegistrations(
       registration: 'missing',
       setupMode: 'automatic',
       scope: 'user',
-      target: USER_TARGET,
+      target: adapter.target,
     };
   }
 
@@ -147,6 +145,7 @@ function statusForRegistrations(
     matches.length === 1 &&
     matches[0]?.scope === 'user' &&
     matches[0]?.transport === 'stdio' &&
+    !matches[0]?.customized &&
     matches[0]?.command === options.serverCommand.command &&
     sameArguments(matches[0]?.args, options.serverCommand.args)
   ) {
@@ -159,16 +158,16 @@ function statusForRegistrations(
       registration: 'configured',
       setupMode: 'automatic',
       scope: 'user',
-      target: USER_TARGET,
+      target: adapter.target,
     };
   }
 
   const registration = matches[0];
   const reason =
     matches.length > 1
-      ? 'Multiple registrations named nekosearch are visible across Grok Build scopes'
+      ? `Multiple registrations named nekosearch are visible across ${adapter.label} scopes`
       : registration?.scope === 'unknown'
-        ? 'Grok Build did not report the origin of its nekosearch registration'
+        ? `${adapter.label} did not report the origin of its nekosearch registration`
         : registration?.scope !== 'user'
           ? `The nekosearch registration belongs to the ${registration?.scope ?? 'unknown'} scope`
           : 'A different nekosearch MCP registration already exists';
@@ -181,7 +180,7 @@ function statusForRegistrations(
     registration: registration?.scope === 'unknown' ? 'unknown' : 'conflict',
     setupMode: 'automatic',
     scope: 'user',
-    target: USER_TARGET,
+    target: adapter.target,
     reason,
   };
 }
@@ -190,6 +189,7 @@ function createAdapters(
   options: ResolvedSetupClientOptions,
 ): McpProviderAdapter[] {
   return createSetupProviderRegistry({
+    homeDirectory: options.homeDirectory,
     environment: options.environment,
     platform: options.platform,
     runner: options.providerRunner,

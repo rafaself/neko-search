@@ -11,12 +11,12 @@ Install curated documentation, build from your own files, or ingest a directory 
 
 ## Requirements
 
-- **Node.js:** `^24.15.0 || >=26.0.0`, matching the package's engine declaration. Node 25 is outside this supported range.
+- **Node.js:** `>=24.15.0`, including Node 25. Node 26 LTS is recommended for new installations.
 - **npm:** for installing the CLI.
 - **An MCP client with stdio support:** for agent integration. See [Client Configuration](../mcp/client-configuration.md).
 - **An interactive terminal:** when using `nekosearch setup`.
 
-Lexical search needs no model or ML runtime. Optional Qwen3 inference is currently validated on Linux x64 with Node.js `24.22.2`; it requires the optional Transformers.js `4.3.2` runtime and downloads about 625 MB of model release assets on explicit installation. See [Local Embeddings and Hybrid Search](../guides/hybrid-search.md) for the full workflow and measured resource notes.
+Lexical search needs no model or ML runtime. Optional Qwen3 inference is available on Linux x64 with the same Node.js minimum. It requires the optional Transformers.js `4.3.2` runtime and downloads about 625 MB of model release assets on explicit installation. See [Local Embeddings and Hybrid Search](../guides/hybrid-search.md) for the full workflow and measured resource notes.
 
 SQLite support comes from Node.js. You do not need a separate database server, a Git installation for GitHub ingestion, or a search API key.
 
@@ -53,7 +53,7 @@ This lists bundled and installed snapshots. A new catalog has the bundled MCP re
 ## Choose your next step
 
 - [Quick Start](./quick-start.md): connect an agent and make your first search.
-- [Interactive Setup](./setup.md): choose optional curated documentation and configure the detected Grok Build provider.
+- [Interactive Setup](./setup.md): choose optional curated documentation and configure detected MCP providers.
 - [Local Embeddings and Hybrid Search](../guides/hybrid-search.md): install Qwen3 later, build vectors, and enable hybrid retrieval.
 - [Custom Documentation](../guides/custom-documentation.md): install a directory from your own project.
 

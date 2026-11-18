@@ -23,15 +23,15 @@ Use a [supported Node.js version](./installation.md#requirements). Adding the Ne
 nekosearch setup
 ```
 
-If Grok Build CLI (`grok`) is available on `PATH`, select its detected provider and review the proposed user-level registration. Setup recognizes the installed `nestjs@12` snapshot and configures Grok Build to launch NekoSearch with an absolute Node executable, CLI path, and `serve` argument. Other MCP clients can launch the same stdio command through their own settings.
+Select Codex, Claude Code, Cursor, or Grok Build when detected. Review the proposed user registrations. Setup recognizes the installed `nestjs@12` snapshot and registers an absolute Node executable, CLI path, and `serve` argument. Other MCP clients can launch the same stdio command through their own settings.
 
 Restart or reconnect your client as needed so it loads its MCP configuration. Your client launches the server; you do not need to keep a separate `nekosearch serve` terminal running.
 
-To configure or remove Grok Build directly instead of using the interactive flow:
+To configure or remove Codex directly from the CLI:
 
 ```sh
-nekosearch mcp configure grok-build
-nekosearch mcp remove grok-build
+nekosearch mcp configure codex
+nekosearch mcp remove codex
 ```
 
 See [Client Configuration](../mcp/client-configuration.md) if a client is not detected or needs manual configuration.
@@ -92,7 +92,7 @@ Restart the client's NekoSearch server after installation, then call `list_docs`
 ## If something is missing
 
 - **CLI not found:** check that your npm global executable directory is on `PATH`.
-- **Grok Build is missing from setup:** make sure `grok` is on `PATH`; other clients need manual stdio configuration as described in the [client configuration reference](../mcp/client-configuration.md).
+- **A client is missing from setup:** check that its executable is on `PATH`. See detection rules and manual stdio configuration in the [client configuration reference](../mcp/client-configuration.md).
 - **Unknown source selector:** call `list_docs` in the current session and use an exact returned selector.
 - **New source absent:** restart the MCP server through your client.
 - **Catalog error:** run `nekosearch status` to inspect local snapshot state.

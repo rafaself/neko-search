@@ -1,0 +1,44 @@
+name: Validate Local Inference
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inference:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 25.9.0, 'lts/*', current]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: npm
+
+      - name: Install development and inference dependencies
+        run: |
+          npm ci
+          npm install --no-save --package-lock=false @huggingface/transformers@4.3.2
+
+      - name: Build and install the pinned model
+        env:
+          NEKOSEARCH_MODEL_DIR: ${{ runner.temp }}/nekosearch-model
+        run: |
+          npm run build
+          node dist/apps/nekosearch/cli.js model install
+          node dist/apps/nekosearch/cli.js model status
+
+      - name: Run real offline Qwen3 inference
+        run: npm test -- --runTestsByPath test/integration/apps/nekosearch/local-qwen3-inference.integration.spec.ts
+        env:
+          NEKOSEARCH_RUN_QWEN3_INTEGRATION: '1'
+          NEKOSEARCH_MODEL_DIR: ${{ runner.temp }}/nekosearch-model

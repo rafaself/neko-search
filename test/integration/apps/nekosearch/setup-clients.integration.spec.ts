@@ -72,7 +72,8 @@ describe('NekoSearch MCP provider adapters', () => {
     registrations = [];
     calls = [];
     runner = {
-      resolve: () => join(root, 'bin with spaces', 'grok'),
+      resolve: (name) =>
+        name === 'grok' ? join(root, 'bin with spaces', 'grok') : undefined,
       run: (_executable, arguments_) => {
         calls.push(arguments_);
         if (arguments_[0] === 'inspect') {

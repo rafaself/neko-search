@@ -22,9 +22,9 @@ Print usage and network-access notes to stdout, then exit successfully. Invoking
 nekosearch setup
 ```
 
-Interactively choose curated snapshots, optionally install Qwen3 and enable Semantic Search, and when Grok Build CLI is detected choose its user-level NekoSearch registration. Model installation and embedding generation happen only after the final review and confirmation. Skipping the model keeps Semantic Search disabled and lexical search available. Deselecting an existing matching Grok registration proposes removing it.
+Interactively choose curated snapshots, optionally install Qwen3 and enable Semantic Search, and choose user registrations for detected MCP clients. Model installation and embedding generation happen only after the final review and confirmation. Skipping the model keeps Semantic Search disabled and lexical search available. Deselecting an existing matching registration proposes removing it.
 
-**Errors:** requires interactive stdin/stdout; Grok Build inspection conflicts and individual download/configuration failures are reported. Remaining confirmed operations can continue after a failure.
+**Errors:** requires interactive stdin/stdout; provider inspection conflicts and individual download/configuration failures are reported. Remaining confirmed operations can continue after a failure.
 
 See [Interactive Setup](../getting-started/setup.md).
 
@@ -166,7 +166,7 @@ Manage the pinned Qwen3-Embedding-0.6B ONNX release independently from documenta
 | `status`   | Report installation state, version, upstream revision, local directory, artifact integrity, and inference readiness.                                                                                                    |
 | `remove`   | Remove only model artifacts with a valid NekoSearch ownership marker. Other files in the model directory are preserved. Removal is blocked while Semantic Search is enabled; run `nekosearch embeddings disable` first. |
 
-The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Set `NEKOSEARCH_MODEL_DIR` while running embedding commands or `serve` when you installed into an alternate directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. To enable inference, install it in the application directory that launches NekoSearch with `npm install --save-exact @huggingface/transformers@4.3.2`; it includes ONNX Runtime Node `1.30.0`. Inference is local-only and validated on Linux x64 with Node.js `24.22.2`.
+The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using the same platform-specific app-data root as the documentation catalog. `--dir` and `NEKOSEARCH_MODEL_DIR` select an exact alternate model directory. Set `NEKOSEARCH_MODEL_DIR` while running embedding commands or `serve` when you installed into an alternate directory. Transformers.js `4.3.2` is an optional peer dependency and is not installed for lexical-only users. To enable inference, install it in the application directory that launches NekoSearch with `npm install --save-exact @huggingface/transformers@4.3.2`; it includes ONNX Runtime Node `1.30.0`. Inference is local-only and requires Linux x64 with Node.js 24.15.0 or newer.
 
 **Errors:** network or HTTP failures after retries, invalid release metadata/checksums, unmanaged target directory, incomplete managed files, and unsafe paths. A failed installation remains in a hidden staging directory and is not reported as installed. `remove` refuses directories without the matching NekoSearch ownership marker.
 
@@ -228,17 +228,17 @@ nekosearch mcp configure <provider>
 
 Configure the NekoSearch stdio server with a supported provider. The current provider is:
 
-| Provider ID  | Behavior                                                                                           |
-| ------------ | -------------------------------------------------------------------------------------------------- |
-| `grok-build` | Inspect Grok Build, add a user-level registration if absent, and verify the resulting registration |
+| Provider ID                                    | Behavior                                                 |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `codex`, `claude-code`, `cursor`, `grok-build` | Add and verify a user registration for a detected client |
 
 ```sh
-nekosearch mcp configure grok-build
+nekosearch mcp configure codex
 ```
 
 The command delegates to `grok inspect --json` and `grok mcp add --scope user nekosearch -- <node> <cli-entry-point> serve`. An exact matching registration is unchanged. NekoSearch does not directly edit Grok's configuration file and has no force option.
 
-**Errors:** unknown provider, Grok Build CLI not detected on `PATH`, failed inspection or registration verification, conflicting or ambiguous same-name registration, or a failed Grok CLI command. The command exits with code `1` for these operational failures. Registration does not perform an MCP connection test.
+**Errors:** unknown provider, client executable missing from `PATH`, failed inspection or registration verification, conflicting or ambiguous same-name registration, or a failed client operation. The command exits with code `1` for these operational failures. Registration does not perform an MCP connection test.
 
 ## mcp remove
 
@@ -246,15 +246,15 @@ The command delegates to `grok inspect --json` and `grok mcp add --scope user ne
 nekosearch mcp remove <provider>
 ```
 
-Remove a verified NekoSearch registration managed by the selected provider. The current supported provider is `grok-build`:
+Remove a verified NekoSearch registration managed by the selected provider. Use the same provider ID as for `configure`.
 
 ```sh
-nekosearch mcp remove grok-build
+nekosearch mcp remove codex
 ```
 
-Removal is idempotent when the registration is already absent. For Grok Build, NekoSearch first confirms that exactly one user-scope `nekosearch` registration matches this installation, delegates removal to `grok mcp remove --scope user nekosearch`, and verifies the result. Registrations with a different command, another scope, or an unknown origin are left unchanged.
+Removal is idempotent when the registration is already absent. NekoSearch checks that the user registration matches this installation before removing it. Registrations with a different command, additional settings, or an ambiguous origin require review in the client.
 
-**Errors:** unknown provider, Grok Build CLI not detected on `PATH`, unverified or conflicting registration, failed Grok CLI command, or a registration that remains after removal. Operational failures exit with code `1`.
+**Errors:** unknown provider, client executable missing from `PATH`, unverified or conflicting registration, failed client operation, or a registration that remains after removal. Operational failures exit with code `1`.
 
 ## serve
 

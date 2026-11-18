@@ -21,7 +21,7 @@ describe('real local Qwen3 inference', () => {
         process.execPath,
         [validatorPath],
         {
-          cwd: process.cwd(),
+          cwd: process.env.NEKOSEARCH_QWEN3_RUNTIME_CWD ?? process.cwd(),
           env: process.env,
           timeout: 120_000,
           maxBuffer: 1024 * 1024,
@@ -30,6 +30,7 @@ describe('real local Qwen3 inference', () => {
       expect(stdout).toContain('Validated local Qwen3 tokenizer and inference');
       expect(stdout).toContain('What is the capital of China?');
       expect(stdout).toContain('Explain gravity');
+      expect(stdout).toContain('Hybrid Search over offline MCP stdio');
     },
     120_000,
   );

@@ -35,8 +35,8 @@ Hybrid's higher latency includes one local query embedding plus both retrieval p
 
 ## Requirements and resource use
 
-- NekoSearch package support: Node.js `^24.15.0 || >=26.0.0`; Node.js 25 is outside the package engine range.
-- Validated inference environment: Linux x64, Node.js `24.22.2`, Transformers.js `4.3.2`, ONNX Runtime Node `1.30.0`, CPU execution, and model dtype `q8`. Other platforms or Node versions can use lexical search, but local Qwen inference is not validated there.
+- NekoSearch requires Node.js 24.15.0 or newer. Node.js 25.9.0 is tested, and Node.js 26 LTS is recommended for new installations.
+- Qwen3 inference requires Linux x64, Node.js 24.15.0 or newer, Transformers.js `4.3.2`, and ONNX Runtime Node `1.30.0`. Offline inference was tested on Node.js `24.22.2`, `24.22.3`, `25.9.0`, and `26.13.1` with CPU execution and model dtype `q8`. The model release records its original validation environment.
 - Public model release: approximately 625 MB (624,978,804 bytes across all eight release assets); the ONNX weights are 613,527,631 bytes. Keep additional free space for staging and temporary files during installation.
 - The explicit Transformers.js runtime install occupied 758,284,875 bytes of file content in the Node.js 24.22.2 / npm 11.19.1 Linux x64 validation environment. Together with the model release, reserve about 1.4 GB before accounting for snapshot vectors or npm cache; lexical-only installs avoid this runtime footprint.
 - Inference is CPU-only in this release. In the measured NestJS 11/12 evaluation, process RSS peaked at 1,604,591,616 bytes (about 1.50 GiB), compared with 271,753,216 bytes for BM25 before model load. This is an observed Linux x64 run, not a guaranteed minimum; actual memory use depends on the host and workload, and no official minimum RAM requirement is published.
@@ -55,7 +55,9 @@ For a project-local NekoSearch install, run `npm install --save-exact @huggingfa
 
 `nekosearch model install` downloads the fixed `qwen3-embedding-0.6b-v1.0.0` GitHub Release from [rafaself/nekosearch-models](https://github.com/rafaself/nekosearch-models/releases/tag/qwen3-embedding-0.6b-v1.0.0). It downloads only the selected Q8 ONNX model, its tokenizer/configuration, manifest, checksums, license, and notice. The model is pinned to upstream commit `c25a394dd583836952667c12f008335071b3f43d` in `onnx-community/Qwen3-Embedding-0.6B-ONNX`; it never follows a branch at install time.
 
-```sh
+```
+
+If you installed NekoSearch globally, run `npm install --global @huggingface/transformers@4.3.2` under the same Node.js installation. This keeps the runtime available when the MCP client launches NekoSearch from another directory.sh
 nekosearch model install
 nekosearch model status
 ```
@@ -136,7 +138,7 @@ search:
 
 - If `model status` reports `not-installed`, run `nekosearch model install` while online. A corrupt or unmanaged target is never overwritten; inspect the reported directory and choose an explicit `--dir` if needed.
 - If artifact integrity is invalid, do not enable Semantic Search. Remove a verified managed installation with `nekosearch model remove` after disabling Semantic Search, then reinstall from the pinned release.
-- If inference is unavailable, check `model status` for the exact requirement. The tested runtime is Linux x64 Node.js `24.22.2` with `@huggingface/transformers@4.3.2` and its `onnxruntime-node@1.30.0` dependency.
+- If inference is unavailable, check `model status` for the exact requirement. The runtime requires Linux x64 and Node.js 24.15.0 or later with `@huggingface/transformers@4.3.2` and its `onnxruntime-node@1.30.0` dependency.
 - If enable reports missing or invalid vectors, run its suggested `nekosearch embeddings build <source@version>` command, then `nekosearch embeddings status` and retry `nekosearch embeddings enable`.
 - If an MCP request fails because a selected snapshot is lexical-only, remove that selector from the request's `sources` or run `nekosearch embeddings disable`; hybrid search does not fall back silently.
 - If the config changed while the MCP server was running, restart the client process so it loads the updated setting.
