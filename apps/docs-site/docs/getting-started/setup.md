@@ -9,7 +9,7 @@ description: Choose curated documentation, optionally install the Qwen3 model, a
 nekosearch setup
 ```
 
-Setup helps you install optional curated snapshots and connect supported MCP clients. It runs only when invoked explicitly; installing or upgrading the npm package does not run it.
+The [guided install command](./installation.md#install-nekosearch) opens setup immediately after npm succeeds. Run `nekosearch setup` again at any time to install optional snapshots or connect supported MCP clients.
 
 ## Choose documentation
 

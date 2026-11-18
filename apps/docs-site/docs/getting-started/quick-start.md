@@ -7,23 +7,17 @@ description: Connect an AI coding agent, discover a documentation source, and ma
 
 This walkthrough uses the curated `nestjs@12` snapshot for its first search.
 
-## 1. Install NekoSearch {#install-nekosearch}
+## 1. Install NekoSearch and start setup {#install-nekosearch}
 
 ```sh
-npm install --global nekosearch
-nekosearch add nestjs@12
-nekosearch list
+npm install --global nekosearch && nekosearch setup
 ```
 
-Use a [supported Node.js version](./installation.md#requirements). Adding the NestJS snapshot requires HTTPS access to GitHub. The catalog also includes the bundled `mcp@2025-11-25` reference.
+Use a [supported Node.js version](./installation.md#requirements). Once npm finishes, setup opens in the same terminal. Select `nestjs@12` as the source for this walkthrough. Installing it requires HTTPS access to GitHub. The catalog includes the bundled `mcp@2025-11-25` reference.
 
 ## 2. Connect your agent {#connect-your-agent}
 
-```sh
-nekosearch setup
-```
-
-Select Codex, Claude Code, Cursor, or Grok Build when detected. Review the proposed user registrations. Setup recognizes the installed `nestjs@12` snapshot and registers an absolute Node executable, CLI path, and `serve` argument. Other MCP clients can launch the same stdio command through their own settings.
+In the setup wizard, select Codex, Claude Code, Cursor, or Grok Build when detected. Review and confirm the proposed changes. Setup installs the selected snapshot and registers NekoSearch with the selected client. If you already have NekoSearch, run `nekosearch setup` to open the wizard again. Confirm the snapshot is available with `nekosearch list`.
 
 Restart or reconnect your client as needed so it loads its MCP configuration. Your client launches the server; you do not need to keep a separate `nekosearch serve` terminal running.
 

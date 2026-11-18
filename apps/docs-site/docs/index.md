@@ -49,12 +49,11 @@ NekoSearch searches only the sources requested by the client. An unknown selecto
 Install the CLI with a [supported Node.js version](./getting-started/installation.md#requirements):
 
 ```sh
-npm install --global nekosearch
-nekosearch setup
+npm install --global nekosearch && nekosearch setup
 nekosearch list
 ```
 
-Interactive setup lets you select optional curated documentation and review user registrations for detected MCP clients. Other stdio MCP clients can launch the server using their own configuration settings.
+Setup opens as soon as installation succeeds. Select optional curated documentation and review user registrations for detected MCP clients. Other stdio MCP clients can launch the server using their own configuration settings.
 
 Follow the [Quick Start](./getting-started/quick-start.md) to make your first search using the bundled reference, or read [Installation](./getting-started/installation.md) for requirements and installation details.
 

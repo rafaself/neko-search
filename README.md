@@ -16,15 +16,14 @@ NekoSearch is a generic documentation server. NestJS is an optional curated exam
 Requirements: Node.js 24.15 or newer and npm.
 
 ```sh
-npm install --global nekosearch
-nekosearch --help
+npm install --global nekosearch && nekosearch setup
 ```
 
-Installing the npm package does not download or build NestJS documentation. Use `nekosearch list` to see the sources available locally; a new catalog contains the bundled MCP protocol summary and no NestJS source.
+Setup opens in the same terminal as soon as npm finishes successfully. It lets you choose optional sources. A new catalog already includes the bundled MCP protocol summary. Use `nekosearch list` to see the sources available locally.
 
 ## First-run setup
 
-Run the interactive setup when you want to install curated docs and register this local server with an MCP client:
+To open setup again after installing NekoSearch, run:
 
 ```sh
 nekosearch setup
@@ -34,7 +33,7 @@ Setup asks which curated documentation snapshots and MCP clients you want, then 
 
 Before it changes anything, setup shows a final overview of the documentation, Semantic Search choice, and providers selected. Downloads, local indexing, and provider configuration begin only after you confirm. If model setup, docs download, or provider configuration fails, setup reports the failure and continues with remaining operations; Semantic Search is enabled only after model and snapshot validation succeeds. NekoSearch uses the client CLI for Codex, Claude Code, and Grok Build changes. For Cursor, it updates only the NekoSearch entry in the global MCP JSON file. Conflicting or unrecognized registrations remain untouched, and re-running setup leaves matching registrations unchanged. On a non-interactive terminal it exits before checking providers or downloading docs.
 
-Package installation and upgrades never run setup automatically. Setup only downloads documentation when you explicitly select a curated source. Client registration is local and uses the absolute Node.js executable, the installed NekoSearch CLI path, and the `serve` argument. It does not start a shell, edit project settings, start a daemon, or enable an HTTP listener.
+For a package-only install or upgrade, run `npm install --global nekosearch` on its own. Setup downloads only the documentation you select and confirm. Client registration is local and uses the absolute Node.js executable, the installed NekoSearch CLI path, and the `serve` argument. It does not start a shell, edit project settings, start a daemon, or enable an HTTP listener.
 
 ### MCP client support
 

@@ -23,11 +23,10 @@ SQLite support comes from Node.js. You do not need a separate database server, a
 ## Install NekoSearch
 
 ```sh
-npm install --global nekosearch
-nekosearch --help
+npm install --global nekosearch && nekosearch setup
 ```
 
-The executable is named `nekosearch`. Installation and package upgrades do not run interactive setup or download optional documentation.
+Setup opens in the same terminal as soon as npm finishes installing `nekosearch`. Review and confirm your selections before setup downloads anything or configures a client. For a package-only install or upgrade, run `npm install --global nekosearch` on its own.
 
 ::: tip Ask your agent to configure NekoSearch
 Paste this prompt into your AI coding agent:
