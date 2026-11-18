@@ -125,11 +125,7 @@ describe('local model manager', () => {
       upstreamRevision: UPSTREAM_REVISION,
       artifactIntegrity: 'valid',
     });
-    expect(status.inferenceAvailable).toBe(
-      process.platform === 'linux' &&
-        process.arch === 'x64' &&
-        process.versions.node.startsWith('24.'),
-    );
+    expect(status.inferenceAvailable).toBe(status.runtimeAvailable);
     expect(formatModelStatus(status)).toContain('Artifact integrity: valid');
     expect(
       progress.some((message) => message.includes('model_quantized.onnx')),
@@ -231,13 +227,23 @@ function createReleaseFixture(): {
     model: {
       architecture: 'Qwen3Model',
       format: 'onnx',
+      contextLength: 32768,
       embeddingDimensions: 1024,
       pooling: 'last_token',
       normalization: 'l2',
     },
+    tokenizer: {
+      class: 'Qwen2Tokenizer',
+      algorithm: 'BPE',
+      files: ['tokenizer.json', 'tokenizer_config.json'],
+      paddingSide: 'left',
+      padToken: '<|endoftext|>',
+      eosToken: '<|im_end|>',
+    },
     runtime: {
       package: '@huggingface/transformers',
       version: '4.3.2',
+      onnxruntimeNodeVersion: '1.30.0',
       nodeVersion: '24.22.2',
       platform: 'linux',
       architecture: 'x64',
@@ -246,6 +252,7 @@ function createReleaseFixture(): {
       dtype: 'q8',
       subfolder: '',
       externalData: false,
+      recommendedBatchSize: 1,
     },
     artifacts,
   };

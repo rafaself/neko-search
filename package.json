@@ -54,6 +54,14 @@
     "remark-gfm": "^4.0.1",
     "zod": "^4.6.7"
   },
+  "peerDependencies": {
+    "@huggingface/transformers": "4.3.2"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
   "bundleDependencies": [
     "@nestjs-docs/documentation-engine"
   ],
@@ -81,6 +89,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "validate:qwen3": "npm run build && node scripts/validation/validate-qwen3-embedding.mjs",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watchAll",
     "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test",

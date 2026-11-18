@@ -15,6 +15,11 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { getUserDataDirectory } from './catalog.js';
+import {
+  inspectTransformersRuntime,
+  ONNX_RUNTIME_NODE_VERSION,
+  TRANSFORMERS_VERSION,
+} from './transformers-runtime.js';
 
 const MODEL_ID = 'qwen3-embedding-0.6b';
 const MODEL_VERSION = '1.0.0';
@@ -78,13 +83,23 @@ interface ModelManifest {
   model: {
     architecture: string;
     format: string;
+    contextLength: number;
     embeddingDimensions: number;
     pooling: string;
     normalization: string;
   };
+  tokenizer: {
+    class: string;
+    algorithm: string;
+    files: string[];
+    paddingSide: string;
+    padToken: string;
+    eosToken: string;
+  };
   runtime: {
     package: string;
     version: string;
+    onnxruntimeNodeVersion: string;
     nodeVersion: string;
     platform: string;
     architecture: string;
@@ -93,6 +108,7 @@ interface ModelManifest {
     dtype: string;
     subfolder: string;
     externalData: boolean;
+    recommendedBatchSize: number;
   };
   artifacts: ModelArtifact[];
 }
@@ -132,6 +148,7 @@ export interface ModelStatus {
   upstreamRevision: typeof UPSTREAM_REVISION;
   modelDirectory: string;
   artifactIntegrity: 'valid' | 'invalid' | 'missing' | 'unmanaged';
+  runtimeAvailable: boolean;
   inferenceAvailable: boolean;
   runtimeRequirement: string;
   details: string[];
@@ -283,8 +300,10 @@ export async function getModelStatus(
 ): Promise<ModelStatus> {
   const release = options.release ?? PINNED_RELEASE;
   const modelDirectory = resolveModelDirectory(options);
-  const runtimeRequirement =
-    'verified with @huggingface/transformers@4.3.2 on Linux x64 Node.js 24; runtime is external';
+  const runtimeRequirement = `@huggingface/transformers@${TRANSFORMERS_VERSION} with onnxruntime-node@${ONNX_RUNTIME_NODE_VERSION} on Linux x64 Node.js 24.22.2`;
+  const transformersRuntime = inspectTransformersRuntime();
+  const runtimeAvailable =
+    isSupportedRuntimeHost() && transformersRuntime.available;
   const base: ModelStatus = {
     modelId: MODEL_ID,
     installationState: 'not-installed',
@@ -292,6 +311,7 @@ export async function getModelStatus(
     upstreamRevision: UPSTREAM_REVISION,
     modelDirectory,
     artifactIntegrity: 'missing',
+    runtimeAvailable,
     inferenceAvailable: false,
     runtimeRequirement,
     details: [],
@@ -364,16 +384,23 @@ export async function getModelStatus(
     await verifyModelFiles(modelDirectory, manifest, release);
     const names = await readdir(modelDirectory);
     const managedNames = new Set([...RELEASE_ASSET_NAMES, MARKER_FILE]);
+    const runtimeValidated = isValidatedRuntime(manifest);
+    const currentRuntimeAvailable =
+      runtimeValidated && transformersRuntime.available;
+    const runtimeDetails = runtimeValidated
+      ? transformersRuntime.available
+        ? []
+        : [transformersRuntime.detail]
+      : [
+          `The current runtime is outside the validated Linux x64 Node.js ${manifest.runtime.nodeVersion} environment`,
+        ];
     return {
       ...base,
       installationState: 'installed',
       artifactIntegrity: 'valid',
-      inferenceAvailable: isValidatedRuntime(manifest),
-      details: isValidatedRuntime(manifest)
-        ? []
-        : [
-            'The current runtime is outside the tested Linux x64 Node.js 24 environment',
-          ],
+      runtimeAvailable: currentRuntimeAvailable,
+      inferenceAvailable: currentRuntimeAvailable,
+      details: runtimeDetails,
       unmanagedFiles: names.filter((name) => !managedNames.has(name)),
     };
   } catch (error) {
@@ -490,6 +517,7 @@ export function formatModelStatus(status: ModelStatus): string {
     `Upstream revision: ${status.upstreamRevision}`,
     `Local model directory: ${status.modelDirectory}`,
     `Artifact integrity: ${integrity}`,
+    `Runtime available: ${status.runtimeAvailable ? 'yes' : 'no'}`,
     `Available for inference: ${inference}`,
     ...(status.unmanagedFiles.length > 0
       ? [`Preserved unmanaged files: ${status.unmanagedFiles.join(', ')}`]
@@ -753,6 +781,7 @@ function parseAndValidateManifest(
   if (!isRecord(manifest))
     throw new Error('Release manifest must be an object');
   const model = manifest.model;
+  const tokenizer = manifest.tokenizer;
   const upstream = manifest.upstream;
   const releaseMetadata = manifest.release;
   const runtime = manifest.runtime;
@@ -770,12 +799,24 @@ function parseAndValidateManifest(
     !isRecord(model) ||
     model.architecture !== 'Qwen3Model' ||
     model.format !== 'onnx' ||
+    model.contextLength !== 32768 ||
     model.embeddingDimensions !== 1024 ||
     model.pooling !== 'last_token' ||
     model.normalization !== 'l2' ||
+    !isRecord(tokenizer) ||
+    tokenizer.class !== 'Qwen2Tokenizer' ||
+    tokenizer.algorithm !== 'BPE' ||
+    !Array.isArray(tokenizer.files) ||
+    tokenizer.files.length !== 2 ||
+    tokenizer.files[0] !== 'tokenizer.json' ||
+    tokenizer.files[1] !== 'tokenizer_config.json' ||
+    tokenizer.paddingSide !== 'left' ||
+    tokenizer.padToken !== '<|endoftext|>' ||
+    tokenizer.eosToken !== '<|im_end|>' ||
     !isRecord(runtime) ||
     runtime.package !== '@huggingface/transformers' ||
-    runtime.version !== '4.3.2' ||
+    runtime.version !== TRANSFORMERS_VERSION ||
+    runtime.onnxruntimeNodeVersion !== ONNX_RUNTIME_NODE_VERSION ||
     runtime.nodeVersion !== '24.22.2' ||
     runtime.platform !== 'linux' ||
     runtime.architecture !== 'x64' ||
@@ -784,6 +825,7 @@ function parseAndValidateManifest(
     runtime.dtype !== 'q8' ||
     runtime.subfolder !== '' ||
     runtime.externalData !== false ||
+    runtime.recommendedBatchSize !== 1 ||
     !Array.isArray(manifest.artifacts)
   ) {
     throw new Error(
@@ -884,7 +926,15 @@ function isValidatedRuntime(manifest: ModelManifest): boolean {
   return (
     process.platform === manifest.runtime.platform &&
     process.arch === manifest.runtime.architecture &&
-    process.versions.node.startsWith('24.')
+    process.versions.node === manifest.runtime.nodeVersion
+  );
+}
+
+function isSupportedRuntimeHost(): boolean {
+  return (
+    process.platform === 'linux' &&
+    process.arch === 'x64' &&
+    process.versions.node === '24.22.2'
   );
 }
 

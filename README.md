@@ -127,7 +127,17 @@ The default model directory is under the same persistent application-data root a
 
 Set `NEKOSEARCH_MODEL_DIR` or pass `--dir <model-dir>` to use an exact alternate model directory. Use the same override for `status` and `remove`. Removal requires the NekoSearch ownership marker and deletes only the release files it manages. Other files in that directory are preserved. Once removed, inference is reported unavailable until the model is installed again.
 
-The npm package does not download model weights or include Transformers.js or ONNX Runtime. The manager adds no npm dependencies. Lexical search therefore keeps its existing install footprint. Inference consumers provide `@huggingface/transformers@4.3.2` separately. The published compatibility check covers Linux x64 on Node.js 24.
+The npm package does not download model weights or install the ML runtime for lexical-only users. Transformers.js is an optional peer dependency, pinned to `4.3.2`; it brings ONNX Runtime Node `1.30.0`. To enable local inference, install it in the application directory that launches NekoSearch:
+
+```sh
+npm install --save-exact @huggingface/transformers@4.3.2
+```
+
+Inference reads only the versioned local model directory, disables Transformers.js remote models, uses CPU execution, and does not require a network connection. The validated runtime is Linux x64 on Node.js `24.22.2`.
+
+The local `EmbeddingGenerator` accepts document batches and individual queries. Queries are formatted as `Instruct: Given a query about software documentation, retrieve relevant documentation passages that answer the query\nQuery:<query>`; documents are passed without a prefix. The generator loads one shared CPU `q8` pipeline per model directory, processes one item at a time to cap memory use, selects each sequence's last attended token, and L2-normalizes the resulting 1024-dimensional vectors. Inputs are truncated at 8,192 tokens for the validated runtime. There is not yet a semantic search command or automatic indexing integration.
+
+To validate an installed model without network access, build NekoSearch and run `NEKOSEARCH_MODEL_DIR=<model-dir> npm run validate:qwen3`. The validation script blocks `fetch`, checks vector dimensions and normalization, and verifies retrieval ranking on two query/document pairs.
 
 ## Network access and serving
 
