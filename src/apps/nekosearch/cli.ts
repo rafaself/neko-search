@@ -46,6 +46,8 @@ if (command === 'setup' && arguments_.length === 0) {
   });
 } else if (command === 'model') {
   runModelCommand(arguments_);
+} else if (command === 'embeddings') {
+  runEmbeddingsCommand(arguments_);
 } else if (command === 'list' && arguments_.length === 0) {
   listCatalogIndexes()
     .then((entries) => process.stdout.write(`${formatCatalogList(entries)}\n`))
@@ -215,6 +217,117 @@ function runModelCommand(arguments_: string[]): void {
       );
       process.exitCode = 1;
     });
+}
+
+function runEmbeddingsCommand(arguments_: string[]): void {
+  const [operation, selector] = arguments_;
+  if (
+    (operation !== 'build' && operation !== 'status') ||
+    arguments_.length > 2 ||
+    (selector !== undefined && !isSourceSelector(selector))
+  ) {
+    process.stderr.write(
+      `nekosearch embeddings requires build [<source@version>] or status [<source@version>]\n${renderCliHelp()}`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  if (operation === 'status') {
+    void import('./embeddings.js')
+      .then(async (embeddings) => {
+        const statuses =
+          await embeddings.getDocumentationEmbeddingStatuses(selector);
+        process.stdout.write(
+          `${embeddings.formatDocumentationEmbeddingStatuses(statuses)}\n`,
+        );
+      })
+      .catch((error: unknown) => {
+        process.stderr.write(
+          `nekosearch embeddings status failed: ${formatError(error)}\n`,
+        );
+        process.exitCode = 1;
+      });
+    return;
+  }
+
+  const controller = new AbortController();
+  let interruptSignal: 'SIGINT' | 'SIGTERM' | undefined;
+  const onInterrupt = () => {
+    interruptSignal = 'SIGINT';
+    controller.abort('SIGINT');
+  };
+  const onTerminate = () => {
+    interruptSignal = 'SIGTERM';
+    controller.abort('SIGTERM');
+  };
+  process.once('SIGINT', onInterrupt);
+  process.once('SIGTERM', onTerminate);
+  void import('./embeddings.js')
+    .then(async (embeddings) => {
+      const results = await embeddings.buildDocumentationEmbeddings(selector, {
+        signal: controller.signal,
+        onProgress: ({
+          selector: source,
+          phase,
+          completedChunks,
+          totalChunks,
+        }) => {
+          if (phase === 'embedding') {
+            process.stderr.write(
+              `\rEmbedding ${source}: ${completedChunks}/${totalChunks} chunks`,
+            );
+          } else if (phase === 'activated') {
+            process.stderr.write(
+              `\nBuilt embeddings for ${source}: ${completedChunks} chunks.\n`,
+            );
+          } else if (phase === 'complete') {
+            process.stderr.write(
+              `Embeddings already complete for ${source} (${totalChunks} chunks).\n`,
+            );
+          }
+        },
+      });
+      const generated = results.reduce(
+        (total, result) => total + result.generatedChunks,
+        0,
+      );
+      const reused = results.reduce(
+        (total, result) => total + result.reusedChunks,
+        0,
+      );
+      process.stdout.write(
+        `Embedding build complete: ${results.length} source(s), ${generated} generated, ${reused} reused.\n`,
+      );
+    })
+    .catch((error: unknown) => {
+      const signal = interruptSignal;
+      if (signal === 'SIGINT' || signal === 'SIGTERM') {
+        process.stderr.write(
+          `nekosearch embeddings build interrupted by ${signal}; active snapshots remain complete.\n`,
+        );
+        process.exitCode = signal === 'SIGINT' ? 130 : 143;
+        return;
+      }
+      process.stderr.write(
+        `nekosearch embeddings build failed: ${formatError(error)}\n`,
+      );
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      process.removeListener('SIGINT', onInterrupt);
+      process.removeListener('SIGTERM', onTerminate);
+    });
+}
+
+function isSourceSelector(selector: string): boolean {
+  const separator = selector.lastIndexOf('@');
+  return (
+    separator > 0 &&
+    separator < selector.length - 1 &&
+    !selector.includes('\n') &&
+    !selector.includes('\r')
+  );
 }
 
 function runRemoveCommand(selector: string): void {

@@ -19,6 +19,7 @@ export function validateRuntimeIndex(
   version: DocumentationVersion,
   embeddingSpace?: DocumentationEmbeddingSpace,
   canonicalChunkIds?: ReadonlySet<string>,
+  validateEmbeddings = true,
 ): {
   revision: string;
   documentCount: number;
@@ -180,15 +181,17 @@ export function validateRuntimeIndex(
   }
   if (chunkCount === 0) fail('index contains no documentation chunks');
 
-  try {
-    validateDocumentationEmbeddingTable(
-      database,
-      embeddingSpace,
-      chunkIds,
-      canonicalChunkIds,
-    );
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+  if (validateEmbeddings) {
+    try {
+      validateDocumentationEmbeddingTable(
+        database,
+        embeddingSpace,
+        chunkIds,
+        canonicalChunkIds,
+      );
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
   }
 
   return {

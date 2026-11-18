@@ -14,6 +14,11 @@ import {
 const EMBEDDING_BLOB_BYTES = 1024 * Float32Array.BYTES_PER_ELEMENT;
 const NORMALIZED_VECTOR_TOLERANCE = 1e-3;
 
+export interface DocumentationEmbeddingTableInspection {
+  validChunkIds: ReadonlySet<string>;
+  invalidRows: number;
+}
+
 /** Validate that a complete embedding set maps one-to-one to canonical chunks. */
 export function validateDocumentationEmbeddingSet(
   embeddingSet: DocumentationEmbeddingSet,
@@ -172,6 +177,73 @@ export function validateDocumentationEmbeddingTable(
       throw new Error(`Missing SQLite embedding for chunk ${chunkId}`);
     }
   }
+}
+
+/** Inspect vector coverage without throwing for damaged embedding rows. */
+export function inspectDocumentationEmbeddingTable(
+  database: DatabaseSync,
+  embeddingSpace: DocumentationEmbeddingSpace | undefined,
+  expectedChunkIds: ReadonlySet<string>,
+): DocumentationEmbeddingTableInspection {
+  const tableRow = database
+    .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?")
+    .get(DOCUMENTATION_EMBEDDINGS_TABLE);
+  if (!tableRow) {
+    return { validChunkIds: new Set(), invalidRows: 0 };
+  }
+
+  let rows: Record<string, unknown>[];
+  try {
+    rows = database
+      .prepare(
+        `SELECT chunk_id AS chunkId, embedding FROM ${DOCUMENTATION_EMBEDDINGS_TABLE}`,
+      )
+      .all();
+  } catch {
+    return {
+      validChunkIds: new Set(),
+      invalidRows: expectedChunkIds.size,
+    };
+  }
+
+  const metadataValid =
+    embeddingSpace !== undefined &&
+    DocumentationEmbeddingSpaceSchema.safeParse(embeddingSpace).success;
+  const schemaValid =
+    typeof tableRow.sql === 'string' &&
+    normalizeIndexSchema(tableRow.sql) ===
+      normalizeIndexSchema(DOCUMENTATION_EMBEDDINGS_SCHEMA) &&
+    database
+      .prepare(`PRAGMA foreign_key_list(${DOCUMENTATION_EMBEDDINGS_TABLE})`)
+      .all().length === 0;
+  const validChunkIds = new Set<string>();
+  let invalidRows = 0;
+  for (const row of rows) {
+    const chunkId = row.chunkId;
+    if (
+      !metadataValid ||
+      !schemaValid ||
+      typeof chunkId !== 'string' ||
+      !chunkId.trim() ||
+      !expectedChunkIds.has(chunkId) ||
+      validChunkIds.has(chunkId)
+    ) {
+      invalidRows += 1;
+      continue;
+    }
+    try {
+      validateFloat32Blob(row.embedding, chunkId);
+      validChunkIds.add(chunkId);
+    } catch {
+      invalidRows += 1;
+    }
+  }
+
+  return {
+    validChunkIds,
+    invalidRows:
+      invalidRows === 0 && (!metadataValid || !schemaValid) ? 1 : invalidRows,
+  };
 }
 
 /** Read a validated vector set for incremental snapshot reuse. */

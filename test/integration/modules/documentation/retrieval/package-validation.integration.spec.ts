@@ -62,6 +62,7 @@ describe('npm package verification', () => {
       'dist/apps/nekosearch/build.js',
       'dist/apps/nekosearch/package-documentation.js',
       'dist/apps/nekosearch/semantic-search.js',
+      'dist/apps/nekosearch/embeddings.js',
       'dist/apps/nekosearch/build-runtime/config/documentation-build-config.js',
       'dist/apps/nekosearch/build-runtime/services/build-documentation-snapshot.js',
       'dist/apps/nekosearch/build-runtime/services/build-local-documentation.js',

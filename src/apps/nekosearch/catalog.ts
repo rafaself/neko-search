@@ -96,6 +96,16 @@ export interface SnapshotRemovalResult {
   cleanupWarning?: string;
 }
 
+export interface CatalogEmbeddingStatusCandidate {
+  source: string;
+  version: string;
+  revision: string;
+  databasePath: string;
+  manifest: DocumentationIndexRuntimeManifest;
+  corpus: DocumentationCorpus;
+  indexChecksumValid: boolean;
+}
+
 export interface SnapshotIdentity {
   source: string;
   version: string;
@@ -194,6 +204,92 @@ export async function getCatalogIndex(
     throw new Error(`Catalog contains more than one index for ${selector}`);
   }
   return installed ?? bundled;
+}
+
+/**
+ * Read installed snapshots for embeddings status while tolerating invalid
+ * embedding rows. Corpus, lexical index, paths, and registry identities remain
+ * strictly validated; only the vector table and whole-index checksum are
+ * inspected separately so status can report their damage.
+ */
+export async function listCatalogEmbeddingStatusCandidates(
+  options: CatalogOptions = {},
+): Promise<CatalogEmbeddingStatusCandidate[]> {
+  const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
+  if (!(await pathExists(catalogRoot))) return [];
+  await assertRealDirectory(catalogRoot, 'Catalog directory');
+  const registryPath = join(catalogRoot, CATALOG_FILE_NAME);
+  if (!(await pathExists(registryPath))) return [];
+  const registry = parseCatalogRegistry(
+    await readRegularFile(registryPath, MAX_CATALOG_BYTES),
+  );
+  if (registry.snapshots.length === 0) return [];
+
+  const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
+  await assertRealDirectory(snapshotsDirectory, 'Snapshots directory');
+  const candidates: CatalogEmbeddingStatusCandidate[] = [];
+  const identities = new Set<string>();
+  for (const pointer of registry.snapshots) {
+    const identity = `${pointer.source}\0${pointer.version}`;
+    if (identities.has(identity)) {
+      throw new Error(
+        `Catalog contains more than one index for ${pointer.source}@${pointer.version}`,
+      );
+    }
+    identities.add(identity);
+    const directory = join(snapshotsDirectory, pointer.directoryKey);
+    await assertRealDirectory(directory, 'Installed snapshot directory');
+    const names = await readdir(directory);
+    if (
+      names.length !== SNAPSHOT_FILES.length ||
+      names.some(
+        (name) =>
+          !SNAPSHOT_FILES.includes(name as (typeof SNAPSHOT_FILES)[number]),
+      )
+    ) {
+      throw new Error(
+        `Snapshot directory must contain exactly: ${SNAPSHOT_FILES.join(', ')}`,
+      );
+    }
+    const [manifestBytes, corpusBytes, databaseBytes] = await Promise.all([
+      readRegularFile(join(directory, 'manifest.json'), MAX_MANIFEST_BYTES),
+      readRegularFile(join(directory, 'corpus.json'), MAX_CORPUS_BYTES),
+      readRegularFile(join(directory, 'index.sqlite'), MAX_INDEX_BYTES),
+    ]);
+    const manifest = parseBuildManifest(manifestBytes);
+    const corpus = parseCorpus(corpusBytes);
+    assertSnapshotIdentity(manifest, corpus);
+    if (sha256(corpusBytes) !== manifest.corpus.sha256) {
+      throw new Error('Snapshot corpus file hash does not match its manifest');
+    }
+    const expectedDirectoryKey = createHash('sha256')
+      .update(
+        `${manifest.documentation.id}\0${manifest.documentation.version}\0${manifest.source.revision}\0${manifest.index.sha256}`,
+        'utf8',
+      )
+      .digest('hex');
+    if (
+      pointer.source !== manifest.documentation.id ||
+      pointer.version !== manifest.documentation.version ||
+      pointer.revision !== manifest.source.revision ||
+      pointer.directoryKey !== expectedDirectoryKey
+    ) {
+      throw new Error('Catalog snapshot pointer identity is invalid');
+    }
+
+    const databasePath = join(directory, 'index.sqlite');
+    validateSnapshotIndex(databasePath, corpus, manifest, false);
+    candidates.push({
+      source: pointer.source,
+      version: pointer.version,
+      revision: pointer.revision,
+      databasePath,
+      manifest: runtimeManifestFromBuild(manifest),
+      corpus,
+      indexChecksumValid: sha256(databaseBytes) === manifest.index.sha256,
+    });
+  }
+  return candidates;
 }
 
 /** Validate the snapshot fully before creating or changing the user catalog. */
@@ -1130,6 +1226,7 @@ function validateSnapshotIndex(
   databasePath: string,
   corpus: DocumentationCorpus,
   manifest: ReturnType<typeof DocumentationBuildManifestSchema.parse>,
+  validateEmbeddings = true,
 ): void {
   const canonicalChunkIds = new Set(
     corpus.documents.flatMap((document) =>
@@ -1140,6 +1237,7 @@ function validateSnapshotIndex(
     databasePath,
     runtimeManifestFromBuild(manifest),
     canonicalChunkIds,
+    validateEmbeddings,
   );
   const database = new DatabaseSync(databasePath, {
     readOnly: true,
@@ -1227,6 +1325,7 @@ function validateRuntimeDatabase(
   databasePath: string,
   manifest: DocumentationIndexRuntimeManifest,
   canonicalChunkIds: ReadonlySet<string>,
+  validateEmbeddings = true,
 ): void {
   const database = new DatabaseSync(databasePath, {
     readOnly: true,
@@ -1238,6 +1337,7 @@ function validateRuntimeDatabase(
       manifest.documentation.version,
       manifest.embeddings,
       canonicalChunkIds,
+      validateEmbeddings,
     );
     if (
       manifest.index.file !== basename(databasePath) ||

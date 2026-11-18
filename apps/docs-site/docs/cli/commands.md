@@ -170,6 +170,23 @@ The default directory is `<app-data>/models/qwen3-embedding-0.6b/1.0.0`, using t
 
 **Errors:** network or HTTP failures after retries, invalid release metadata/checksums, unmanaged target directory, incomplete managed files, and unsafe paths. A failed installation remains in a hidden staging directory and is not reported as installed. `remove` refuses directories without the matching NekoSearch ownership marker.
 
+## embeddings
+
+```sh
+nekosearch embeddings build
+nekosearch embeddings build nestjs@12
+nekosearch embeddings status
+nekosearch embeddings status nestjs@12
+```
+
+`build` generates vectors from the persisted canonical chunks in installed snapshots. With no selector it processes every installed source; a selector limits the operation to one snapshot. It does not revisit source repositories, redownload documentation, or repeat discovery and Markdown parsing. Install and verify Qwen3 first with `nekosearch model install`, and install the optional Transformers.js runtime for the current Node.js host.
+
+Each changed snapshot is staged, validated, and promoted through the catalog's atomic update path. Existing compatible complete embeddings are reused; repeated builds do not run inference again. Progress is reported per source and batch. An interruption before promotion leaves that source's active snapshot unchanged; completed sources from an all-source run remain complete and are skipped on retry.
+
+`status` reports each installed source's model compatibility, total chunks, embedded chunks, missing and invalid embeddings, completion percentage, and snapshot checksum integrity. Bundled snapshots are excluded from all-source builds and cannot be selected.
+
+**Errors:** unknown or bundled selectors, missing or corrupt model installation, unavailable inference runtime, incomplete vector output, invalid persisted corpus/index, and concurrent snapshot replacement.
+
 ## update
 
 ```sh
