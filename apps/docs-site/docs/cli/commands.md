@@ -185,6 +185,8 @@ Each changed snapshot is staged, validated, and promoted through the catalog's a
 
 `status` reports each installed source's model compatibility, total chunks, embedded chunks, missing and invalid embeddings, completion percentage, and snapshot checksum integrity. Bundled snapshots are excluded from all-source builds and cannot be selected.
 
+To use these vectors at query time, set `search.semantic.enabled: true` in `nekosearch.yaml` (or the file named by `NEKOSEARCH_CONFIG`) and restart the NekoSearch server. `search_docs` then combines lexical Top 50 and semantic Top 50 per selected snapshot with equal-weight reciprocal rank fusion (`k = 60`). Every selected source must have vectors compatible with the local query encoder.
+
 **Errors:** unknown or bundled selectors, missing or corrupt model installation, unavailable inference runtime, incomplete vector output, invalid persisted corpus/index, and concurrent snapshot replacement.
 
 ## update

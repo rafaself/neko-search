@@ -10,7 +10,7 @@ import {
   resolveConfiguredEmbeddingProvider,
 } from '../../../../src/apps/nekosearch/semantic-search.js';
 
-describe('semantic search ingestion configuration', () => {
+describe('semantic search configuration', () => {
   let directory: string;
 
   beforeEach(async () => {

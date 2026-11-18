@@ -23,13 +23,19 @@ The engine has an internal result cap of 50, but the **public MCP contract caps 
 
 Snapshot builds may include one normalized 1024-dimensional Float32 vector for every canonical chunk. The vectors live in a separate `documentation_embeddings(chunk_id, embedding)` table and do not copy chunk text or add a foreign key to the FTS5 virtual table. The FTS5 schema and BM25 queries are unchanged.
 
-Hybrid manifests record the supported Qwen3 model revision and ONNX artifact checksum along with dimensions, data type, pooling, normalization, query-instruction version, and embedding-pipeline version. Validation checks the metadata, exact Float32 BLOB size, vector normalization, and one-to-one chunk IDs against the corpus before promotion. Lexical-only snapshots omit both the metadata and the embeddings table. The current MCP search path remains lexical; snapshot embedding persistence does not yet enable hybrid ranking.
+Hybrid manifests record the supported Qwen3 model revision and ONNX artifact checksum along with dimensions, data type, pooling, normalization, query-instruction version, and embedding-pipeline version. Validation checks the metadata, exact Float32 BLOB size, vector normalization, and one-to-one chunk IDs against the corpus before promotion. Lexical-only snapshots omit both the metadata and the embeddings table.
+
+When `search.semantic.enabled` is false or absent, serving uses only FTS5/BM25 and does not load the embedding runtime. When enabled, the query encoder runs once for a request. Each selected snapshot checks that its embedding metadata matches the query space, then runs exact dot-product retrieval over normalized Float32 vectors. Snapshots without compatible vectors are rejected for that request with an instruction to build their embeddings.
+
+## Hybrid ranking
+
+For each snapshot, NekoSearch retrieves up to 50 lexical and 50 semantic candidates, then applies equal-weight reciprocal rank fusion with `k = 60`. RRF uses 1-based positions and breaks equal fused scores by chunk ID. Fusion never crosses snapshot boundaries. The catalog then keeps its existing source order and round-robin result allocation up to the public total limit of 10. BM25 and cosine scores are not compared directly.
 
 ## Combining selected sources
 
 The MCP layer resolves every selector before searching any index. It rejects unknown or duplicated selectors rather than dropping them or broadening the request.
 
-Each source is searched independently. Results are allocated round-robin by rank, following the requested source order, until the total requested limit is exhausted. Output remains grouped by source and preserves source-local ranking. Scores from different snapshots are not globally compared.
+Each source is searched independently. With hybrid search, fusion completes inside each source before results are allocated round-robin following the requested source order. Output remains grouped by source and preserves source-local ranking. Scores from different snapshots are not globally compared.
 
 For a small budget and many sources, some groups can be empty even though their index has hits. Empty groups retain their source metadata; `totalResults` counts returned hits across all groups.
 

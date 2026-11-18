@@ -126,6 +126,18 @@ export async function verifyPackage(root = rootDirectory) {
   }
   if (
     !engineMetadata.files?.includes(
+      'dist/retrieval/fusion/reciprocal-rank-fusion.js',
+    ) ||
+    !engineMetadata.files?.includes(
+      'dist/retrieval/retrievers/semantic-retriever.js',
+    )
+  ) {
+    throw new Error(
+      'The documentation engine package must include semantic retrieval and RRF',
+    );
+  }
+  if (
+    !engineMetadata.files?.includes(
       'dist/retrieval/documentation-input.error.js',
     )
   ) {

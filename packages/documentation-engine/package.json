@@ -31,7 +31,9 @@
     "dist/retrieval/document-page.js",
     "dist/retrieval/documentation-input.error.js",
     "dist/retrieval/search-input.js",
-    "dist/retrieval/search.constants.js"
+    "dist/retrieval/search.constants.js",
+    "dist/retrieval/fusion/reciprocal-rank-fusion.js",
+    "dist/retrieval/retrievers/semantic-retriever.js"
   ],
   "dependencies": {
     "@mdx-js/mdx": "^3.1.1",

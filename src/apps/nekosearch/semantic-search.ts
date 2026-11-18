@@ -30,6 +30,11 @@ export interface SemanticSearchConfiguration {
   configPath: string;
 }
 
+export interface ConfiguredEmbeddingProvider extends DocumentationEmbeddingProvider {
+  /** Available on the local runtime provider used by semantic retrieval. */
+  embedQuery?: (query: string) => Promise<Float32Array>;
+}
+
 export interface ConfiguredEmbeddingProviderOptions extends SemanticSearchConfigurationOptions {
   modelStatusReader?: () => Promise<ModelStatus>;
   embeddingProviderFactory?: () => Promise<DocumentationEmbeddingProvider>;
@@ -111,10 +116,10 @@ export async function loadSemanticSearchConfiguration(
   };
 }
 
-/** Resolve the local model provider only when semantic indexing is enabled. */
+/** Resolve the local model provider only when semantic search is enabled. */
 export async function resolveConfiguredEmbeddingProvider(
   options: ConfiguredEmbeddingProviderOptions = {},
-): Promise<DocumentationEmbeddingProvider | undefined> {
+): Promise<ConfiguredEmbeddingProvider | undefined> {
   const configuration = await loadSemanticSearchConfiguration(options);
   if (!configuration.enabled) return undefined;
 
@@ -153,6 +158,7 @@ export async function resolveConfiguredEmbeddingProvider(
   return {
     embeddingSpace: embeddingRuntime.LOCAL_QWEN3_EMBEDDING_SPACE,
     embedDocuments: (documents) => generator.embedDocuments(documents),
+    embedQuery: (query) => generator.embedQuery(query),
   };
 }
 

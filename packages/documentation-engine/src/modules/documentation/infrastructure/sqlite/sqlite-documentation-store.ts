@@ -11,6 +11,10 @@ import type { DocumentationLinkReference } from '../../domain/documentation.type
 import { MAX_SEARCH_RESULT_LIMIT } from '../../retrieval/search.constants.js';
 import { validateRuntimeIndex } from './runtime-index.js';
 
+const EMBEDDING_DIMENSIONS = 1024;
+const EMBEDDING_BLOB_BYTES =
+  EMBEDDING_DIMENSIONS * Float32Array.BYTES_PER_ELEMENT;
+
 export class SQLiteDocumentationStore implements DocumentationSearchStore {
   private readonly database: DatabaseSync;
   private closed = false;
@@ -76,6 +80,71 @@ export class SQLiteDocumentationStore implements DocumentationSearchStore {
         Math.min(limit, MAX_SEARCH_RESULT_LIMIT),
       )
       .map(toSearchResult);
+  }
+
+  /** Exact dot-product scan over this snapshot's validated vector table. */
+  searchByEmbedding(
+    queryVector: Float32Array,
+    limit = MAX_SEARCH_RESULT_LIMIT,
+  ): DocumentationSearchResult[] {
+    if (!this.indexManifest.embeddings) {
+      throw new Error(
+        `Documentation ${this.indexManifest.documentation.id}@${this.indexManifest.documentation.version} has no compatible embeddings`,
+      );
+    }
+    validateNormalizedQueryVector(queryVector);
+    const boundedLimit = Math.min(limit, MAX_SEARCH_RESULT_LIMIT);
+    if (!Number.isSafeInteger(limit) || boundedLimit < 1) {
+      throw new Error('Semantic result limit must be a positive integer');
+    }
+
+    const topCandidates: SemanticCandidate[] = [];
+    const embeddingRows = this.database
+      .prepare(
+        `SELECT vector.chunk_id AS chunkId, vector.embedding
+         FROM documentation_embeddings AS vector
+         INNER JOIN documentation_search AS document
+           ON document.chunk_id = vector.chunk_id
+         WHERE document.documentation_version = ?`,
+      )
+      .iterate(this.indexManifest.documentation.version);
+    for (const row of embeddingRows) {
+      if (typeof row.chunkId !== 'string' || !row.chunkId.trim()) {
+        throw new Error('SQLite returned an invalid semantic chunk identifier');
+      }
+      insertSemanticCandidate(
+        topCandidates,
+        {
+          chunkId: row.chunkId,
+          score: dotProductWithNormalizedBlob(
+            queryVector,
+            row.embedding,
+            row.chunkId,
+          ),
+        },
+        boundedLimit,
+      );
+    }
+
+    const resultStatement = this.database.prepare(
+      `SELECT chunk_id AS chunkId, document_id AS documentId, title,
+          canonical_url AS canonicalUrl, source_revision AS sourceRevision,
+          substr(markdown, 1, 320) AS excerpt
+       FROM documentation_search
+       WHERE documentation_version = ? AND chunk_id = ?`,
+    );
+    return topCandidates.map((candidate) => {
+      const row = resultStatement.get(
+        this.indexManifest.documentation.version,
+        candidate.chunkId,
+      );
+      if (!row) {
+        throw new Error(
+          `Semantic result references missing documentation chunk ${candidate.chunkId}`,
+        );
+      }
+      return toSemanticSearchResult(row, candidate.score);
+    });
   }
 
   fetchRows(documentId: string): DocumentationRow[] {
@@ -191,6 +260,115 @@ function toSearchResult(
     sourceRevision,
     excerpt,
     score: -rank,
+  };
+}
+
+interface SemanticCandidate {
+  chunkId: string;
+  score: number;
+}
+
+function insertSemanticCandidate(
+  candidates: SemanticCandidate[],
+  candidate: SemanticCandidate,
+  limit: number,
+): void {
+  let position = 0;
+  while (
+    position < candidates.length &&
+    compareSemanticCandidates(candidates[position]!, candidate) <= 0
+  ) {
+    position += 1;
+  }
+  if (position >= limit) return;
+  candidates.splice(position, 0, candidate);
+  if (candidates.length > limit) candidates.pop();
+}
+
+function compareSemanticCandidates(
+  left: SemanticCandidate,
+  right: SemanticCandidate,
+): number {
+  return (
+    right.score - left.score ||
+    (left.chunkId < right.chunkId ? -1 : left.chunkId > right.chunkId ? 1 : 0)
+  );
+}
+
+function dotProductWithNormalizedBlob(
+  queryVector: Float32Array,
+  value: unknown,
+  chunkId: string,
+): number {
+  if (
+    !(value instanceof Uint8Array) ||
+    value.byteLength !== EMBEDDING_BLOB_BYTES
+  ) {
+    throw new Error(`Semantic vector for ${chunkId} has an invalid BLOB size`);
+  }
+  const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  let squaredNorm = 0;
+  let score = 0;
+  for (let dimension = 0; dimension < queryVector.length; dimension += 1) {
+    const value = bytes.readFloatLE(dimension * Float32Array.BYTES_PER_ELEMENT);
+    if (!Number.isFinite(value)) {
+      throw new Error(`Semantic vector for ${chunkId} has a non-finite value`);
+    }
+    squaredNorm += value * value;
+    score += queryVector[dimension]! * value;
+  }
+  if (Math.abs(Math.sqrt(squaredNorm) - 1) > 1e-3) {
+    throw new Error(`Semantic vector for ${chunkId} is not L2-normalized`);
+  }
+  return score;
+}
+
+function validateNormalizedQueryVector(vector: Float32Array): void {
+  if (
+    !(vector instanceof Float32Array) ||
+    vector.length !== EMBEDDING_DIMENSIONS
+  ) {
+    throw new Error(
+      `Semantic query embedding must be a ${EMBEDDING_DIMENSIONS}-dimensional Float32Array`,
+    );
+  }
+  let squaredNorm = 0;
+  for (const value of vector) {
+    if (!Number.isFinite(value)) {
+      throw new Error('Semantic query embedding has a non-finite value');
+    }
+    squaredNorm += value * value;
+  }
+  if (Math.abs(Math.sqrt(squaredNorm) - 1) > 1e-3) {
+    throw new Error('Semantic query embedding is not L2-normalized');
+  }
+}
+
+function toSemanticSearchResult(
+  row: Record<string, unknown>,
+  score: number,
+): DocumentationSearchResult {
+  const { chunkId, documentId, title, canonicalUrl, sourceRevision, excerpt } =
+    row;
+  if (
+    typeof chunkId !== 'string' ||
+    typeof documentId !== 'string' ||
+    typeof title !== 'string' ||
+    typeof canonicalUrl !== 'string' ||
+    typeof sourceRevision !== 'string' ||
+    typeof excerpt !== 'string' ||
+    !Number.isFinite(score)
+  ) {
+    throw new Error('SQLite returned an invalid semantic search result');
+  }
+  return {
+    chunkId,
+    documentId,
+    title,
+    canonicalUrl,
+    sourceRevision,
+    excerpt,
+    score,
   };
 }
 

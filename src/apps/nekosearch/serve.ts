@@ -1,8 +1,19 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { isDeepStrictEqual } from 'node:util';
 import { DocumentationSearchService } from '@nestjs-docs/documentation-engine/application/services/documentation-search.service.js';
 import type { DocumentationSearchResult } from '@nestjs-docs/documentation-engine/application/contracts/documentation-reader.contract.js';
+import {
+  DocumentationEmbeddingSpaceSchema,
+  type DocumentationEmbeddingSpace,
+} from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import { SQLiteDocumentationStore } from '@nestjs-docs/documentation-engine/infrastructure/sqlite/sqlite-documentation-store.js';
+import { SemanticRetriever } from '@nestjs-docs/documentation-engine/retrieval/retrievers/semantic-retriever.js';
+import {
+  LEXICAL_RETRIEVAL_TOP_K,
+  reciprocalRankFusion,
+  SEMANTIC_RETRIEVAL_TOP_K,
+} from '@nestjs-docs/documentation-engine/retrieval/fusion/reciprocal-rank-fusion.js';
 import { fetchDocumentation } from '../../modules/documentation/mcp/documentation-tool-handlers.js';
 import {
   PACKAGE_NAME,
@@ -33,17 +44,36 @@ interface CatalogSearchRuntime {
   entry: DocumentationCatalogEntry;
   documentation: DocumentationSearchService;
   store: SQLiteDocumentationStore;
+  semanticRetriever?: SemanticRetriever;
 }
 
 export interface SearchableCatalogRuntime {
   entry: Pick<DocumentationCatalogEntry, 'source' | 'version' | 'revision'>;
   documentation: Pick<DocumentationSearchService, 'search'>;
+  semanticRetriever?: Pick<SemanticRetriever, 'embeddingSpace' | 'search'>;
+}
+
+export interface SemanticQueryEmbeddingProvider {
+  embeddingSpace: DocumentationEmbeddingSpace;
+  embedQuery(query: string): Promise<Float32Array>;
 }
 
 type CatalogSearchHit = DocumentationSearchResult;
 
 export async function serve(): Promise<void> {
   const entries = await listCatalogIndexes();
+  const { resolveConfiguredEmbeddingProvider } =
+    await import('./semantic-search.js');
+  const configuredEmbeddingProvider =
+    await resolveConfiguredEmbeddingProvider();
+  if (
+    configuredEmbeddingProvider &&
+    typeof configuredEmbeddingProvider.embedQuery !== 'function'
+  ) {
+    throw new Error(
+      'Semantic Search is enabled, but the configured embedding provider cannot embed queries.',
+    );
+  }
   const runtimes: CatalogSearchRuntime[] = [];
   let runtimesBySelector: Map<string, CatalogSearchRuntime>;
   try {
@@ -52,11 +82,19 @@ export async function serve(): Promise<void> {
         entry.databasePath,
         entry.manifest,
       );
-      runtimes.push({
+      const runtime: CatalogSearchRuntime = {
         entry,
         store,
         documentation: new DocumentationSearchService(store, entry.manifest),
-      });
+      };
+      runtimes.push(runtime);
+      if (entry.manifest.embeddings && configuredEmbeddingProvider) {
+        runtime.semanticRetriever = new SemanticRetriever(
+          store,
+          entry.manifest.embeddings,
+          configuredEmbeddingProvider.embeddingSpace,
+        );
+      }
     }
     runtimesBySelector = indexRuntimesBySelector(runtimes);
   } catch (error) {
@@ -90,15 +128,24 @@ export async function serve(): Promise<void> {
   server.registerTool(
     'search_docs',
     {
-      description: `Searches only the 1 to ${MAX_SEARCH_SOURCES} exact selectors in sources. Get selectors from list_docs. Results are grouped by selector and preserve each index's ranking; limit caps the total response at ${MAX_TOTAL_SEARCH_RESULTS} hits across all groups.`,
+      description: `Searches only the 1 to ${MAX_SEARCH_SOURCES} exact selectors in sources. Get selectors from list_docs. Results are grouped by selector and preserve each snapshot's lexical or fused ranking; limit caps the total response at ${MAX_TOTAL_SEARCH_RESULTS} hits across all groups.`,
       inputSchema: catalogSearchDocsInputSchema,
       outputSchema: catalogSearchDocsOutputSchema,
       annotations: readOnlyAnnotations,
     },
-    (input) =>
-      runTool('search_docs', () =>
-        searchCatalogDocumentation(runtimesBySelector, input),
-      ),
+    (input) => {
+      if (!configuredEmbeddingProvider) {
+        return runTool('search_docs', () =>
+          searchCatalogDocumentation(runtimesBySelector, input),
+        );
+      }
+      return runAsyncTool('search_docs', () =>
+        searchCatalogDocumentationWithSemantic(runtimesBySelector, input, {
+          embeddingSpace: configuredEmbeddingProvider.embeddingSpace,
+          embedQuery: configuredEmbeddingProvider.embedQuery!,
+        }),
+      );
+    },
   );
   server.registerTool(
     'fetch_docs',
@@ -153,6 +200,82 @@ export function searchCatalogDocumentation(
   const rankedResults = selectedRuntimes.map((runtime) =>
     runtime.documentation.search(input.query, totalBudget),
   );
+  return formatCatalogSearchResults(
+    selectedRuntimes,
+    rankedResults,
+    totalBudget,
+  );
+}
+
+/** Embed the query once, fuse rankings independently within each snapshot. */
+export async function searchCatalogDocumentationWithSemantic(
+  runtimesBySelector: ReadonlyMap<string, SearchableCatalogRuntime>,
+  input: CatalogSearchDocsInput,
+  embeddingProvider: SemanticQueryEmbeddingProvider,
+): Promise<{
+  content: [{ type: 'text'; text: string }];
+  structuredContent: CatalogSearchDocsOutput;
+}> {
+  const selectedRuntimes = resolveRequestedRuntimes(
+    runtimesBySelector,
+    input.sources,
+  );
+  const queryEmbeddingSpace = DocumentationEmbeddingSpaceSchema.parse(
+    embeddingProvider.embeddingSpace,
+  );
+  const incompatibleSources = selectedRuntimes
+    .filter(
+      (runtime) =>
+        !runtime.semanticRetriever ||
+        !isDeepStrictEqual(
+          runtime.semanticRetriever.embeddingSpace,
+          queryEmbeddingSpace,
+        ),
+    )
+    .map((runtime) => selectorFor(runtime.entry));
+  if (incompatibleSources.length > 0) {
+    throw new Error(
+      `Semantic Search requires compatible embeddings for every selected source: ${incompatibleSources.join(', ')}. Run nekosearch embeddings build for these sources.`,
+    );
+  }
+
+  const lexicalRankings = selectedRuntimes.map((runtime) =>
+    runtime.documentation.search(input.query, LEXICAL_RETRIEVAL_TOP_K),
+  );
+  const queryVector = await embeddingProvider.embedQuery(input.query);
+  const fusedRankings = selectedRuntimes.map((runtime, index) => {
+    const semanticRetriever = runtime.semanticRetriever;
+    if (!semanticRetriever) {
+      throw new Error(
+        `Semantic retriever is unavailable for ${selectorFor(runtime.entry)}`,
+      );
+    }
+    const semanticResults = semanticRetriever.search(
+      queryVector,
+      SEMANTIC_RETRIEVAL_TOP_K,
+    );
+    return reciprocalRankFusion(
+      lexicalRankings[index] ?? [],
+      semanticResults,
+      LEXICAL_RETRIEVAL_TOP_K,
+    );
+  });
+  const totalBudget = input.limit ?? MAX_TOTAL_SEARCH_RESULTS;
+  return formatCatalogSearchResults(
+    selectedRuntimes,
+    fusedRankings,
+    totalBudget,
+  );
+}
+
+function formatCatalogSearchResults(
+  selectedRuntimes: SearchableCatalogRuntime[],
+  rankedResults: DocumentationSearchResult[][],
+  totalBudget: number,
+): {
+  content: [{ type: 'text'; text: string }];
+  structuredContent: CatalogSearchDocsOutput;
+} {
   const resultsBySource = selectedRuntimes.map(() => [] as CatalogSearchHit[]);
 
   let totalResults = 0;
@@ -330,6 +453,26 @@ function runTool<T>(name: string, handler: () => T): T {
       );
     throw error;
   }
+}
+
+function runAsyncTool<T>(name: string, handler: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  return handler().then(
+    (result) => {
+      if (process.env.DEBUG === '1')
+        process.stderr.write(
+          `MCP tool ${name} success in ${Date.now() - startedAt} ms\n`,
+        );
+      return result;
+    },
+    (error: unknown) => {
+      if (process.env.DEBUG === '1')
+        process.stderr.write(
+          `MCP tool ${name} failure in ${Date.now() - startedAt} ms: ${formatError(error)}\n`,
+        );
+      throw error;
+    },
+  );
 }
 
 function shutdown(
