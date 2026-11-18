@@ -819,6 +819,12 @@ async function installAndEnableSemanticSearchByDefault(
   progress: (message: string) => void,
 ): Promise<void> {
   const modelManager = await import('./model-manager.js');
+  const runtimeStatus = await modelManager.getModelStatus();
+  if (!runtimeStatus.runtimeAvailable) {
+    throw new Error(
+      `The local inference runtime is unavailable. Install the optional @huggingface/transformers@4.3.2 runtime on a supported Node.js host before setup downloads Qwen3.`,
+    );
+  }
   await modelManager.installModel({ progress });
 
   const embeddings = await import('./embeddings.js');

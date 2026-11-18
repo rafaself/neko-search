@@ -21,7 +21,7 @@ Setup is for curated sources. Use [`add --dir`, `add --github`, or `add --from`]
 
 Setup offers **Install now** or **Skip for now** for Qwen3-Embedding-0.6B (approximately 614 MB). Skipping finishes setup normally, keeps Semantic Search disabled, and does not download the model or load the ML runtime. Lexical Search remains available.
 
-If you choose **Install now**, setup downloads and validates the pinned model after you confirm the review. It generates embeddings for already installed snapshots, validates them, and enables Semantic Search only when the model, runtime, and snapshots are ready. Newly selected documentation is then ingested with embeddings. If model installation or embedding generation fails, setup reports the failure and leaves Semantic Search disabled; the installed model or completed snapshots can be reused on a later attempt.
+If you choose **Install now**, setup checks that the optional local inference runtime is available before downloading the pinned model. After you confirm the review, it downloads and validates Qwen3, generates embeddings for already installed snapshots, validates them, and enables Semantic Search only when the model, runtime, and snapshots are ready. Newly selected documentation is then ingested with embeddings. If the runtime is missing, setup reports how to install it before downloading the model. If model installation or embedding generation fails, Semantic Search stays disabled; the installed model or completed snapshots can be reused on a later attempt.
 
 Use `nekosearch embeddings disable` to turn off Semantic Search later. This preserves the model and existing vectors. Model removal requires disabling Semantic Search first.
 
