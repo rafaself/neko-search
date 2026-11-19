@@ -8,10 +8,10 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/nekosearch"><img src="https://img.shields.io/npm/v/nekosearch.svg?logo=npm&amp;logoColor=white" alt="npm package version" /></a>
-  <a href="https://github.com/rafaself/nekosearch/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/nekosearch.svg?label=%F0%9F%93%96%20license" alt="MIT license" /></a>
+  <a href="https://github.com/rafaself/nekosearch/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/nekosearch.svg?logo=mdbook&amp;logoColor=white" alt="MIT license" /></a>
   <a href="https://www.npmjs.com/package/nekosearch"><img src="https://img.shields.io/npm/d18m/nekosearch.svg?logo=npm&amp;logoColor=white" alt="npm downloads in the past 18 months" /></a>
   <a href="https://github.com/rafaself/nekosearch/actions/workflows/ci.yml"><img src="https://github.com/rafaself/nekosearch/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build status on main" /></a>
-  <a href="https://nekosearch.pages.dev/"><img src="https://img.shields.io/website.svg?url=https%3A%2F%2Fnekosearch.pages.dev%2F&amp;up_message=online&amp;label=%F0%9F%8C%90%20docs" alt="Documentation site status" /></a>
+  <a href="https://nekosearch.pages.dev/"><img src="https://img.shields.io/website.svg?url=https%3A%2F%2Fnekosearch.pages.dev%2F&amp;up_message=online&amp;label=docs&amp;logo=googleearth&amp;logoColor=white" alt="Documentation site status" /></a>
 </p>
 
 ## Description
