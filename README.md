@@ -7,9 +7,11 @@
 <p align="center">Local documentation search for AI coding agents.</p>
 
 <p align="center">
-  <a href="https://nekosearch.pages.dev/">Documentation</a> ·
-  <a href="https://www.npmjs.com/package/nekosearch">npm</a> ·
-  <a href="https://github.com/rafaself/nekosearch/releases">Releases</a>
+  <a href="https://www.npmjs.com/package/nekosearch"><img src="https://img.shields.io/npm/v/nekosearch.svg" alt="npm package version" /></a>
+  <a href="https://github.com/rafaself/nekosearch/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/nekosearch.svg" alt="MIT license" /></a>
+  <a href="https://www.npmjs.com/package/nekosearch"><img src="https://img.shields.io/npm/dm/nekosearch.svg" alt="Monthly npm downloads" /></a>
+  <a href="https://github.com/rafaself/nekosearch/actions/workflows/ci.yml"><img src="https://github.com/rafaself/nekosearch/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build status on main" /></a>
+  <a href="https://nekosearch.pages.dev/"><img src="https://img.shields.io/website.svg?url=https%3A%2F%2Fnekosearch.pages.dev%2F&amp;up_message=online" alt="Documentation website status" /></a>
 </p>
 
 ## Description
@@ -37,6 +39,7 @@ Once your client connects, try asking it to search `nestjs@12` for dependency in
 - [Configure an MCP client](https://nekosearch.pages.dev/mcp/client-configuration)
 - [Enable Hybrid Search and see benchmark results](https://nekosearch.pages.dev/guides/hybrid-search)
 - [CLI command reference](https://nekosearch.pages.dev/cli/commands)
+- [Release notes](https://github.com/rafaself/nekosearch/releases)
 
 ## Contributing
 
