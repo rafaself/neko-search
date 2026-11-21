@@ -19,6 +19,7 @@ import {
   addSnapshot,
   getCatalogIndex,
   listCatalogIndexes,
+  snapshotIdentity,
   updateSnapshot,
 } from '../../../../apps/nekosearch/src/catalog.js';
 import {
@@ -51,6 +52,32 @@ describe('NekoSearch curated source installs', () => {
   });
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('rejects a stale snapshot key before contacting upstream', async () => {
+    await installRevision('b'.repeat(40));
+    const original = await getCatalogIndex('nestjs@12', { catalogRoot });
+    if (!original) throw new Error('Expected an installed snapshot');
+    await installRemoteSnapshot(
+      'nestjs',
+      '12',
+      'update',
+      remoteOptions(createV12Upstream('c'.repeat(40)).fetcher),
+    );
+    const upstream = createV12Upstream('d'.repeat(40));
+
+    await expect(
+      installRemoteSnapshot('nestjs', '12', 'update', {
+        ...remoteOptions(upstream.fetcher),
+        expectedSnapshotKey: snapshotIdentity(original).directoryKey,
+      }),
+    ).rejects.toThrow('refresh the catalog and try again');
+    expect(upstream.requestedRefNames()).toEqual([]);
+    await expect(
+      getCatalogIndex('nestjs@12', { catalogRoot }),
+    ).resolves.toMatchObject({
+      revision: 'c'.repeat(40),
+    });
+  });
 
   it('starts without NestJS, installs one commit-pinned major, then searches and fetches it locally', async () => {
     expect(

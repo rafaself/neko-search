@@ -6,12 +6,13 @@ import type { GitDocumentationSource } from '@nestjs-docs/documentation-engine/d
 import type { DocumentationEmbeddingProvider } from '@nestjs-docs/documentation-engine/domain/documentation-embedding.schemas.js';
 import {
   addSnapshot,
+  assertSnapshotKey,
   listCatalogIndexes,
+  snapshotIdentity,
   updateSnapshot,
   validateSnapshotDirectory,
   type CatalogOptions,
   type DocumentationCatalogEntry,
-  type SnapshotIdentity,
   type SnapshotUpdateResult,
 } from './catalog.js';
 
@@ -47,6 +48,7 @@ export interface RemoteSnapshotOptions extends CatalogOptions {
   sourceBuilder?: NestJsSnapshotBuilder;
   onProgress?: (phase: RemoteSnapshotPhase) => void;
   embeddingProvider?: DocumentationEmbeddingProvider;
+  expectedSnapshotKey?: string;
 }
 
 export type RemoteSnapshotPhase =
@@ -119,6 +121,10 @@ export async function installRemoteSnapshot(
       `Installed snapshot ${recipeSelector} is not linked to its matching curated recipe; only snapshots installed by the curated add command can be updated`,
     );
   }
+  const currentIdentity = current && snapshotIdentity(current);
+  if (currentIdentity) {
+    assertSnapshotKey(currentIdentity, options.expectedSnapshotKey);
+  }
 
   const embeddingProvider =
     options.embeddingProvider ??
@@ -142,6 +148,7 @@ export async function installRemoteSnapshot(
   if (
     operation === 'update' &&
     embeddingConfigurationMatches &&
+    currentIdentity &&
     current?.revision === resolvedSource.revision &&
     current.manifest.source.kind === 'git' &&
     current.manifest.source.repository === OFFICIAL_SOURCE_REPOSITORY
@@ -154,7 +161,7 @@ export async function installRemoteSnapshot(
           ? null
           : recipeSelector,
         expectedTrackingRecipe: recipeSelector,
-        expectedCurrent: snapshotIdentity(current),
+        expectedCurrent: currentIdentity,
       },
     );
     return { ...updated, changed: false };
@@ -208,7 +215,7 @@ export async function installRemoteSnapshot(
       ...(operation === 'update'
         ? { expectedTrackingRecipe: recipeSelector }
         : {}),
-      ...(current ? { expectedCurrent: snapshotIdentity(current) } : {}),
+      ...(currentIdentity ? { expectedCurrent: currentIdentity } : {}),
     });
   } finally {
     await rm(snapshotDirectory, { recursive: true, force: true });
@@ -289,15 +296,6 @@ async function resolveRecipe(
 
 function isImmutableRef(ref: string): boolean {
   return /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/iu.test(ref);
-}
-
-function snapshotIdentity(entry: DocumentationCatalogEntry): SnapshotIdentity {
-  return {
-    source: entry.source,
-    version: entry.version,
-    revision: entry.revision,
-    directoryKey: entry.databasePath.split(/[\\/]/u).at(-2) ?? '',
-  };
 }
 
 function parseTarget(source: string, version: string): NestJsVersion {

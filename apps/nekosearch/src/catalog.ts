@@ -374,7 +374,7 @@ export async function updateSnapshot(
 /** Remove one installed snapshot from the active catalog. */
 export async function removeSnapshot(
   selector: string,
-  options: CatalogOptions = {},
+  options: CatalogOptions & { expectedSnapshotKey?: string } = {},
 ): Promise<SnapshotRemovalResult> {
   const { source, version } = parseCatalogSelector(selector);
   const existingEntries = await listCatalogIndexes(options);
@@ -393,6 +393,7 @@ export async function removeSnapshot(
   const catalogRoot = options.catalogRoot ?? getUserCatalogDirectory();
   const snapshotsDirectory = join(catalogRoot, SNAPSHOTS_DIRECTORY_NAME);
   const expected = snapshotIdentity(entry);
+  assertSnapshotKey(expected, options.expectedSnapshotKey);
   let retiredDirectory: string | undefined;
   let cleanupWarning: string | undefined;
 
@@ -650,13 +651,29 @@ function sortPointers(
   );
 }
 
-function snapshotIdentity(entry: DocumentationCatalogEntry): SnapshotIdentity {
+export function snapshotIdentity(
+  entry: DocumentationCatalogEntry,
+): SnapshotIdentity {
   return {
     source: entry.source,
     version: entry.version,
     revision: entry.revision,
     directoryKey: basename(dirname(entry.databasePath)),
   };
+}
+
+export function assertSnapshotKey(
+  identity: SnapshotIdentity,
+  expectedSnapshotKey: string | undefined,
+): void {
+  if (
+    expectedSnapshotKey !== undefined &&
+    identity.directoryKey !== expectedSnapshotKey
+  ) {
+    throw new Error(
+      `Installed snapshot ${identity.source}@${identity.version} changed; refresh the catalog and try again`,
+    );
+  }
 }
 
 function sameSnapshotIdentity(

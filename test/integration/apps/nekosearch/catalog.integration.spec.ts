@@ -15,6 +15,8 @@ import {
   addSnapshot,
   listCatalogIndexes,
   removeSnapshot,
+  snapshotIdentity,
+  updateSnapshot,
 } from '../../../../apps/nekosearch/src/catalog.js';
 import { createDocumentationTestIndex } from '../../../fixtures/documentation-index.js';
 import { TestDocumentationSearchService } from '../../../fixtures/test-documentation-search-service.js';
@@ -40,6 +42,39 @@ describe('NekoSearch snapshot catalog', () => {
   });
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('keeps the replacement when removal specifies a stale snapshot key', async () => {
+    const original = await addSnapshot(snapshotDirectory, { catalogRoot });
+    const replacementDirectory = join(root, 'replacement');
+    mkdirSync(replacementDirectory);
+    createDocumentationTestIndex(
+      join(replacementDirectory, 'index.sqlite'),
+      '12',
+      {
+        documentationId: 'nestjs',
+        revision: 'replacement-revision',
+      },
+    );
+    const replacement = await updateSnapshot(replacementDirectory, {
+      catalogRoot,
+    });
+
+    await expect(
+      removeSnapshot('nestjs@12', {
+        catalogRoot,
+        expectedSnapshotKey: snapshotIdentity(original).directoryKey,
+      }),
+    ).rejects.toThrow('refresh the catalog and try again');
+    expect(await listCatalogIndexes({ catalogRoot })).toContainEqual(
+      replacement.entry,
+    );
+
+    const removed = await removeSnapshot('nestjs@12', {
+      catalogRoot,
+      expectedSnapshotKey: snapshotIdentity(replacement.entry).directoryKey,
+    });
+    expect(removed.entry.revision).toBe('replacement-revision');
+  });
 
   it('adds a validated snapshot and lists its identity and installed status', async () => {
     const added = await addSnapshot(snapshotDirectory, { catalogRoot });
