@@ -30,6 +30,8 @@ npm install --global nekosearch && nekosearch setup
 
 In setup, select your MCP client and choose `nestjs@12` for the example below. The bundled MCP reference is available immediately. You can skip the model and enable Hybrid Search later.
 
+Run `nekosearch ui` to manage documentation snapshots in your browser. Open the local URL printed in your terminal.
+
 Once your client connects, try asking it to search `nestjs@12` for dependency injection providers and cite a matching section.
 
 ## Documentation

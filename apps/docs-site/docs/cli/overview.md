@@ -19,6 +19,7 @@ nekosearch --help
 | Build without installing                     | `build`                                                                            |
 | Install documentation                        | `add --dir`, `add --github`, `add --from`, `add nestjs@11`, `add nestjs@12`        |
 | Inspect the catalog                          | `list`, `status`                                                                   |
+| Manage documentation in a browser            | `ui`                                                                               |
 | Manage the optional local model              | `model install`, `model status`, `model remove`                                    |
 | Manage Semantic Search and vectors           | `embeddings build`, `embeddings status`, `embeddings enable`, `embeddings disable` |
 | Refresh curated documentation                | `update nestjs@11`, `update nestjs@12`                                             |
@@ -45,8 +46,9 @@ Adding an existing selector fails rather than overwriting it. Only the curated N
 | `serve`, `mcp configure <provider>`, `mcp remove <provider>`             | No NekoSearch documentation download                            |
 | `setup`                                                                  | Only for selected docs and model installation after review      |
 | `add --github`, curated `add` and `update`                               | Yes, HTTPS to GitHub                                            |
+| `ui`                                                                     | Only for curated installs, updates, and upstream checks         |
 
-The server does not expose HTTP or SSE transport. Your MCP client starts a child process and communicates with it over stdin/stdout. Logs go to stderr. Model inference and search use the installed local model and snapshots; `serve` never downloads model files.
+Your MCP client starts `serve` as a child process and communicates with it over stdin/stdout. Logs go to stderr. Model inference and search use the installed local model and snapshots. The `ui` command starts its own local HTTP dashboard for snapshot management.
 
 ## Exit and output behavior
 

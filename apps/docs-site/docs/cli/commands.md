@@ -256,6 +256,16 @@ Removal is idempotent when the registration is already absent. NekoSearch checks
 
 **Errors:** unknown provider, client executable missing from `PATH`, unverified or conflicting registration, failed client operation, or a registration that remains after removal. Operational failures exit with code `1`.
 
+## ui
+
+```sh
+nekosearch ui
+```
+
+Open the URL printed in the terminal to view bundled and installed snapshots, import a local Markdown or MDX folder, install curated NestJS sources, check and update tracked snapshots, or remove installed snapshots. Enter an absolute path when importing a folder.
+
+The dashboard listens on `127.0.0.1` and uses the same catalog and search configuration as the CLI. Use the full launch URL to access its session. Press `Ctrl+C` in the terminal to stop the dashboard. Restart NekoSearch through your MCP client after changing the catalog.
+
 ## serve
 
 ```sh
