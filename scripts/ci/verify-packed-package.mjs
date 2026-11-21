@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmod,
   copyFile,
@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { stageNekosearchPackage } from '../release/stage-nekosearch-package.mjs';
@@ -72,6 +73,153 @@ async function withTimeout(promise, label, milliseconds = 30_000) {
     ]);
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function verifyDashboard(project, temporaryDirectory) {
+  const cli = join(
+    project,
+    'node_modules/nekosearch/dist/apps/nekosearch/cli.js',
+  );
+  const directory = join(temporaryDirectory, 'dashboard-docs');
+  const cwd = join(temporaryDirectory, 'dashboard-cwd');
+  const configPath = join(temporaryDirectory, 'dashboard-config.yaml');
+  await Promise.all([mkdir(directory), mkdir(cwd)]);
+  await Promise.all([
+    writeFile(
+      join(directory, 'index.md'),
+      '# Dashboard fixture\n\nAn offline snapshot.\n',
+    ),
+    writeFile(configPath, 'search:\n  semantic:\n    enabled: false\n'),
+  ]);
+  const dataHome = join(temporaryDirectory, 'dashboard-data');
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: dataHome,
+    LOCALAPPDATA: dataHome,
+    NEKOSEARCH_CONFIG: configPath,
+  };
+  const child = spawn(process.execPath, [cli, 'ui'], { cwd, env });
+  const exited = new Promise((resolve) => child.once('close', resolve));
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    const url = await withTimeout(
+      new Promise((resolve, reject) => {
+        let stdout = '';
+        child.stdout.setEncoding('utf8').on('data', (chunk) => {
+          stdout += chunk;
+          const match = stdout.match(/^Open NekoSearch: (\S+)\n/mu);
+          if (match) resolve(new URL(match[1]));
+        });
+        child.once('error', reject);
+        child.once('close', (code) =>
+          reject(new Error(`Dashboard exited with code ${code}\n${stderr}`)),
+        );
+      }),
+      'dashboard startup',
+    );
+    assert.equal(url.hostname, '127.0.0.1');
+    const token = new URLSearchParams(url.hash.slice(1)).get('token');
+    assert.ok(token, 'the dashboard should generate a launch token');
+    const { origin } = url;
+    const request = (path, options = {}) =>
+      fetch(`${origin}${path}`, {
+        ...options,
+        signal: AbortSignal.timeout(5_000),
+        headers: { Authorization: `Bearer ${token}`, ...options.headers },
+      });
+    for (const [path, contentType] of [
+      ['/', 'text/html'],
+      ['/dashboard.js', 'text/javascript'],
+      ['/dashboard.css', 'text/css'],
+    ]) {
+      const response = await request(path);
+      assert.equal(response.status, 200);
+      assert.ok(response.headers.get('content-type').startsWith(contentType));
+      if (path === '/')
+        assert.match(await response.text(), /Add documentation/u);
+      else await response.arrayBuffer();
+    }
+    assert.equal(
+      (await request('/api/catalog', { headers: { Authorization: '' } }))
+        .status,
+      401,
+    );
+    const jobRequest = (body, requestOrigin = origin) =>
+      request('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: requestOrigin },
+        body: JSON.stringify(body),
+      });
+    const input = {
+      operation: 'import-directory',
+      selector: 'dashboard-fixture@1',
+      directory,
+    };
+    assert.equal(
+      (await jobRequest(input, 'https://example.invalid')).status,
+      403,
+    );
+    assert.equal((await jobRequest({ ...input, directory: '.' })).status, 400);
+
+    async function getCatalog() {
+      const response = await request('/api/catalog');
+      assert.equal(response.status, 200);
+      const catalog = await response.json();
+      assert.equal(catalog.readable, true);
+      return catalog.entries;
+    }
+
+    async function completeJob(input) {
+      const response = await jobRequest(input);
+      assert.equal(response.status, 202, await response.clone().text());
+      const path = response.headers.get('location');
+      assert.match(path, /^\/api\/jobs\/[\da-f-]+$/u);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const result = await request(path);
+        assert.equal(result.status, 200);
+        const job = await result.json();
+        if (job.status.state !== 'running') return job.status;
+        await delay(100);
+      }
+      throw new Error(`Dashboard job did not complete: ${input.operation}`);
+    }
+
+    assert.ok((await getCatalog()).some((entry) => entry.status === 'bundled'));
+    const installed = await completeJob(input);
+    assert.equal(installed.state, 'succeeded', installed.error);
+    assert.match(
+      run(process.execPath, [cli, 'list'], { cwd, env }),
+      /dashboard-fixture\t1\t/u,
+    );
+    const entry = (await getCatalog()).find(
+      ({ selector }) => selector === input.selector,
+    );
+    assert.equal(entry.documentCount, 1);
+    assert.equal(entry.databasePath, undefined);
+    const removal = {
+      operation: 'remove',
+      selector: input.selector,
+      snapshotKey: entry.snapshotKey,
+    };
+    const stale = await completeJob({
+      ...removal,
+      snapshotKey: '0'.repeat(64),
+    });
+    assert.equal(stale.state, 'failed');
+    assert.match(stale.error, /refresh the catalog/u);
+    const removed = await completeJob(removal);
+    assert.equal(removed.state, 'succeeded', removed.error);
+    assert.ok(
+      !(await getCatalog()).some(({ selector }) => selector === input.selector),
+    );
+  } finally {
+    child.kill();
+    await withTimeout(exited, 'dashboard shutdown');
   }
 }
 
@@ -1274,6 +1422,7 @@ process.once('exit', () => {
     }
 
     await verifyCatalogServer(project, temporaryDirectory);
+    await verifyDashboard(project, temporaryDirectory);
     await mkdir(destination, { recursive: true });
     await copyFile(tarballPath, join(destination, packed[0].filename));
     console.log(join(destination, packed[0].filename));

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Documentation · NekoSearch</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="layout brand">NekoSearch</div>
+    </header>
+    <main class="layout">
+      <div class="page-title">
+        <h1>Documentation</h1>
+        <button id="refresh" type="button" class="secondary" disabled>
+          Refresh catalog
+        </button>
+      </div>
+      <div id="notice" class="notice" role="status">Loading the catalog…</div>
+      <p id="restart" class="notice" hidden>
+        Restart NekoSearch in your MCP client to pick up catalog changes.
+      </p>
+      <div class="dashboard">
+        <section class="panel" aria-labelledby="catalog-heading">
+          <div class="panel-heading">
+            <h2 id="catalog-heading">Catalog</h2>
+            <span id="source-count" class="muted"></span>
+          </div>
+          <ul id="catalog" class="catalog"></ul>
+        </section>
+        <section class="panel" aria-labelledby="add-heading">
+          <div class="panel-heading">
+            <h2 id="add-heading">Add documentation</h2>
+          </div>
+          <form id="curated-form" method="post">
+            <label for="curated-source">Curated source</label>
+            <select
+              id="curated-source"
+              name="selector"
+              required
+              disabled
+            ></select>
+            <button id="install" type="submit" class="primary" disabled>
+              Install source
+            </button>
+          </form>
+          <form id="local-form" method="post">
+            <label for="directory">Local Markdown or MDX folder</label>
+            <input
+              id="directory"
+              name="directory"
+              type="text"
+              required
+              placeholder="Absolute folder path"
+              spellcheck="false"
+            />
+            <label for="selector">Source and version</label>
+            <input
+              id="selector"
+              name="selector"
+              type="text"
+              required
+              maxlength="321"
+              placeholder="my-api@1"
+              spellcheck="false"
+            />
+            <button id="import" type="submit" class="primary" disabled>
+              Import folder
+            </button>
+          </form>
+        </section>
+      </div>
+    </main>
+    <template id="snapshot-row">
+      <li class="snapshot">
+        <div class="snapshot-main">
+          <div class="snapshot-label">
+            <strong></strong><span class="badge"></span>
+          </div>
+          <p class="snapshot-detail"><span></span><code></code></p>
+        </div>
+        <div class="snapshot-actions"></div>
+      </li>
+    </template>
+  </body>
+</html>

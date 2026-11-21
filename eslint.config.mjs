@@ -18,6 +18,10 @@ export default [
     files: ['**/*.{cjs,mjs}'],
     languageOptions: { globals: globals.node },
   },
+  {
+    files: ['apps/nekosearch/src/ui/assets/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,
     files: ['**/*.ts'],

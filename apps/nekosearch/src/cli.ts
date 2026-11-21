@@ -44,6 +44,13 @@ if (command === 'setup' && arguments_.length === 0) {
     process.stderr.write(`nekosearch serve failed: ${formatError(error)}\n`);
     process.exitCode = 1;
   });
+} else if (command === 'ui' && arguments_.length === 0) {
+  void import('./ui/server.js')
+    .then(({ runDashboard }) => runDashboard())
+    .catch((error: unknown) => {
+      process.stderr.write(`nekosearch ui failed: ${formatError(error)}\n`);
+      process.exitCode = 1;
+    });
 } else if (command === 'model') {
   runModelCommand(arguments_);
 } else if (command === 'embeddings') {

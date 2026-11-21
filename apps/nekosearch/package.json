@@ -58,6 +58,6 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node ../../scripts/build/copy-semantic-runtime-lock.mjs"
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/build/copy-nekosearch-assets.mjs"
   }
 }
